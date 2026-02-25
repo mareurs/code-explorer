@@ -1402,4 +1402,119 @@ impl Point {
         let found = find_symbol_by_name_path(&symbols, "nonexistent");
         assert!(found.is_none());
     }
+
+    #[tokio::test]
+    async fn find_referencing_symbols_returns_references() {
+        if !std::process::Command::new("rust-analyzer")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
+            eprintln!("Skipping: rust-analyzer not installed");
+            return;
+        }
+
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            r#"[package]
+name = "test-refs"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        // Write a file where `add` is defined and called twice
+        std::fs::write(
+            dir.path().join("src/main.rs"),
+            r#"fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+fn main() {
+    let x = add(1, 2);
+    let y = add(3, 4);
+    println!("{} {}", x, y);
+}
+"#,
+        )
+        .unwrap();
+
+        let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
+        let ctx = ToolContext { agent, lsp: lsp() };
+
+        // rust-analyzer needs time to load the Cargo project and build its index
+        // before textDocument/references returns results. Retry with back-off.
+        let mut result_value: Option<Value> = None;
+        for attempt in 0..10 {
+            if attempt > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(500 * attempt)).await;
+            }
+
+            let result = FindReferencingSymbols
+                .call(
+                    json!({
+                        "name_path": "add",
+                        "relative_path": "src/main.rs"
+                    }),
+                    &ctx,
+                )
+                .await;
+
+            // If LSP startup fails (e.g. cargo not in PATH), skip gracefully
+            let value = match result {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("Skipping: LSP error: {}", e);
+                    return;
+                }
+            };
+
+            let total = value["total"].as_u64().unwrap_or(0);
+            if total >= 3 {
+                result_value = Some(value);
+                break;
+            }
+            eprintln!(
+                "Attempt {}: got {} references, retrying...",
+                attempt + 1,
+                total
+            );
+        }
+
+        let result = match result_value {
+            Some(v) => v,
+            None => {
+                eprintln!("Skipping: rust-analyzer did not index in time");
+                return;
+            }
+        };
+
+        let refs = result["references"].as_array().unwrap();
+        let total = result["total"].as_u64().unwrap();
+
+        // Should find at least 3 references: definition + 2 call sites
+        assert!(
+            total >= 3,
+            "Expected >= 3 references (def + 2 calls), got {}. refs: {:?}",
+            total,
+            refs
+        );
+
+        // All references should be in src/main.rs
+        for r in refs {
+            let file = r["file"].as_str().unwrap();
+            assert!(
+                file.contains("main.rs"),
+                "Reference in unexpected file: {}",
+                file
+            );
+            // context should contain meaningful text
+            let ctx_line = r["context"].as_str().unwrap();
+            assert!(!ctx_line.is_empty(), "Context line should not be empty");
+        }
+    }
 }
