@@ -218,7 +218,7 @@ fn cosine_sim(a: &[f32], b: &[f32], a_norm: f32) -> f32 {
 pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
     use crate::ast::detect_language;
     use crate::config::ProjectConfig;
-    use crate::embed::{chunker, create_embedder, Embedding};
+    use crate::embed::{create_embedder, Embedding};
     use std::sync::Arc;
     use tokio::sync::Semaphore;
     use tokio::task::JoinSet;
@@ -233,7 +233,7 @@ pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
         rel: String,
         hash: String,
         lang: String,
-        chunks: Vec<chunker::RawChunk>,
+        chunks: Vec<super::chunker::RawChunk>,
     }
 
     let ignored = config.ignored_paths.patterns.clone();
@@ -277,19 +277,13 @@ pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
             Ok(s) => s,
             Err(_) => continue,
         };
-        let chunks = if lang == "markdown" {
-            chunker::split_markdown(
-                &source,
-                config.embeddings.chunk_size,
-                config.embeddings.chunk_overlap,
-            )
-        } else {
-            chunker::split(
-                &source,
-                config.embeddings.chunk_size,
-                config.embeddings.chunk_overlap,
-            )
-        };
+        let chunks = super::ast_chunker::split_file(
+            &source,
+            lang,
+            path,
+            config.embeddings.chunk_size,
+            config.embeddings.chunk_overlap,
+        );
         if chunks.is_empty() {
             continue;
         }
@@ -307,7 +301,7 @@ pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
         rel: String,
         hash: String,
         lang: String,
-        chunks: Vec<chunker::RawChunk>,
+        chunks: Vec<super::chunker::RawChunk>,
         embeddings: Vec<Embedding>,
     }
 
