@@ -21,7 +21,14 @@ const DEFAULT_DENIED_PREFIXES: &[&str] = &[
     "~/.kube/config",
 ];
 
+#[cfg(target_os = "linux")]
 const DEFAULT_DENIED_EXACT: &[&str] = &["/etc/shadow", "/etc/gshadow"];
+
+#[cfg(target_os = "macos")]
+const DEFAULT_DENIED_EXACT: &[&str] = &["/etc/master.passwd"];
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+const DEFAULT_DENIED_EXACT: &[&str] = &[];
 
 // ---------------------------------------------------------------------------
 // Public config type
@@ -94,6 +101,13 @@ fn denied_read_paths(config: &PathSecurityConfig) -> Vec<PathBuf> {
     {
         if let Some(expanded) = expand_home(p) {
             denied.push(expanded);
+        }
+    }
+    // Windows-specific system paths
+    #[cfg(windows)]
+    {
+        if let Ok(sysroot) = std::env::var("SYSTEMROOT") {
+            denied.push(PathBuf::from(&sysroot).join("System32").join("config"));
         }
     }
     for p in &config.denied_read_patterns {
@@ -349,6 +363,7 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn read_etc_shadow_denied() {
         let result = validate_read_path("/etc/shadow", None, &default_config());
