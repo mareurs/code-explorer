@@ -127,4 +127,33 @@ mod tests {
         assert!(result.contains("run `onboarding`"));
         assert!(result.contains("run `index_project`"));
     }
+
+    #[test]
+    fn onboarding_prompt_contains_key_sections() {
+        assert!(ONBOARDING_PROMPT.contains("## What to Explore"));
+        assert!(ONBOARDING_PROMPT.contains("## Memories to Create"));
+        assert!(ONBOARDING_PROMPT.contains("project-overview"));
+        assert!(ONBOARDING_PROMPT.contains("architecture"));
+        assert!(ONBOARDING_PROMPT.contains("conventions"));
+        assert!(ONBOARDING_PROMPT.contains("development-commands"));
+        assert!(ONBOARDING_PROMPT.contains("task-completion-checklist"));
+    }
+
+    #[test]
+    fn build_onboarding_includes_languages() {
+        let result = build_onboarding_prompt(
+            &["rust".into(), "python".into()],
+            &["src/".into(), "tests/".into()],
+        );
+        assert!(result.contains("rust, python"));
+        assert!(result.contains("src/"));
+        assert!(result.contains("Detected Project Information"));
+    }
+
+    #[test]
+    fn build_onboarding_handles_empty() {
+        let result = build_onboarding_prompt(&[], &[]);
+        assert!(result.contains("## What to Explore"));
+        assert!(!result.contains("Detected languages"));
+    }
 }
