@@ -66,6 +66,11 @@ pub fn open_db(project_root: &Path) -> Result<Connection> {
             rowid     INTEGER PRIMARY KEY,
             embedding BLOB NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS meta (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
         ",
     )?;
 
@@ -383,6 +388,25 @@ pub fn index_stats(conn: &Connection) -> Result<IndexStats> {
     })
 }
 
+/// Read a value from the `meta` key-value table.
+pub fn get_meta(conn: &Connection, key: &str) -> Result<Option<String>> {
+    let mut stmt = conn.prepare("SELECT value FROM meta WHERE key = ?1")?;
+    let mut rows = stmt.query([key])?;
+    match rows.next()? {
+        Some(row) => Ok(Some(row.get(0)?)),
+        None => Ok(None),
+    }
+}
+
+/// Write (insert or replace) a value in the `meta` key-value table.
+pub fn set_meta(conn: &Connection, key: &str, value: &str) -> Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+        rusqlite::params![key, value],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -563,5 +587,38 @@ mod tests {
         std::fs::write(&f1, b"fn a() {}").unwrap();
         std::fs::write(&f2, b"fn b() {}").unwrap();
         assert_ne!(hash_file(&f1).unwrap(), hash_file(&f2).unwrap());
+    }
+
+    #[test]
+    fn open_db_creates_meta_table() {
+        let (_dir, conn) = open_test_db();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM meta", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn meta_get_missing_key_returns_none() {
+        let (_dir, conn) = open_test_db();
+        let val = get_meta(&conn, "embed_model").unwrap();
+        assert!(val.is_none());
+    }
+
+    #[test]
+    fn meta_set_then_get_roundtrip() {
+        let (_dir, conn) = open_test_db();
+        set_meta(&conn, "embed_model", "ollama:mxbai-embed-large").unwrap();
+        let val = get_meta(&conn, "embed_model").unwrap();
+        assert_eq!(val.as_deref(), Some("ollama:mxbai-embed-large"));
+    }
+
+    #[test]
+    fn meta_set_overwrites_existing_value() {
+        let (_dir, conn) = open_test_db();
+        set_meta(&conn, "embed_model", "old-model").unwrap();
+        set_meta(&conn, "embed_model", "new-model").unwrap();
+        let val = get_meta(&conn, "embed_model").unwrap();
+        assert_eq!(val.as_deref(), Some("new-model"));
     }
 }
