@@ -34,8 +34,10 @@ pub fn detect_language(path: &Path) -> Option<&'static str> {
     match path.extension()?.to_str()? {
         "rs" => Some("rust"),
         "py" => Some("python"),
-        "ts" | "tsx" => Some("typescript"),
-        "js" | "jsx" => Some("javascript"),
+        "ts" => Some("typescript"),
+        "tsx" => Some("tsx"),
+        "js" => Some("javascript"),
+        "jsx" => Some("jsx"),
         "go" => Some("go"),
         "java" => Some("java"),
         "kt" | "kts" => Some("kotlin"),

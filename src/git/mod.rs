@@ -52,7 +52,7 @@ fn commit_touches_file(
     file: &Path,
 ) -> Result<bool> {
     let tree = commit.tree()?;
-    let file_str = file.to_string_lossy();
+    let _file_str = file.to_string_lossy();
 
     if commit.parent_count() == 0 {
         // Initial commit — check if file exists in tree

@@ -20,6 +20,9 @@ async fn resolve_path(ctx: &ToolContext, relative_path: &str) -> anyhow::Result<
 }
 
 /// Detect language from path and get an LSP client, or error if unavailable.
+///
+/// Returns `(client, lsp_language_id)` where `lsp_language_id` is the identifier
+/// expected by `textDocument/didOpen` (e.g. `"typescriptreact"` for `.tsx` files).
 async fn get_lsp_client(
     ctx: &ToolContext,
     path: &Path,
@@ -28,7 +31,8 @@ async fn get_lsp_client(
         .ok_or_else(|| anyhow!("cannot detect language for: {:?}", path))?;
     let root = ctx.agent.require_project_root().await?;
     let client = ctx.lsp.get_or_start(lang, &root).await?;
-    Ok((client, lang.to_string()))
+    let language_id = crate::lsp::servers::lsp_language_id(lang);
+    Ok((client, language_id.to_string()))
 }
 
 /// Convert a `SymbolInfo` tree to JSON with optional body inclusion.
@@ -121,8 +125,9 @@ impl Tool for GetSymbolsOverview {
                     continue;
                 };
                 let root = ctx.agent.require_project_root().await?;
+                let language_id = crate::lsp::servers::lsp_language_id(lang);
                 if let Ok(client) = ctx.lsp.get_or_start(lang, &root).await {
-                    if let Ok(symbols) = client.document_symbols(path, lang).await {
+                    if let Ok(symbols) = client.document_symbols(path, language_id).await {
                         let rel = path.strip_prefix(&root).unwrap_or(path);
                         let json_symbols: Vec<Value> = symbols
                             .iter()
@@ -186,10 +191,10 @@ impl Tool for FindSymbol {
             let mut files = vec![];
             let walker = ignore::WalkBuilder::new(&root).build();
             for entry in walker.flatten() {
-                if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
-                    if ast::detect_language(entry.path()).is_some() {
-                        files.push(entry.path().to_path_buf());
-                    }
+                if entry.file_type().map(|t| t.is_file()).unwrap_or(false)
+                    && ast::detect_language(entry.path()).is_some()
+                {
+                    files.push(entry.path().to_path_buf());
                 }
             }
             files
@@ -202,10 +207,11 @@ impl Tool for FindSymbol {
             let Some(lang) = ast::detect_language(file_path) else {
                 continue;
             };
+            let language_id = crate::lsp::servers::lsp_language_id(lang);
             let Ok(client) = ctx.lsp.get_or_start(lang, &root).await else {
                 continue;
             };
-            let Ok(symbols) = client.document_symbols(file_path, lang).await else {
+            let Ok(symbols) = client.document_symbols(file_path, language_id).await else {
                 continue;
             };
 

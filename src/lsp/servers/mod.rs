@@ -20,7 +20,7 @@ pub fn default_config(language: &str, workspace_root: &Path) -> Option<LspServer
             args: vec!["--stdio".into()],
             workspace_root: root,
         }),
-        "typescript" | "javascript" => Some(LspServerConfig {
+        "typescript" | "javascript" | "tsx" | "jsx" => Some(LspServerConfig {
             command: "typescript-language-server".into(),
             args: vec!["--stdio".into()],
             workspace_root: root,
@@ -56,5 +56,28 @@ pub fn default_config(language: &str, workspace_root: &Path) -> Option<LspServer
             workspace_root: root,
         }),
         _ => None,
+    }
+}
+
+/// Map an internal language key to the LSP `languageId` used in textDocument/didOpen.
+///
+/// Most languages use the same string for both, but some (e.g. TSX, JSX) differ
+/// because the LSP spec defines `"typescriptreact"` / `"javascriptreact"`.
+pub fn lsp_language_id(lang: &str) -> &str {
+    match lang {
+        "tsx" => "typescriptreact",
+        "jsx" => "javascriptreact",
+        "rust" => "rust",
+        "python" => "python",
+        "typescript" => "typescript",
+        "javascript" => "javascript",
+        "go" => "go",
+        "java" => "java",
+        "kotlin" => "kotlin",
+        "c" => "c",
+        "cpp" => "cpp",
+        "csharp" => "csharp",
+        "ruby" => "ruby",
+        other => other,
     }
 }

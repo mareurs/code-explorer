@@ -322,7 +322,7 @@ fn extract_rust_symbols(node: Node, source: &str, file: &PathBuf, prefix: &str) 
 fn extract_rust_impl_methods(
     body: Node,
     source: &str,
-    file: &PathBuf,
+    file: &Path,
     prefix: &str,
 ) -> Vec<SymbolInfo> {
     let mut methods = Vec::new();
@@ -335,7 +335,7 @@ fn extract_rust_impl_methods(
                     name_path: make_name_path(prefix, &name),
                     name,
                     kind: SymbolKind::Method,
-                    file: file.clone(),
+                    file: file.to_path_buf(),
                     start_line: child.start_position().row as u32,
                     end_line: child.end_position().row as u32,
                     start_col: child.start_position().column as u32,
@@ -351,7 +351,7 @@ fn extract_rust_impl_methods(
 fn extract_enum_variants(
     node: Node,
     source: &str,
-    file: &PathBuf,
+    file: &Path,
     prefix: &str,
 ) -> Vec<SymbolInfo> {
     let mut variants = Vec::new();
@@ -367,7 +367,7 @@ fn extract_enum_variants(
                     name_path: make_name_path(prefix, &name),
                     name,
                     kind: SymbolKind::EnumMember,
-                    file: file.clone(),
+                    file: file.to_path_buf(),
                     start_line: child.start_position().row as u32,
                     end_line: child.end_position().row as u32,
                     start_col: child.start_position().column as u32,
@@ -486,7 +486,7 @@ fn extract_go_receiver<'a>(node: Node<'a>, source: &'a str) -> &'a str {
 // Go
 // ---------------------------------------------------------------------------
 
-fn extract_go_symbols(node: Node, source: &str, file: &PathBuf, prefix: &str) -> Vec<SymbolInfo> {
+fn extract_go_symbols(node: Node, source: &str, file: &Path, prefix: &str) -> Vec<SymbolInfo> {
     let mut symbols = Vec::new();
     let mut cursor = node.walk();
 
@@ -498,7 +498,7 @@ fn extract_go_symbols(node: Node, source: &str, file: &PathBuf, prefix: &str) ->
                         name_path: make_name_path(prefix, &name),
                         name,
                         kind: SymbolKind::Function,
-                        file: file.clone(),
+                        file: file.to_path_buf(),
                         start_line: child.start_position().row as u32,
                         end_line: child.end_position().row as u32,
                         start_col: child.start_position().column as u32,
@@ -520,7 +520,7 @@ fn extract_go_symbols(node: Node, source: &str, file: &PathBuf, prefix: &str) ->
                         name_path: np,
                         name,
                         kind: SymbolKind::Method,
-                        file: file.clone(),
+                        file: file.to_path_buf(),
                         start_line: child.start_position().row as u32,
                         end_line: child.end_position().row as u32,
                         start_col: child.start_position().column as u32,
@@ -550,7 +550,7 @@ fn extract_go_symbols(node: Node, source: &str, file: &PathBuf, prefix: &str) ->
                                 name_path: np,
                                 name,
                                 kind,
-                                file: file.clone(),
+                                file: file.to_path_buf(),
                                 start_line: spec.start_position().row as u32,
                                 end_line: spec.end_position().row as u32,
                                 start_col: spec.start_position().column as u32,
@@ -570,7 +570,7 @@ fn extract_go_symbols(node: Node, source: &str, file: &PathBuf, prefix: &str) ->
 fn extract_go_type_children(
     spec: Node,
     source: &str,
-    file: &PathBuf,
+    file: &Path,
     prefix: &str,
 ) -> Vec<SymbolInfo> {
     let mut children = Vec::new();
@@ -590,7 +590,7 @@ fn extract_go_type_children(
                                 name_path: make_name_path(prefix, &name),
                                 name,
                                 kind: SymbolKind::Field,
-                                file: file.clone(),
+                                file: file.to_path_buf(),
                                 start_line: field.start_position().row as u32,
                                 end_line: field.end_position().row as u32,
                                 start_col: field.start_position().column as u32,
@@ -611,7 +611,7 @@ fn extract_go_type_children(
                             name_path: make_name_path(prefix, &name),
                             name,
                             kind: SymbolKind::Method,
-                            file: file.clone(),
+                            file: file.to_path_buf(),
                             start_line: child.start_position().row as u32,
                             end_line: child.end_position().row as u32,
                             start_col: child.start_position().column as u32,
@@ -791,7 +791,7 @@ fn extract_java_class_members(
 fn extract_java_enum_constants(
     node: Node,
     source: &str,
-    file: &PathBuf,
+    file: &Path,
     prefix: &str,
 ) -> Vec<SymbolInfo> {
     let mut constants = Vec::new();
@@ -807,7 +807,7 @@ fn extract_java_enum_constants(
                     name_path: make_name_path(prefix, &name),
                     name,
                     kind: SymbolKind::EnumMember,
-                    file: file.clone(),
+                    file: file.to_path_buf(),
                     start_line: child.start_position().row as u32,
                     end_line: child.end_position().row as u32,
                     start_col: child.start_position().column as u32,
@@ -952,19 +952,13 @@ fn extract_kotlin_property_name(node: Node, source: &str) -> Option<String> {
     let var_decl = node
         .children(&mut cursor)
         .find(|c| c.kind() == "variable_declaration");
-    let var_decl = match var_decl {
-        Some(v) => v,
-        None => return None,
-    };
+    let var_decl = var_decl?;
     // variable_declaration has an identifier child
     let mut cursor2 = var_decl.walk();
     let ident = var_decl
         .children(&mut cursor2)
         .find(|c| c.kind() == "identifier");
-    let ident = match ident {
-        Some(i) => i,
-        None => return None,
-    };
+    let ident = ident?;
     ident
         .utf8_text(source.as_bytes())
         .ok()
@@ -1181,7 +1175,7 @@ fn extract_ts_symbols(node: Node, source: &str, file: &PathBuf, prefix: &str) ->
 fn extract_ts_class_members(
     body: Node,
     source: &str,
-    file: &PathBuf,
+    file: &Path,
     prefix: &str,
 ) -> Vec<SymbolInfo> {
     let mut members = Vec::new();
@@ -1195,7 +1189,7 @@ fn extract_ts_class_members(
                         name_path: make_name_path(prefix, &name),
                         name,
                         kind: SymbolKind::Method,
-                        file: file.clone(),
+                        file: file.to_path_buf(),
                         start_line: child.start_position().row as u32,
                         end_line: child.end_position().row as u32,
                         start_col: child.start_position().column as u32,
@@ -1209,7 +1203,7 @@ fn extract_ts_class_members(
                         name_path: make_name_path(prefix, &name),
                         name,
                         kind: SymbolKind::Property,
-                        file: file.clone(),
+                        file: file.to_path_buf(),
                         start_line: child.start_position().row as u32,
                         end_line: child.end_position().row as u32,
                         start_col: child.start_position().column as u32,

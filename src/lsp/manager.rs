@@ -7,7 +7,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use tokio::sync::Mutex;
 
-use super::client::{LspClient, LspServerConfig};
+use super::client::LspClient;
 use super::servers;
 
 /// Manages LSP client instances, one per language.
@@ -17,6 +17,12 @@ use super::servers;
 /// shut down and a new one started.
 pub struct LspManager {
     clients: Mutex<HashMap<String, Arc<LspClient>>>,
+}
+
+impl Default for LspManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LspManager {
