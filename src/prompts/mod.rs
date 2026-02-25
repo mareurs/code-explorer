@@ -48,10 +48,61 @@ pub fn build_server_instructions(project_status: Option<&ProjectStatus>) -> Stri
 }
 
 /// Dynamic project status used to build server instructions.
+#[derive(Debug)]
 pub struct ProjectStatus {
     pub name: String,
     pub path: String,
     pub languages: Vec<String>,
     pub memories: Vec<String>,
     pub has_index: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn static_instructions_contain_key_sections() {
+        assert!(SERVER_INSTRUCTIONS.contains("## How to Explore Code"));
+        assert!(SERVER_INSTRUCTIONS.contains("## Workflow Patterns"));
+        assert!(SERVER_INSTRUCTIONS.contains("## Rules"));
+    }
+
+    #[test]
+    fn build_without_project_returns_static() {
+        let result = build_server_instructions(None);
+        assert_eq!(result, SERVER_INSTRUCTIONS);
+        assert!(!result.contains("## Project Status"));
+    }
+
+    #[test]
+    fn build_with_project_appends_status() {
+        let status = ProjectStatus {
+            name: "my-project".into(),
+            path: "/home/user/my-project".into(),
+            languages: vec!["rust".into(), "python".into()],
+            memories: vec!["architecture".into(), "conventions".into()],
+            has_index: true,
+        };
+        let result = build_server_instructions(Some(&status));
+        assert!(result.contains("## Project Status"));
+        assert!(result.contains("my-project"));
+        assert!(result.contains("rust, python"));
+        assert!(result.contains("architecture, conventions"));
+        assert!(result.contains("Semantic index:** Built"));
+    }
+
+    #[test]
+    fn build_with_no_memories_suggests_onboarding() {
+        let status = ProjectStatus {
+            name: "new-project".into(),
+            path: "/tmp/new".into(),
+            languages: vec![],
+            memories: vec![],
+            has_index: false,
+        };
+        let result = build_server_instructions(Some(&status));
+        assert!(result.contains("run `onboarding`"));
+        assert!(result.contains("run `index_project`"));
+    }
 }
