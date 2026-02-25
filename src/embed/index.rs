@@ -210,21 +210,38 @@ fn cosine_sim(a: &[f32], b: &[f32], a_norm: f32) -> f32 {
 }
 
 /// Build or incrementally update the embedding index for a project.
+///
+/// Three-phase pipeline for maximum throughput:
+///   1. Walk + hash + chunk  (sequential, CPU-bound)
+///   2. Embed concurrently   (up to 4 in-flight HTTP requests at once)
+///   3. DB writes in a single transaction  (eliminates per-chunk commit overhead)
 pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
     use crate::ast::detect_language;
     use crate::config::ProjectConfig;
-    use crate::embed::{chunker, create_embedder};
+    use crate::embed::{chunker, create_embedder, Embedding};
+    use std::sync::Arc;
+    use tokio::sync::Semaphore;
+    use tokio::task::JoinSet;
 
     let config = ProjectConfig::load_or_default(project_root)?;
     let conn = open_db(project_root)?;
-    let embedder = create_embedder(&config.embeddings.model).await?;
+    let embedder: Arc<dyn crate::embed::Embedder> =
+        Arc::from(create_embedder(&config.embeddings.model).await?);
+
+    // ── Phase 1: Walk, hash, chunk ────────────────────────────────────────────
+    struct FileWork {
+        rel: String,
+        hash: String,
+        lang: String,
+        chunks: Vec<chunker::RawChunk>,
+    }
 
     let walker = ignore::WalkBuilder::new(project_root)
         .hidden(true)
         .git_ignore(true)
         .build();
 
-    let mut indexed = 0usize;
+    let mut works: Vec<FileWork> = Vec::new();
     let mut skipped = 0usize;
 
     for entry in walker.flatten() {
@@ -232,7 +249,7 @@ pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
         if !path.is_file() {
             continue;
         }
-        let Some(_lang) = detect_language(path) else {
+        let Some(lang) = detect_language(path) else {
             continue;
         };
 
@@ -242,7 +259,6 @@ pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
             .to_string();
         let hash = hash_file(path)?;
 
-        // Skip if unchanged and not forcing
         if !force {
             if let Some(stored) = get_file_hash(&conn, &rel)? {
                 if stored == hash {
@@ -252,41 +268,84 @@ pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
             }
         }
 
-        // Re-index this file
-        delete_file_chunks(&conn, &rel)?;
-
         let source = match std::fs::read_to_string(path) {
             Ok(s) => s,
-            Err(_) => continue, // skip binary files
+            Err(_) => continue,
         };
-
-        let lang = detect_language(path).unwrap_or("unknown");
-        let raw_chunks = chunker::split(
+        let chunks = chunker::split(
             &source,
             config.embeddings.chunk_size,
             config.embeddings.chunk_overlap,
         );
+        if chunks.is_empty() {
+            continue;
+        }
 
-        let texts: Vec<&str> = raw_chunks.iter().map(|c| c.content.as_str()).collect();
-        let embeddings = embedder.embed(&texts).await?;
+        works.push(FileWork {
+            rel,
+            hash,
+            lang: lang.to_string(),
+            chunks,
+        });
+    }
 
-        for (raw, emb) in raw_chunks.iter().zip(embeddings.iter()) {
+    // ── Phase 2: Concurrent embedding ─────────────────────────────────────────
+    struct FileResult {
+        rel: String,
+        hash: String,
+        lang: String,
+        chunks: Vec<chunker::RawChunk>,
+        embeddings: Vec<Embedding>,
+    }
+
+    // Limit concurrent in-flight requests so we don't overwhelm Ollama
+    const MAX_CONCURRENT: usize = 4;
+    let sem = Arc::new(Semaphore::new(MAX_CONCURRENT));
+    let mut tasks: JoinSet<Result<FileResult>> = JoinSet::new();
+
+    for work in works {
+        let embedder = Arc::clone(&embedder);
+        let sem = Arc::clone(&sem);
+        tasks.spawn(async move {
+            let _permit = sem.acquire().await.expect("semaphore closed");
+            let texts: Vec<&str> = work.chunks.iter().map(|c| c.content.as_str()).collect();
+            let embeddings = embedder.embed(&texts).await?;
+            Ok(FileResult {
+                rel: work.rel,
+                hash: work.hash,
+                lang: work.lang,
+                chunks: work.chunks,
+                embeddings,
+            })
+        });
+    }
+
+    let mut results: Vec<FileResult> = Vec::new();
+    while let Some(res) = tasks.join_next().await {
+        results.push(res.map_err(|e| anyhow::anyhow!(e))??);
+    }
+
+    // ── Phase 3: Single transaction for all DB writes ─────────────────────────
+    let indexed = results.len();
+    conn.execute_batch("BEGIN")?;
+    for result in results {
+        delete_file_chunks(&conn, &result.rel)?;
+        for (raw, emb) in result.chunks.iter().zip(result.embeddings.iter()) {
             let chunk = CodeChunk {
                 id: None,
-                file_path: rel.clone(),
-                language: lang.to_string(),
+                file_path: result.rel.clone(),
+                language: result.lang.clone(),
                 content: raw.content.clone(),
                 start_line: raw.start_line,
                 end_line: raw.end_line,
-                file_hash: hash.clone(),
+                file_hash: result.hash.clone(),
             };
             insert_chunk(&conn, &chunk, emb)?;
         }
-
-        upsert_file_hash(&conn, &rel, &hash)?;
-        indexed += 1;
-        tracing::debug!("indexed {} ({} chunks)", rel, raw_chunks.len());
+        upsert_file_hash(&conn, &result.rel, &result.hash)?;
+        tracing::debug!("indexed {} ({} chunks)", result.rel, result.chunks.len());
     }
+    conn.execute_batch("COMMIT")?;
 
     tracing::info!(
         "Index complete: {} files indexed, {} unchanged",
