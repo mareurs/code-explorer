@@ -38,6 +38,14 @@ pub struct PathSecurityConfig {
     pub shell_command_mode: String,
     /// Max bytes for shell command stdout/stderr (default 100KB)
     pub shell_output_limit_bytes: usize,
+    /// Enable shell command execution (default: false)
+    pub shell_enabled: bool,
+    /// Enable file write tools (default: true)
+    pub file_write_enabled: bool,
+    /// Enable git tools (default: true)
+    pub git_enabled: bool,
+    /// Enable semantic search and indexing tools (default: true)
+    pub indexing_enabled: bool,
 }
 
 impl Default for PathSecurityConfig {
@@ -47,6 +55,10 @@ impl Default for PathSecurityConfig {
             extra_write_roots: Vec::new(),
             shell_command_mode: "warn".into(),
             shell_output_limit_bytes: 100 * 1024,
+            shell_enabled: false,
+            file_write_enabled: true,
+            git_enabled: true,
+            indexing_enabled: true,
         }
     }
 }
@@ -204,6 +216,52 @@ pub fn validate_write_path(
     }
 
     Ok(resolved)
+}
+
+// ---------------------------------------------------------------------------
+// Tool access controls
+// ---------------------------------------------------------------------------
+
+/// Check if a tool is allowed by the current security configuration.
+/// Returns Ok(()) if allowed, or an error message explaining how to enable it.
+pub fn check_tool_access(tool_name: &str, config: &PathSecurityConfig) -> Result<()> {
+    match tool_name {
+        "execute_shell_command" => {
+            if !config.shell_enabled {
+                bail!(
+                    "Shell commands are disabled. Set security.shell_enabled = true in .code-explorer/project.toml to enable."
+                );
+            }
+        }
+        "create_text_file"
+        | "replace_content"
+        | "replace_symbol_body"
+        | "insert_before_symbol"
+        | "insert_after_symbol"
+        | "rename_symbol" => {
+            if !config.file_write_enabled {
+                bail!(
+                    "File write tools are disabled. Set security.file_write_enabled = true in .code-explorer/project.toml to enable."
+                );
+            }
+        }
+        "git_blame" | "git_log" | "git_diff" => {
+            if !config.git_enabled {
+                bail!(
+                    "Git tools are disabled. Set security.git_enabled = true in .code-explorer/project.toml to enable."
+                );
+            }
+        }
+        "semantic_search" | "index_project" | "index_status" => {
+            if !config.indexing_enabled {
+                bail!(
+                    "Indexing tools are disabled. Set security.indexing_enabled = true in .code-explorer/project.toml to enable."
+                );
+            }
+        }
+        _ => {} // All other tools are always allowed
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -458,5 +516,117 @@ mod tests {
             // After canonicalization, this resolves outside the project
             assert!(result.is_err());
         }
+    }
+
+    // ── Tool access controls ─────────────────────────────────────────────
+
+    #[test]
+    fn shell_disabled_by_default() {
+        let config = PathSecurityConfig::default();
+        assert!(!config.shell_enabled);
+        assert!(check_tool_access("execute_shell_command", &config).is_err());
+    }
+
+    #[test]
+    fn shell_enabled_when_configured() {
+        let mut config = PathSecurityConfig::default();
+        config.shell_enabled = true;
+        assert!(check_tool_access("execute_shell_command", &config).is_ok());
+    }
+
+    #[test]
+    fn file_write_enabled_by_default() {
+        let config = PathSecurityConfig::default();
+        assert!(config.file_write_enabled);
+        assert!(check_tool_access("create_text_file", &config).is_ok());
+        assert!(check_tool_access("replace_content", &config).is_ok());
+        assert!(check_tool_access("replace_symbol_body", &config).is_ok());
+    }
+
+    #[test]
+    fn file_write_disabled_blocks_all_write_tools() {
+        let mut config = PathSecurityConfig::default();
+        config.file_write_enabled = false;
+        for tool in &[
+            "create_text_file",
+            "replace_content",
+            "replace_symbol_body",
+            "insert_before_symbol",
+            "insert_after_symbol",
+            "rename_symbol",
+        ] {
+            assert!(
+                check_tool_access(tool, &config).is_err(),
+                "{} should be blocked",
+                tool
+            );
+        }
+    }
+
+    #[test]
+    fn git_disabled_blocks_git_tools() {
+        let mut config = PathSecurityConfig::default();
+        config.git_enabled = false;
+        for tool in &["git_blame", "git_log", "git_diff"] {
+            assert!(
+                check_tool_access(tool, &config).is_err(),
+                "{} should be blocked",
+                tool
+            );
+        }
+    }
+
+    #[test]
+    fn indexing_disabled_blocks_search_tools() {
+        let mut config = PathSecurityConfig::default();
+        config.indexing_enabled = false;
+        for tool in &["semantic_search", "index_project", "index_status"] {
+            assert!(
+                check_tool_access(tool, &config).is_err(),
+                "{} should be blocked",
+                tool
+            );
+        }
+    }
+
+    #[test]
+    fn read_tools_always_allowed() {
+        let mut config = PathSecurityConfig::default();
+        config.shell_enabled = false;
+        config.file_write_enabled = false;
+        config.git_enabled = false;
+        config.indexing_enabled = false;
+        // Read tools should always work
+        for tool in &[
+            "read_file",
+            "list_dir",
+            "search_for_pattern",
+            "find_file",
+            "find_symbol",
+            "get_symbols_overview",
+            "list_functions",
+            "onboarding",
+            "activate_project",
+        ] {
+            assert!(
+                check_tool_access(tool, &config).is_ok(),
+                "{} should always be allowed",
+                tool
+            );
+        }
+    }
+
+    #[test]
+    fn check_tool_access_error_message_includes_config_hint() {
+        let config = PathSecurityConfig::default();
+        let err = check_tool_access("execute_shell_command", &config).unwrap_err();
+        assert!(
+            err.to_string().contains("shell_enabled"),
+            "error should mention config key"
+        );
+        assert!(
+            err.to_string().contains("project.toml"),
+            "error should mention config file"
+        );
     }
 }

@@ -431,6 +431,113 @@ impl Tool for ReplaceContent {
     }
 }
 
+// ── edit_lines ──────────────────────────────────────────────────────────────
+
+pub struct EditLines;
+
+#[async_trait::async_trait]
+impl Tool for EditLines {
+    fn name(&self) -> &str {
+        "edit_lines"
+    }
+
+    fn description(&self) -> &str {
+        "Line-based splice edit. Replace, insert, or delete lines by position — no need to send old content."
+    }
+
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "required": ["path", "start_line", "delete_count"],
+            "properties": {
+                "path": { "type": "string", "description": "File path" },
+                "start_line": { "type": "integer", "description": "1-based line where edit begins" },
+                "delete_count": { "type": "integer", "description": "Lines to remove (0 = pure insertion)" },
+                "new_text": { "type": "string", "description": "Text to insert (may contain newlines). Omit for pure deletion." }
+            }
+        })
+    }
+
+    async fn call(&self, input: Value, ctx: &ToolContext) -> Result<Value> {
+        let path = input["path"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing 'path' parameter"))?;
+        let start_line = input["start_line"]
+            .as_u64()
+            .ok_or_else(|| anyhow::anyhow!("missing 'start_line' parameter"))?
+            as usize;
+        let delete_count = input["delete_count"]
+            .as_u64()
+            .ok_or_else(|| anyhow::anyhow!("missing 'delete_count' parameter"))?
+            as usize;
+        let new_text = input["new_text"].as_str().unwrap_or("");
+
+        if start_line == 0 {
+            anyhow::bail!("start_line must be >= 1 (1-based)");
+        }
+
+        let root = ctx.agent.require_project_root().await?;
+        let security = ctx.agent.security_config().await;
+        let resolved = crate::util::path_security::validate_write_path(path, &root, &security)?;
+
+        let content = std::fs::read_to_string(&resolved)?;
+        let had_trailing_newline = content.ends_with('\n');
+        let mut lines: Vec<&str> = content.lines().collect();
+        let total = lines.len();
+
+        // start_line is 1-based; convert to 0-based index
+        let idx = start_line - 1;
+
+        // Allow idx == total for appending at end
+        if idx > total {
+            anyhow::bail!(
+                "start_line {} is beyond end of file ({} lines)",
+                start_line,
+                total
+            );
+        }
+
+        if idx + delete_count > total {
+            anyhow::bail!(
+                "cannot delete {} lines starting at line {} (file has {} lines)",
+                delete_count,
+                start_line,
+                total
+            );
+        }
+
+        // Build new text lines
+        let insert_lines: Vec<&str> = if new_text.is_empty() {
+            vec![]
+        } else {
+            new_text.lines().collect()
+        };
+
+        let lines_inserted = insert_lines.len();
+
+        // Splice: remove delete_count lines at idx, insert new lines
+        let tail: Vec<&str> = lines.split_off(idx + delete_count);
+        lines.truncate(idx);
+        lines.extend(insert_lines);
+        lines.extend(tail);
+
+        // Write back
+        let mut out = lines.join("\n");
+        if had_trailing_newline && !out.is_empty() {
+            out.push('\n');
+        }
+        std::fs::write(&resolved, &out)?;
+
+        Ok(json!({
+            "status": "ok",
+            "path": resolved.display().to_string(),
+            "lines_deleted": delete_count,
+            "lines_inserted": lines_inserted,
+            "new_total_lines": lines.len()
+        }))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1399,5 +1506,184 @@ mod tests {
             )
             .await;
         assert!(result.is_err(), "huge regex in replace should be rejected");
+    }
+
+    #[tokio::test]
+    async fn edit_lines_replace_single_line() {
+        let (dir, ctx) = project_ctx().await;
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "line1\nline2\nline3\n").unwrap();
+
+        let result = EditLines
+            .call(
+                json!({
+                    "path": file.to_str().unwrap(),
+                    "start_line": 2,
+                    "delete_count": 1,
+                    "new_text": "replaced"
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["lines_deleted"], 1);
+        assert_eq!(result["lines_inserted"], 1);
+        let content = std::fs::read_to_string(&file).unwrap();
+        assert_eq!(content, "line1\nreplaced\nline3\n");
+    }
+
+    #[tokio::test]
+    async fn edit_lines_replace_multiple_lines() {
+        let (dir, ctx) = project_ctx().await;
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "a\nb\nc\nd\n").unwrap();
+
+        let result = EditLines
+            .call(
+                json!({
+                    "path": file.to_str().unwrap(),
+                    "start_line": 2,
+                    "delete_count": 2,
+                    "new_text": "X\nY\nZ"
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result["lines_deleted"], 2);
+        assert_eq!(result["lines_inserted"], 3);
+        let content = std::fs::read_to_string(&file).unwrap();
+        assert_eq!(content, "a\nX\nY\nZ\nd\n");
+    }
+
+    #[tokio::test]
+    async fn edit_lines_insert_before_line() {
+        let (dir, ctx) = project_ctx().await;
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "line1\nline2\n").unwrap();
+
+        let result = EditLines
+            .call(
+                json!({
+                    "path": file.to_str().unwrap(),
+                    "start_line": 2,
+                    "delete_count": 0,
+                    "new_text": "inserted"
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result["lines_deleted"], 0);
+        assert_eq!(result["lines_inserted"], 1);
+        let content = std::fs::read_to_string(&file).unwrap();
+        assert_eq!(content, "line1\ninserted\nline2\n");
+    }
+
+    #[tokio::test]
+    async fn edit_lines_append_at_end() {
+        let (dir, ctx) = project_ctx().await;
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "line1\nline2\n").unwrap();
+
+        let result = EditLines
+            .call(
+                json!({
+                    "path": file.to_str().unwrap(),
+                    "start_line": 3,
+                    "delete_count": 0,
+                    "new_text": "line3"
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result["lines_deleted"], 0);
+        assert_eq!(result["lines_inserted"], 1);
+        let content = std::fs::read_to_string(&file).unwrap();
+        assert_eq!(content, "line1\nline2\nline3\n");
+    }
+
+    #[tokio::test]
+    async fn edit_lines_delete_lines() {
+        let (dir, ctx) = project_ctx().await;
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "a\nb\nc\nd\n").unwrap();
+
+        let result = EditLines
+            .call(
+                json!({
+                    "path": file.to_str().unwrap(),
+                    "start_line": 2,
+                    "delete_count": 2
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result["lines_deleted"], 2);
+        assert_eq!(result["lines_inserted"], 0);
+        let content = std::fs::read_to_string(&file).unwrap();
+        assert_eq!(content, "a\nd\n");
+    }
+
+    #[tokio::test]
+    async fn edit_lines_start_beyond_eof_errors() {
+        let (dir, ctx) = project_ctx().await;
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "line1\nline2\n").unwrap();
+
+        let result = EditLines
+            .call(
+                json!({
+                    "path": file.to_str().unwrap(),
+                    "start_line": 99,
+                    "delete_count": 0,
+                    "new_text": "nope"
+                }),
+                &ctx,
+            )
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn edit_lines_delete_past_eof_errors() {
+        let (dir, ctx) = project_ctx().await;
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "line1\nline2\n").unwrap();
+
+        let result = EditLines
+            .call(
+                json!({
+                    "path": file.to_str().unwrap(),
+                    "start_line": 2,
+                    "delete_count": 5
+                }),
+                &ctx,
+            )
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn edit_lines_missing_params_errors() {
+        let (dir, ctx) = project_ctx().await;
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "content\n").unwrap();
+
+        let result = EditLines
+            .call(json!({ "path": file.to_str().unwrap() }), &ctx)
+            .await;
+
+        assert!(result.is_err());
     }
 }

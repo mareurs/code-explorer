@@ -20,7 +20,9 @@ use crate::agent::Agent;
 use crate::tools::{
     ast::{ExtractDocstrings, ListFunctions},
     config::{ActivateProject, GetCurrentConfig},
-    file::{CreateTextFile, FindFile, ListDir, ReadFile, ReplaceContent, SearchForPattern},
+    file::{
+        CreateTextFile, EditLines, FindFile, ListDir, ReadFile, ReplaceContent, SearchForPattern,
+    },
     git::{GitBlame, GitDiff, GitLog},
     memory::{DeleteMemory, ListMemories, ReadMemory, WriteMemory},
     semantic::{IndexProject, IndexStatus, SemanticSearch},
@@ -62,6 +64,7 @@ impl CodeExplorerServer {
             Arc::new(CreateTextFile),
             Arc::new(FindFile),
             Arc::new(ReplaceContent),
+            Arc::new(EditLines),
             // Workflow tools (ExecuteShellCommand implemented; others stub)
             Arc::new(ExecuteShellCommand),
             Arc::new(Onboarding),
@@ -149,6 +152,12 @@ impl ServerHandler for CodeExplorerServer {
         let tool = self.find_tool(&req.name).ok_or_else(|| {
             McpError::invalid_params(format!("unknown tool: '{}'", req.name), None)
         })?;
+
+        // Check tool access before dispatching
+        let security = self.agent.security_config().await;
+        if let Err(e) = crate::util::path_security::check_tool_access(&req.name, &security) {
+            return Ok(CallToolResult::error(vec![Content::text(e.to_string())]));
+        }
 
         let input: Value = req
             .arguments
@@ -311,6 +320,7 @@ mod tests {
             "create_text_file",
             "find_file",
             "replace_content",
+            "edit_lines",
             "execute_shell_command",
             "onboarding",
             "check_onboarding_performed",
@@ -451,5 +461,17 @@ mod tests {
         // In the astronomically unlikely case of a collision, the test is still
         // correct — but practically this always passes.
         assert_ne!(t1, t2, "consecutive tokens should differ");
+    }
+
+    #[tokio::test]
+    async fn shell_tool_blocked_by_default() {
+        let (_dir, server) = make_server().await;
+        // Shell should be disabled by default — verify through security config
+        let security = server.agent.security_config().await;
+        assert!(!security.shell_enabled);
+        assert!(
+            crate::util::path_security::check_tool_access("execute_shell_command", &security)
+                .is_err()
+        );
     }
 }

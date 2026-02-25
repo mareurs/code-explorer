@@ -69,6 +69,18 @@ pub struct SecuritySection {
     /// Max bytes for shell command stdout/stderr (default 100KB)
     #[serde(default = "default_shell_output_limit")]
     pub shell_output_limit_bytes: usize,
+    /// Enable shell command execution (default: false — disabled for safety)
+    #[serde(default)]
+    pub shell_enabled: bool,
+    /// Enable file write tools: create_text_file, replace_content, symbol write tools (default: true)
+    #[serde(default = "default_true")]
+    pub file_write_enabled: bool,
+    /// Enable git tools: blame, log, diff (default: true)
+    #[serde(default = "default_true")]
+    pub git_enabled: bool,
+    /// Enable semantic search and indexing tools (default: true)
+    #[serde(default = "default_true")]
+    pub indexing_enabled: bool,
 }
 
 fn default_shell_mode() -> String {
@@ -77,6 +89,10 @@ fn default_shell_mode() -> String {
 
 fn default_shell_output_limit() -> usize {
     100 * 1024 // 100KB
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl SecuritySection {
@@ -90,6 +106,10 @@ impl SecuritySection {
                 .collect(),
             shell_command_mode: self.shell_command_mode.clone(),
             shell_output_limit_bytes: self.shell_output_limit_bytes,
+            shell_enabled: self.shell_enabled,
+            file_write_enabled: self.file_write_enabled,
+            git_enabled: self.git_enabled,
+            indexing_enabled: self.indexing_enabled,
         }
     }
 }
