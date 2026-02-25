@@ -15,6 +15,11 @@ use tokio::task::JoinHandle;
 
 use super::transport;
 
+/// Convert an LSP `file://` URI back to a filesystem path.
+fn uri_to_path(uri: &lsp_types::Uri) -> PathBuf {
+    PathBuf::from(uri.path().as_str())
+}
+
 /// Convert a filesystem path to an LSP `file://` URI.
 fn path_to_uri(path: &Path) -> Result<lsp_types::Uri> {
     let abs = if path.is_absolute() {
@@ -337,6 +342,54 @@ impl LspClient {
         Ok(())
     }
 
+    /// Request all symbols in the workspace matching a query string.
+    ///
+    /// Uses `workspace/symbol` — one round-trip for the whole project, vs
+    /// `textDocument/documentSymbol` which requires one request per file.
+    /// Returns a flat list (no hierarchy); `container_name` is preserved in
+    /// `name_path` when available.
+    pub async fn workspace_symbols(&self, query: &str) -> Result<Vec<super::SymbolInfo>> {
+        let params = lsp_types::WorkspaceSymbolParams {
+            query: query.to_string(),
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let result = self
+            .request("workspace/symbol", serde_json::to_value(params)?)
+            .await?;
+
+        if result.is_null() {
+            return Ok(vec![]);
+        }
+
+        let infos: Vec<lsp_types::SymbolInformation> = serde_json::from_value(result)
+            .context("failed to parse workspace/symbol response")?;
+
+        Ok(infos
+            .into_iter()
+            .map(|si| {
+                let file = uri_to_path(&si.location.uri);
+                let name_path = match &si.container_name {
+                    Some(container) if !container.is_empty() => {
+                        format!("{}/{}", container, si.name)
+                    }
+                    _ => si.name.clone(),
+                };
+                super::SymbolInfo {
+                    name: si.name,
+                    name_path,
+                    kind: si.kind.into(),
+                    file,
+                    start_line: si.location.range.start.line,
+                    end_line: si.location.range.end.line,
+                    start_col: si.location.range.start.character,
+                    children: vec![],
+                }
+            })
+            .collect())
+    }
+
     /// Send textDocument/didOpen notification for a file.
     pub async fn did_open(&self, path: &Path, language_id: &str) -> Result<()> {
         let content = std::fs::read_to_string(path)
@@ -641,6 +694,54 @@ struct Point {
 
         let result = LspClient::start(config).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn workspace_symbols_returns_project_symbols() {
+        if !rust_analyzer_available() {
+            eprintln!("Skipping: rust-analyzer not installed");
+            return;
+        }
+
+        let dir = tempdir().unwrap();
+        create_test_cargo_project(dir.path());
+
+        let config = LspServerConfig {
+            command: "rust-analyzer".into(),
+            args: vec![],
+            workspace_root: dir.path().to_path_buf(),
+        };
+
+        let client = LspClient::start(config).await.unwrap();
+
+        // Open a file to trigger rust-analyzer background indexing.
+        client
+            .did_open(&dir.path().join("src/main.rs"), "rust")
+            .await
+            .unwrap();
+
+        // rust-analyzer indexes in the background after initialize; retry until
+        // workspace/symbol returns results (typically < 2s for a minimal project).
+        let mut symbols = vec![];
+        for _ in 0..10 {
+            symbols = client.workspace_symbols("add").await.unwrap();
+            if !symbols.is_empty() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+
+        assert!(
+            !symbols.is_empty(),
+            "workspace/symbol 'add' should return results within 5s of indexing"
+        );
+        assert!(
+            symbols.iter().any(|s| s.name == "add"),
+            "should find the 'add' function, got: {:?}",
+            symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+        );
+
+        client.shutdown().await.unwrap();
     }
 
     #[tokio::test]

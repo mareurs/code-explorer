@@ -324,60 +324,21 @@ impl Tool for FindSymbol {
         let depth = input["depth"].as_u64().unwrap_or(0) as usize;
 
         let root = ctx.agent.require_project_root().await?;
-
-        // If a file path (or glob) is given, search within those files only
-        let files: Vec<PathBuf> = if let Some(rel) = get_path_param(&input, false)? {
-            if is_glob(rel) {
-                resolve_glob(ctx, rel).await?
-            } else {
-                vec![root.join(rel)]
-            }
-        } else {
-            // Walk project for supported files
-            let mut files = vec![];
-            let walker = ignore::WalkBuilder::new(&root).build();
-            for entry in walker.flatten() {
-                if entry.file_type().map(|t| t.is_file()).unwrap_or(false)
-                    && ast::detect_language(entry.path()).is_some()
-                {
-                    files.push(entry.path().to_path_buf());
-                }
-            }
-            files
-        };
-
         let pattern_lower = pattern.to_lowercase();
         let mut matches = vec![];
 
-        // In exploring mode, stop searching files once we have enough results.
-        // Collect max_results+1 to detect overflow without querying every file.
-        let early_cap = match guard.mode {
-            OutputMode::Exploring => Some(guard.max_results + 1),
-            OutputMode::Focused => None,
-        };
-
-        for file_path in &files {
-            if let Some(cap) = early_cap {
-                if matches.len() >= cap {
-                    break;
-                }
-            }
-
-            let Some(lang) = ast::detect_language(file_path) else {
-                continue;
-            };
-            let language_id = crate::lsp::servers::lsp_language_id(lang);
-            let Ok(client) = ctx.lsp.get_or_start(lang, &root).await else {
-                continue;
-            };
-            let Ok(symbols) = client.document_symbols(file_path, language_id).await else {
-                continue;
-            };
-
-            let source = if include_body {
-                std::fs::read_to_string(file_path).ok()
+        if let Some(rel) = get_path_param(&input, false)? {
+            // Restricted search: per-file textDocument/documentSymbol
+            let files: Vec<PathBuf> = if is_glob(rel) {
+                resolve_glob(ctx, rel).await?
             } else {
-                None
+                vec![root.join(rel)]
+            };
+
+            // In exploring mode, stop early once we have enough results.
+            let early_cap = match guard.mode {
+                OutputMode::Exploring => Some(guard.max_results + 1),
+                OutputMode::Focused => None,
             };
 
             fn collect_matching(
@@ -396,31 +357,87 @@ impl Tool for FindSymbol {
                 }
             }
 
-            collect_matching(
-                &symbols,
-                &pattern_lower,
-                include_body,
-                source.as_deref(),
-                depth,
-                &mut matches,
-            );
+            for file_path in &files {
+                if let Some(cap) = early_cap {
+                    if matches.len() >= cap {
+                        break;
+                    }
+                }
+                let Some(lang) = ast::detect_language(file_path) else {
+                    continue;
+                };
+                let language_id = crate::lsp::servers::lsp_language_id(lang);
+                let Ok(client) = ctx.lsp.get_or_start(lang, &root).await else {
+                    continue;
+                };
+                let Ok(symbols) = client.document_symbols(file_path, language_id).await else {
+                    continue;
+                };
+                let source = if include_body {
+                    std::fs::read_to_string(file_path).ok()
+                } else {
+                    None
+                };
+                collect_matching(
+                    &symbols,
+                    &pattern_lower,
+                    include_body,
+                    source.as_deref(),
+                    depth,
+                    &mut matches,
+                );
+            }
+
+            let hit_early_cap = early_cap.is_some() && matches.len() > guard.max_results;
+            if hit_early_cap {
+                use super::output::OverflowInfo;
+                matches.truncate(guard.max_results);
+                let overflow = OverflowInfo {
+                    shown: guard.max_results,
+                    total: guard.max_results + 1,
+                    hint: "Restrict with a file path or glob pattern".to_string(),
+                    next_offset: None,
+                };
+                let mut result = json!({ "symbols": matches, "total": guard.max_results + 1 });
+                result["overflow"] = OutputGuard::overflow_json(&overflow);
+                return Ok(result);
+            }
+        } else {
+            // Fast path: workspace/symbol — one LSP request per language instead of
+            // one textDocument/documentSymbol request per file.
+            let mut languages = std::collections::HashSet::new();
+            let walker = ignore::WalkBuilder::new(&root).build();
+            for entry in walker.flatten() {
+                if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                    if let Some(lang) = ast::detect_language(entry.path()) {
+                        languages.insert(lang);
+                    }
+                }
+            }
+
+            for lang in &languages {
+                let Ok(client) = ctx.lsp.get_or_start(lang, &root).await else {
+                    continue;
+                };
+                let Ok(symbols) = client.workspace_symbols(&pattern_lower).await else {
+                    continue;
+                };
+                for sym in symbols {
+                    // LSP servers may use fuzzy/prefix matching — enforce substring.
+                    if sym.name.to_lowercase().contains(&pattern_lower) {
+                        let source = if include_body {
+                            std::fs::read_to_string(&sym.file).ok()
+                        } else {
+                            None
+                        };
+                        matches.push(symbol_to_json(&sym, include_body, source.as_deref(), depth));
+                    }
+                }
+            }
         }
 
-        let hit_early_cap = early_cap.is_some() && matches.len() > guard.max_results;
-
-        let (matches, overflow) = if hit_early_cap {
-            use super::output::OverflowInfo;
-            matches.truncate(guard.max_results);
-            let overflow = OverflowInfo {
-                shown: guard.max_results,
-                total: guard.max_results + 1, // at least this many
-                hint: "Restrict with a file path or glob pattern".to_string(),
-                next_offset: None,
-            };
-            (matches, Some(overflow))
-        } else {
-            guard.cap_items(matches, "Restrict with a file path or glob pattern")
-        };
+        let (matches, overflow) =
+            guard.cap_items(matches, "Restrict with a file path or glob pattern");
 
         let total = overflow.as_ref().map_or(matches.len(), |o| o.total);
         let mut result = json!({ "symbols": matches, "total": total });
@@ -990,6 +1007,42 @@ impl Point {
             "should find add function, got: {:?}",
             names
         );
+
+        ctx.lsp.shutdown_all().await;
+    }
+
+    #[tokio::test]
+    async fn find_symbol_project_wide_uses_workspace_symbol() {
+        let Some((_dir, ctx)) = rust_project_ctx().await else {
+            eprintln!("Skipping: rust-analyzer not installed");
+            return;
+        };
+
+        // Trigger LSP startup and background indexing via a file-restricted call.
+        let _ = FindSymbol
+            .call(
+                json!({ "pattern": "main", "relative_path": "src/main.rs" }),
+                &ctx,
+            )
+            .await;
+
+        // Retry project-wide search (no relative_path → workspace/symbol fast path)
+        // until rust-analyzer finishes background indexing (typically < 3s).
+        let mut found = false;
+        for _ in 0..10 {
+            let result = FindSymbol
+                .call(json!({ "pattern": "Point" }), &ctx)
+                .await
+                .unwrap();
+            let symbols = result["symbols"].as_array().unwrap();
+            if symbols.iter().any(|s| s["name"].as_str() == Some("Point")) {
+                found = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+
+        assert!(found, "should find 'Point' project-wide via workspace/symbol within 5s");
 
         ctx.lsp.shutdown_all().await;
     }
