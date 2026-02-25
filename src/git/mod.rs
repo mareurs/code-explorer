@@ -96,3 +96,45 @@ pub struct CommitSummary {
     /// Unix timestamp
     pub timestamp: i64,
 }
+
+/// Diff the working directory (or a specific file) against HEAD or a given commit.
+pub fn diff_workdir(
+    repo: &git2::Repository,
+    file: Option<&Path>,
+    commit_sha: Option<&str>,
+) -> Result<String> {
+    let tree = if let Some(sha) = commit_sha {
+        let oid = git2::Oid::from_str(sha)
+            .map_err(|e| anyhow::anyhow!("Invalid commit SHA '{}': {}", sha, e))?;
+        let commit = repo.find_commit(oid)?;
+        Some(commit.tree()?)
+    } else {
+        // HEAD tree (may not exist for empty repos)
+        repo.head().ok().and_then(|h| h.peel_to_tree().ok())
+    };
+
+    let mut opts = git2::DiffOptions::new();
+    if let Some(f) = file {
+        opts.pathspec(f.to_string_lossy().as_ref());
+    }
+
+    let diff = repo.diff_tree_to_workdir_with_index(
+        tree.as_ref(),
+        Some(&mut opts),
+    )?;
+
+    let mut output = String::new();
+    diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+        let prefix = match line.origin() {
+            '+' => "+",
+            '-' => "-",
+            ' ' => " ",
+            _ => "",
+        };
+        output.push_str(prefix);
+        output.push_str(&String::from_utf8_lossy(line.content()));
+        true
+    })?;
+
+    Ok(output)
+}
