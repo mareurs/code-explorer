@@ -1,10 +1,13 @@
 //! AST-aware code chunker with language registry.
 //!
 //! Provides language-specific knowledge (node types, doc comment prefixes) used
-//! to split source files into semantically meaningful chunks. Currently delegates
-//! to the plain text chunker; AST extraction will be added in a later task.
+//! to split source files into semantically meaningful chunks. Uses tree-sitter
+//! grammars for registered languages to extract top-level declarations, falling
+//! back to the plain text chunker for unknown languages.
 
 use std::path::Path;
+
+use tree_sitter::{Node, Parser};
 
 use super::chunker::RawChunk;
 
@@ -145,6 +148,14 @@ static LANGUAGE_REGISTRY: &[RegistryEntry] = &[
     },
 ];
 
+/// A located AST node to be turned into a chunk.
+struct AstNode {
+    /// 0-indexed start line.
+    start_line: usize,
+    /// 0-indexed end line (inclusive).
+    end_line: usize,
+}
+
 /// Look up the language spec for the given language name (case-insensitive).
 pub fn get_language_spec(lang: &str) -> Option<&'static LanguageSpec> {
     let lower = lang.to_lowercase();
@@ -165,15 +176,175 @@ fn is_markdown(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// Maps language name to tree-sitter grammar.
+fn get_ts_language(lang: &str) -> Option<tree_sitter::Language> {
+    match lang {
+        "rust" => Some(tree_sitter_rust::LANGUAGE.into()),
+        "python" => Some(tree_sitter_python::LANGUAGE.into()),
+        "go" => Some(tree_sitter_go::LANGUAGE.into()),
+        "typescript" | "javascript" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+        "tsx" | "jsx" => Some(tree_sitter_typescript::LANGUAGE_TSX.into()),
+        "java" => Some(tree_sitter_java::LANGUAGE.into()),
+        "kotlin" => Some(tree_sitter_kotlin_ng::LANGUAGE.into()),
+        _ => None,
+    }
+}
+
+/// Parses source with tree-sitter and extracts top-level AST nodes.
+///
+/// If `spec` is `Some`, matches against `spec.node_types`. Otherwise uses a
+/// generic heuristic: named nodes spanning 3+ lines with at least one named child.
+fn extract_ast_nodes(
+    source: &str,
+    ts_lang: &tree_sitter::Language,
+    spec: Option<&LanguageSpec>,
+) -> anyhow::Result<Vec<AstNode>> {
+    let mut parser = Parser::new();
+    parser.set_language(ts_lang)?;
+    let tree = parser
+        .parse(source, None)
+        .ok_or_else(|| anyhow::anyhow!("tree-sitter parse failed"))?;
+
+    let root = tree.root_node();
+    let mut nodes = Vec::new();
+    let mut cursor = root.walk();
+
+    for child in root.children(&mut cursor) {
+        let dominated = if let Some(spec) = spec {
+            spec.node_types.contains(&child.kind())
+        } else {
+            child.is_named()
+                && (child
+                    .end_position()
+                    .row
+                    .saturating_sub(child.start_position().row))
+                    >= 2
+                && has_named_child(child)
+        };
+        if dominated {
+            nodes.push(AstNode {
+                start_line: child.start_position().row,
+                end_line: child.end_position().row,
+            });
+        }
+    }
+    Ok(nodes)
+}
+
+fn has_named_child(node: Node) -> bool {
+    let mut cursor = node.walk();
+    let result = node.children(&mut cursor).any(|c| c.is_named());
+    result
+}
+
+/// Converts AST nodes to RawChunks, handling gaps and doc expansion.
+fn nodes_to_chunks(
+    source: &str,
+    nodes: &[AstNode],
+    chunk_size: usize,
+    chunk_overlap: usize,
+    doc_prefixes: &[&str],
+) -> Vec<RawChunk> {
+    let lines: Vec<&str> = source.lines().collect();
+    let mut chunks = Vec::new();
+    let mut prev_end: usize = 0;
+
+    for node in nodes {
+        let expanded_start = expand_doc_comment_start(&lines, node.start_line, doc_prefixes);
+
+        // Gap chunk
+        if expanded_start > prev_end {
+            let gap_content = lines[prev_end..expanded_start].join("\n");
+            if !gap_content.trim().is_empty() {
+                if gap_content.len() > chunk_size {
+                    let sub = super::chunker::split(&gap_content, chunk_size, chunk_overlap);
+                    for mut sc in sub {
+                        sc.start_line += prev_end;
+                        sc.end_line += prev_end;
+                        chunks.push(sc);
+                    }
+                } else {
+                    chunks.push(RawChunk {
+                        content: gap_content,
+                        start_line: prev_end + 1,
+                        end_line: expanded_start,
+                    });
+                }
+            }
+        }
+
+        // Node chunk
+        let node_end = (node.end_line + 1).min(lines.len());
+        let content = lines[expanded_start..node_end].join("\n");
+
+        if content.len() <= chunk_size {
+            chunks.push(RawChunk {
+                content,
+                start_line: expanded_start + 1,
+                end_line: node_end,
+            });
+        } else {
+            // Sub-split oversized node (temporary stub — uses plain line splitting)
+            let sub = sub_split_node(&lines, expanded_start, node_end, chunk_size, chunk_overlap);
+            chunks.extend(sub);
+        }
+
+        prev_end = node_end;
+    }
+
+    // Trailing gap
+    if prev_end < lines.len() {
+        let gap_content = lines[prev_end..].join("\n");
+        if !gap_content.trim().is_empty() {
+            if gap_content.len() > chunk_size {
+                let sub = super::chunker::split(&gap_content, chunk_size, chunk_overlap);
+                for mut sc in sub {
+                    sc.start_line += prev_end;
+                    sc.end_line += prev_end;
+                    chunks.push(sc);
+                }
+            } else {
+                chunks.push(RawChunk {
+                    content: gap_content,
+                    start_line: prev_end + 1,
+                    end_line: lines.len(),
+                });
+            }
+        }
+    }
+
+    chunks
+}
+
+/// Temporary stub: sub-split an oversized node with plain line splitting.
+/// Will be replaced with prefix-carrying logic in Task 4.
+fn sub_split_node(
+    lines: &[&str],
+    start: usize,
+    end: usize,
+    chunk_size: usize,
+    chunk_overlap: usize,
+) -> Vec<RawChunk> {
+    let content = lines[start..end].join("\n");
+    let sub = super::chunker::split(&content, chunk_size, chunk_overlap);
+    sub.into_iter()
+        .map(|mut sc| {
+            sc.start_line += start;
+            sc.end_line += start;
+            sc
+        })
+        .collect()
+}
+
 /// Split a source file into chunks, using language-aware strategies where possible.
 ///
 /// - Returns empty for empty source.
 /// - Delegates to `split_markdown` for markdown files.
-/// - Falls through to the plain text `split` for everything else (AST extraction
-///   will be added in a later task).
+/// - Uses AST-based splitting for registered languages.
+/// - Falls through to the plain text `split` for unrecognised languages.
 pub fn split_file(
     source: &str,
-    _lang: &str,
+    lang: &str,
     path: &Path,
     chunk_size: usize,
     chunk_overlap: usize,
@@ -186,8 +357,18 @@ pub fn split_file(
         return super::chunker::split_markdown(source, chunk_size, chunk_overlap);
     }
 
-    // TODO: AST-aware splitting will be added in Task 3.
-    // For now, fall through to the plain text chunker.
+    // Try AST-based splitting
+    let spec = get_language_spec(lang);
+    if let Some(ts_lang) = get_ts_language(lang) {
+        if let Ok(nodes) = extract_ast_nodes(source, &ts_lang, spec) {
+            if !nodes.is_empty() {
+                let doc_prefixes = spec.map(|s| s.doc_prefixes).unwrap_or(&["//"] as &[&str]);
+                return nodes_to_chunks(source, &nodes, chunk_size, chunk_overlap, doc_prefixes);
+            }
+        }
+    }
+
+    // Fallback to line-based splitting
     super::chunker::split(source, chunk_size, chunk_overlap)
 }
 
@@ -345,8 +526,8 @@ mod tests {
     }
 
     #[test]
-    fn split_file_known_lang_falls_through_to_plain_split() {
-        // Until AST extraction is implemented, known languages also use the plain splitter
+    fn split_file_known_lang_uses_ast_split() {
+        // Known languages now use AST-based splitting; a small function is still 1 chunk
         let source = "fn main() {\n    println!(\"hello\");\n}\n";
         let chunks = split_file(source, "rust", Path::new("main.rs"), 4000, 400);
         assert_eq!(chunks.len(), 1);
@@ -412,5 +593,86 @@ mod tests {
         assert!(!is_doc_line("fn foo() {}", &["///"]));
         assert!(!is_doc_line("// regular comment", &["///"]));
         assert!(!is_doc_line("", &["///"]));
+    }
+
+    // ---------- AST-based splitting ----------
+
+    #[test]
+    fn ast_split_rust_two_functions() {
+        let source = "use std::io;\n\n/// Adds two numbers.\nfn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n\n/// Subtracts b from a.\nfn sub(a: i32, b: i32) -> i32 {\n    a - b\n}\n";
+        let chunks = split_file(source, "rust", Path::new("test.rs"), 4000, 200);
+        assert!(chunks.len() >= 2, "got {} chunks", chunks.len());
+        let add_chunk = chunks
+            .iter()
+            .find(|c| c.content.contains("fn add"))
+            .expect("add chunk");
+        assert!(
+            add_chunk.content.contains("/// Adds two numbers"),
+            "add chunk should include doc"
+        );
+        let sub_chunk = chunks
+            .iter()
+            .find(|c| c.content.contains("fn sub"))
+            .expect("sub chunk");
+        assert!(
+            sub_chunk.content.contains("/// Subtracts"),
+            "sub chunk should include doc"
+        );
+        assert!(
+            !add_chunk.content.contains("fn sub"),
+            "add chunk should not contain sub"
+        );
+    }
+
+    #[test]
+    fn ast_split_python_function_with_comment() {
+        let source = "import os\n\n# Helper to greet.\ndef greet(name):\n    return f'Hello {name}'\n\nclass Greeter:\n    def __init__(self, name):\n        self.name = name\n";
+        let chunks = split_file(source, "python", Path::new("test.py"), 4000, 200);
+        assert!(
+            chunks.len() >= 2,
+            "should split into function + class, got {}",
+            chunks.len()
+        );
+        let greet_chunk = chunks
+            .iter()
+            .find(|c| c.content.contains("def greet"))
+            .expect("greet chunk");
+        assert!(
+            greet_chunk.content.contains("# Helper"),
+            "greet should include doc comment"
+        );
+    }
+
+    #[test]
+    fn ast_split_preserves_line_numbers() {
+        let source = "/// First.\nfn first() {}\n\n/// Second.\nfn second() {}\n";
+        let chunks = split_file(source, "rust", Path::new("test.rs"), 4000, 200);
+        let first = chunks
+            .iter()
+            .find(|c| c.content.contains("fn first"))
+            .unwrap();
+        assert_eq!(
+            first.start_line, 1,
+            "first fn starts at line 1 (includes doc)"
+        );
+        let second = chunks
+            .iter()
+            .find(|c| c.content.contains("fn second"))
+            .unwrap();
+        assert_eq!(
+            second.start_line, 4,
+            "second fn starts at line 4 (includes doc)"
+        );
+    }
+
+    #[test]
+    fn ast_split_captures_gap_text() {
+        let source = "use std::io;\nuse std::fmt;\n\nfn foo() {}\n";
+        let chunks = split_file(source, "rust", Path::new("test.rs"), 4000, 200);
+        // Should have a gap chunk for the use statements and a chunk for foo
+        let has_use = chunks.iter().any(|c| c.content.contains("use std::io"));
+        let has_fn = chunks.iter().any(|c| c.content.contains("fn foo"));
+        assert!(has_use, "should capture use statements as gap chunk");
+        assert!(has_fn, "should capture function");
     }
 }
