@@ -232,6 +232,7 @@ pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
     let conn = open_db(project_root)?;
     let embedder: Arc<dyn crate::embed::Embedder> =
         Arc::from(create_embedder(&config.embeddings.model).await?);
+    check_model_mismatch(&conn, &config.embeddings.model)?;
 
     // ── Phase 1: Walk, hash, chunk ────────────────────────────────────────────
     struct FileWork {
@@ -359,6 +360,7 @@ pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
     }
     conn.execute_batch("COMMIT")?;
 
+    set_meta(&conn, "embed_model", &config.embeddings.model)?;
     tracing::info!(
         "Index complete: {} files indexed, {} unchanged",
         indexed,
@@ -395,6 +397,24 @@ pub fn get_meta(conn: &Connection, key: &str) -> Result<Option<String>> {
     match rows.next()? {
         Some(row) => Ok(Some(row.get(0)?)),
         None => Ok(None),
+    }
+}
+
+/// Return an error if the index was built with a different embedding model.
+///
+/// Call this at the start of `build_index` before processing any files.
+/// Returns `Ok(())` when:
+///   - no model has been stored yet (first run), OR
+///   - the stored model matches `configured`
+pub fn check_model_mismatch(conn: &Connection, configured: &str) -> Result<()> {
+    match get_meta(conn, "embed_model")? {
+        None => Ok(()), // first run
+        Some(stored) if stored == configured => Ok(()),
+        Some(stored) => anyhow::bail!(
+            "Index was built with model '{stored}'.\n\
+             Configured model is '{configured}'.\n\
+             Delete .code-explorer/embeddings.db and re-run `index` to rebuild."
+        ),
     }
 }
 
@@ -620,5 +640,40 @@ mod tests {
         set_meta(&conn, "embed_model", "new-model").unwrap();
         let val = get_meta(&conn, "embed_model").unwrap();
         assert_eq!(val.as_deref(), Some("new-model"));
+    }
+
+    #[test]
+    fn check_model_mismatch_first_run_is_ok() {
+        let (_dir, conn) = open_test_db();
+        // No meta entry yet — first run should succeed
+        assert!(check_model_mismatch(&conn, "ollama:mxbai-embed-large").is_ok());
+    }
+
+    #[test]
+    fn check_model_mismatch_same_model_is_ok() {
+        let (_dir, conn) = open_test_db();
+        set_meta(&conn, "embed_model", "ollama:mxbai-embed-large").unwrap();
+        assert!(check_model_mismatch(&conn, "ollama:mxbai-embed-large").is_ok());
+    }
+
+    #[test]
+    fn check_model_mismatch_different_model_is_err() {
+        let (_dir, conn) = open_test_db();
+        set_meta(&conn, "embed_model", "ollama:mxbai-embed-large").unwrap();
+        let err = check_model_mismatch(&conn, "local:JinaEmbeddingsV2BaseCode")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("ollama:mxbai-embed-large"),
+            "error should name stored model"
+        );
+        assert!(
+            err.contains("local:JinaEmbeddingsV2BaseCode"),
+            "error should name new model"
+        );
+        assert!(
+            err.contains("embeddings.db"),
+            "error should hint at DB deletion"
+        );
     }
 }
