@@ -87,8 +87,9 @@ mod tests {
 
     #[test]
     fn static_instructions_contain_key_sections() {
-        assert!(SERVER_INSTRUCTIONS.contains("## How to Explore Code"));
-        assert!(SERVER_INSTRUCTIONS.contains("## Workflow Patterns"));
+        assert!(SERVER_INSTRUCTIONS.contains("## How to Choose the Right Tool"));
+        assert!(SERVER_INSTRUCTIONS.contains("## Output Modes"));
+        assert!(SERVER_INSTRUCTIONS.contains("## Tool Reference"));
         assert!(SERVER_INSTRUCTIONS.contains("## Rules"));
     }
 
