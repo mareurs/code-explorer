@@ -149,11 +149,11 @@ static LANGUAGE_REGISTRY: &[RegistryEntry] = &[
 ];
 
 /// A located AST node to be turned into a chunk.
-struct AstNode {
+pub(crate) struct AstNode {
     /// 0-indexed start line.
-    start_line: usize,
+    pub(crate) start_line: usize,
     /// 0-indexed end line (inclusive).
-    end_line: usize,
+    pub(crate) end_line: usize,
 }
 
 /// Look up the language spec for the given language name (case-insensitive).
@@ -194,7 +194,7 @@ fn get_ts_language(lang: &str) -> Option<tree_sitter::Language> {
 ///
 /// If `spec` is `Some`, matches against `spec.node_types`. Otherwise uses a
 /// generic heuristic: named nodes spanning 3+ lines with at least one named child.
-fn extract_ast_nodes(
+pub(crate) fn extract_ast_nodes(
     source: &str,
     ts_lang: &tree_sitter::Language,
     spec: Option<&LanguageSpec>,
@@ -807,5 +807,51 @@ mod tests {
                 .any(|c| c.content.contains(body_line.as_str()));
             assert!(covered, "body line {} not covered: {}", i, body_line);
         }
+    }
+
+    // ---------- Generic heuristic (no registry entry) ----------
+
+    #[test]
+    fn generic_heuristic_extracts_multiline_named_nodes() {
+        // Use Rust grammar but call extract_ast_nodes with spec=None
+        let source =
+            "fn hello() {\n    println!(\"hi\");\n}\n\nfn world() {\n    println!(\"world\");\n}\n";
+        let ts_lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
+        let nodes = extract_ast_nodes(source, &ts_lang, None).unwrap();
+        assert_eq!(nodes.len(), 2, "generic heuristic should find 2 functions");
+    }
+
+    #[test]
+    fn generic_heuristic_ignores_single_line_nodes() {
+        let source =
+            "use std::io;\nuse std::fmt;\n\nfn multi_line() {\n    let x = 1;\n    let y = 2;\n}\n";
+        let ts_lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
+        let nodes = extract_ast_nodes(source, &ts_lang, None).unwrap();
+        // use statements are single-line — should be ignored by heuristic
+        assert_eq!(nodes.len(), 1, "should only find multi_line fn");
+    }
+
+    // ---------- Error resilience & fallback ----------
+
+    #[test]
+    fn broken_syntax_falls_back_to_line_splitting() {
+        let source = "fn broken( { {{ missing close\n    let x = 1;\n    let y = 2;\n";
+        // Should not panic — falls back to line-based
+        let chunks = split_file(source, "rust", Path::new("test.rs"), 200, 20);
+        assert!(
+            !chunks.is_empty(),
+            "broken syntax should still produce chunks via fallback"
+        );
+    }
+
+    #[test]
+    fn ast_with_no_extractable_nodes_falls_back() {
+        // A file with only comments and blank lines
+        let source = "// just a comment\n// another comment\n\n";
+        let chunks = split_file(source, "rust", Path::new("test.rs"), 200, 20);
+        assert!(
+            !chunks.is_empty(),
+            "should fall back to line-based for comment-only files"
+        );
     }
 }
