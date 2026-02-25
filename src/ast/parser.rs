@@ -1,7 +1,7 @@
 //! Tree-sitter based symbol and docstring extractor.
 //!
 //! Provides offline symbol extraction from source code without requiring a
-//! running language server. Supports Rust, Python, TypeScript, Go.
+//! running language server. Supports Rust, Python, TypeScript/TSX, Go, Java, Kotlin.
 
 use anyhow::{anyhow, Result};
 use std::path::{Path, PathBuf};
@@ -32,8 +32,12 @@ fn get_ts_language(lang: &str) -> Option<tree_sitter::Language> {
         "rust" => Some(tree_sitter_rust::LANGUAGE.into()),
         "python" => Some(tree_sitter_python::LANGUAGE.into()),
         "go" => Some(tree_sitter_go::LANGUAGE.into()),
-        "typescript" | "tsx" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
-        "javascript" | "jsx" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+        "typescript" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+        "tsx" => Some(tree_sitter_typescript::LANGUAGE_TSX.into()),
+        "javascript" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+        "jsx" => Some(tree_sitter_typescript::LANGUAGE_TSX.into()),
+        "java" => Some(tree_sitter_java::LANGUAGE.into()),
+        "kotlin" => Some(tree_sitter_kotlin_ng::LANGUAGE.into()),
         _ => None,
     }
 }
@@ -68,6 +72,8 @@ pub fn extract_symbols_from_source(
         "typescript" | "javascript" | "tsx" | "jsx" => {
             Ok(extract_ts_symbols(root, source, &file, ""))
         }
+        "java" => Ok(extract_java_symbols(root, source, &file, "")),
+        "kotlin" => Ok(extract_kotlin_symbols(root, source, &file, "")),
         _ => Ok(vec![]),
     }
 }
@@ -99,6 +105,8 @@ pub fn extract_docstrings_from_source(
         "python" => Ok(extract_python_docstrings(root, source)),
         "go" => Ok(extract_go_docstrings(root, source)),
         "typescript" | "javascript" | "tsx" | "jsx" => Ok(extract_ts_docstrings(root, source)),
+        "java" => Ok(extract_java_docstrings(root, source)),
+        "kotlin" => Ok(extract_kotlin_docstrings(root, source)),
         _ => Ok(vec![]),
     }
 }
@@ -620,6 +628,458 @@ fn extract_go_type_children(
 }
 
 // ---------------------------------------------------------------------------
+// Java
+// ---------------------------------------------------------------------------
+
+fn extract_java_symbols(node: Node, source: &str, file: &PathBuf, prefix: &str) -> Vec<SymbolInfo> {
+    let mut symbols = Vec::new();
+    let mut cursor = node.walk();
+
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "class_declaration" => {
+                if let Some(name) = child_name(child, source, "name") {
+                    let np = make_name_path(prefix, &name);
+                    let body = find_child_by_kind(child, "class_body");
+                    let children = body
+                        .map(|b| extract_java_class_members(b, source, file, &np))
+                        .unwrap_or_default();
+                    symbols.push(SymbolInfo {
+                        name_path: np,
+                        name,
+                        kind: SymbolKind::Class,
+                        file: file.clone(),
+                        start_line: child.start_position().row as u32,
+                        end_line: child.end_position().row as u32,
+                        start_col: child.start_position().column as u32,
+                        children,
+                    });
+                }
+            }
+            "interface_declaration" => {
+                if let Some(name) = child_name(child, source, "name") {
+                    let np = make_name_path(prefix, &name);
+                    let body = find_child_by_kind(child, "interface_body");
+                    let children = body
+                        .map(|b| extract_java_class_members(b, source, file, &np))
+                        .unwrap_or_default();
+                    symbols.push(SymbolInfo {
+                        name_path: np,
+                        name,
+                        kind: SymbolKind::Interface,
+                        file: file.clone(),
+                        start_line: child.start_position().row as u32,
+                        end_line: child.end_position().row as u32,
+                        start_col: child.start_position().column as u32,
+                        children,
+                    });
+                }
+            }
+            "enum_declaration" => {
+                if let Some(name) = child_name(child, source, "name") {
+                    let np = make_name_path(prefix, &name);
+                    let children = extract_java_enum_constants(child, source, file, &np);
+                    symbols.push(SymbolInfo {
+                        name_path: np,
+                        name,
+                        kind: SymbolKind::Enum,
+                        file: file.clone(),
+                        start_line: child.start_position().row as u32,
+                        end_line: child.end_position().row as u32,
+                        start_col: child.start_position().column as u32,
+                        children,
+                    });
+                }
+            }
+            "record_declaration" => {
+                if let Some(name) = child_name(child, source, "name") {
+                    let np = make_name_path(prefix, &name);
+                    let body = find_child_by_kind(child, "class_body");
+                    let children = body
+                        .map(|b| extract_java_class_members(b, source, file, &np))
+                        .unwrap_or_default();
+                    symbols.push(SymbolInfo {
+                        name_path: np,
+                        name,
+                        kind: SymbolKind::Struct,
+                        file: file.clone(),
+                        start_line: child.start_position().row as u32,
+                        end_line: child.end_position().row as u32,
+                        start_col: child.start_position().column as u32,
+                        children,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    symbols
+}
+
+fn extract_java_class_members(
+    body: Node,
+    source: &str,
+    file: &PathBuf,
+    prefix: &str,
+) -> Vec<SymbolInfo> {
+    let mut members = Vec::new();
+    let mut cursor = body.walk();
+
+    for child in body.children(&mut cursor) {
+        match child.kind() {
+            "method_declaration" => {
+                if let Some(name) = child_name(child, source, "name") {
+                    members.push(SymbolInfo {
+                        name_path: make_name_path(prefix, &name),
+                        name,
+                        kind: SymbolKind::Method,
+                        file: file.clone(),
+                        start_line: child.start_position().row as u32,
+                        end_line: child.end_position().row as u32,
+                        start_col: child.start_position().column as u32,
+                        children: vec![],
+                    });
+                }
+            }
+            "constructor_declaration" => {
+                if let Some(name) = child_name(child, source, "name") {
+                    members.push(SymbolInfo {
+                        name_path: make_name_path(prefix, &name),
+                        name,
+                        kind: SymbolKind::Constructor,
+                        file: file.clone(),
+                        start_line: child.start_position().row as u32,
+                        end_line: child.end_position().row as u32,
+                        start_col: child.start_position().column as u32,
+                        children: vec![],
+                    });
+                }
+            }
+            "field_declaration" => {
+                // field_declaration → variable_declarator → name
+                if let Some(decl) = child.child_by_field_name("declarator") {
+                    if let Some(name) = child_name(decl, source, "name") {
+                        members.push(SymbolInfo {
+                            name_path: make_name_path(prefix, &name),
+                            name,
+                            kind: SymbolKind::Field,
+                            file: file.clone(),
+                            start_line: child.start_position().row as u32,
+                            end_line: child.end_position().row as u32,
+                            start_col: child.start_position().column as u32,
+                            children: vec![],
+                        });
+                    }
+                }
+            }
+            // Nested types
+            "class_declaration"
+            | "interface_declaration"
+            | "enum_declaration"
+            | "record_declaration" => {
+                let inner = extract_java_symbols(body, source, file, prefix);
+                members.extend(inner);
+            }
+            _ => {}
+        }
+    }
+
+    members
+}
+
+fn extract_java_enum_constants(
+    node: Node,
+    source: &str,
+    file: &PathBuf,
+    prefix: &str,
+) -> Vec<SymbolInfo> {
+    let mut constants = Vec::new();
+    let body = match find_child_by_kind(node, "enum_body") {
+        Some(b) => b,
+        None => return constants,
+    };
+    let mut cursor = body.walk();
+    for child in body.children(&mut cursor) {
+        if child.kind() == "enum_constant" {
+            if let Some(name) = child_name(child, source, "name") {
+                constants.push(SymbolInfo {
+                    name_path: make_name_path(prefix, &name),
+                    name,
+                    kind: SymbolKind::EnumMember,
+                    file: file.clone(),
+                    start_line: child.start_position().row as u32,
+                    end_line: child.end_position().row as u32,
+                    start_col: child.start_position().column as u32,
+                    children: vec![],
+                });
+            }
+        }
+    }
+    constants
+}
+
+// ---------------------------------------------------------------------------
+// Kotlin
+// ---------------------------------------------------------------------------
+
+fn extract_kotlin_symbols(
+    node: Node,
+    source: &str,
+    file: &PathBuf,
+    prefix: &str,
+) -> Vec<SymbolInfo> {
+    let mut symbols = Vec::new();
+    let mut cursor = node.walk();
+
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "class_declaration" => {
+                if let Some(name) = child_name(child, source, "name") {
+                    let np = make_name_path(prefix, &name);
+                    // Determine kind: check modifiers for enum/interface/annotation
+                    let kind = detect_kotlin_class_kind(child, source);
+                    let body = find_child_by_kind(child, "class_body")
+                        .or_else(|| find_child_by_kind(child, "enum_class_body"));
+                    let children = body
+                        .map(|b| extract_kotlin_class_members(b, source, file, &np))
+                        .unwrap_or_default();
+                    symbols.push(SymbolInfo {
+                        name_path: np,
+                        name,
+                        kind,
+                        file: file.clone(),
+                        start_line: child.start_position().row as u32,
+                        end_line: child.end_position().row as u32,
+                        start_col: child.start_position().column as u32,
+                        children,
+                    });
+                }
+            }
+            "object_declaration" => {
+                if let Some(name) = child_name(child, source, "name") {
+                    let np = make_name_path(prefix, &name);
+                    let body = find_child_by_kind(child, "class_body");
+                    let children = body
+                        .map(|b| extract_kotlin_class_members(b, source, file, &np))
+                        .unwrap_or_default();
+                    symbols.push(SymbolInfo {
+                        name_path: np,
+                        name,
+                        kind: SymbolKind::Class,
+                        file: file.clone(),
+                        start_line: child.start_position().row as u32,
+                        end_line: child.end_position().row as u32,
+                        start_col: child.start_position().column as u32,
+                        children,
+                    });
+                }
+            }
+            "function_declaration" => {
+                if let Some(name) = child_name(child, source, "name") {
+                    symbols.push(SymbolInfo {
+                        name_path: make_name_path(prefix, &name),
+                        name,
+                        kind: SymbolKind::Function,
+                        file: file.clone(),
+                        start_line: child.start_position().row as u32,
+                        end_line: child.end_position().row as u32,
+                        start_col: child.start_position().column as u32,
+                        children: vec![],
+                    });
+                }
+            }
+            "property_declaration" => {
+                // property_declaration → variable_declaration → identifier
+                let name = extract_kotlin_property_name(child, source);
+                if let Some(name) = name {
+                    symbols.push(SymbolInfo {
+                        name_path: make_name_path(prefix, &name),
+                        name,
+                        kind: SymbolKind::Property,
+                        file: file.clone(),
+                        start_line: child.start_position().row as u32,
+                        end_line: child.end_position().row as u32,
+                        start_col: child.start_position().column as u32,
+                        children: vec![],
+                    });
+                }
+            }
+            "type_alias" => {
+                if let Some(name) = child_name(child, source, "type") {
+                    symbols.push(SymbolInfo {
+                        name_path: make_name_path(prefix, &name),
+                        name,
+                        kind: SymbolKind::TypeParameter,
+                        file: file.clone(),
+                        start_line: child.start_position().row as u32,
+                        end_line: child.end_position().row as u32,
+                        start_col: child.start_position().column as u32,
+                        children: vec![],
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    symbols
+}
+
+/// Detect whether a Kotlin class_declaration is a class, enum, or interface.
+fn detect_kotlin_class_kind(node: Node, source: &str) -> SymbolKind {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "modifiers" || !child.is_named() {
+            let text = child.utf8_text(source.as_bytes()).unwrap_or("");
+            if text.contains("enum") {
+                return SymbolKind::Enum;
+            }
+            if text.contains("interface") {
+                return SymbolKind::Interface;
+            }
+            if text.contains("annotation") {
+                return SymbolKind::Interface;
+            }
+        }
+    }
+    SymbolKind::Class
+}
+
+/// Extract the property name from a Kotlin property_declaration.
+fn extract_kotlin_property_name(node: Node, source: &str) -> Option<String> {
+    let mut cursor = node.walk();
+    let var_decl = node
+        .children(&mut cursor)
+        .find(|c| c.kind() == "variable_declaration");
+    let var_decl = match var_decl {
+        Some(v) => v,
+        None => return None,
+    };
+    // variable_declaration has an identifier child
+    let mut cursor2 = var_decl.walk();
+    let ident = var_decl
+        .children(&mut cursor2)
+        .find(|c| c.kind() == "identifier");
+    let ident = match ident {
+        Some(i) => i,
+        None => return None,
+    };
+    ident
+        .utf8_text(source.as_bytes())
+        .ok()
+        .map(|s| s.to_string())
+}
+
+fn extract_kotlin_class_members(
+    body: Node,
+    source: &str,
+    file: &PathBuf,
+    prefix: &str,
+) -> Vec<SymbolInfo> {
+    let mut members = Vec::new();
+    let mut cursor = body.walk();
+
+    for child in body.children(&mut cursor) {
+        match child.kind() {
+            "function_declaration" => {
+                if let Some(name) = child_name(child, source, "name") {
+                    members.push(SymbolInfo {
+                        name_path: make_name_path(prefix, &name),
+                        name,
+                        kind: SymbolKind::Method,
+                        file: file.clone(),
+                        start_line: child.start_position().row as u32,
+                        end_line: child.end_position().row as u32,
+                        start_col: child.start_position().column as u32,
+                        children: vec![],
+                    });
+                }
+            }
+            "property_declaration" => {
+                let name = extract_kotlin_property_name(child, source);
+                if let Some(name) = name {
+                    members.push(SymbolInfo {
+                        name_path: make_name_path(prefix, &name),
+                        name,
+                        kind: SymbolKind::Property,
+                        file: file.clone(),
+                        start_line: child.start_position().row as u32,
+                        end_line: child.end_position().row as u32,
+                        start_col: child.start_position().column as u32,
+                        children: vec![],
+                    });
+                }
+            }
+            "secondary_constructor" => {
+                members.push(SymbolInfo {
+                    name_path: make_name_path(prefix, "constructor"),
+                    name: "constructor".to_string(),
+                    kind: SymbolKind::Constructor,
+                    file: file.clone(),
+                    start_line: child.start_position().row as u32,
+                    end_line: child.end_position().row as u32,
+                    start_col: child.start_position().column as u32,
+                    children: vec![],
+                });
+            }
+            "companion_object" => {
+                let name =
+                    child_name(child, source, "name").unwrap_or_else(|| "Companion".to_string());
+                let np = make_name_path(prefix, &name);
+                let inner_body = find_child_by_kind(child, "class_body");
+                let children = inner_body
+                    .map(|b| extract_kotlin_class_members(b, source, file, &np))
+                    .unwrap_or_default();
+                members.push(SymbolInfo {
+                    name_path: np,
+                    name,
+                    kind: SymbolKind::Class,
+                    file: file.clone(),
+                    start_line: child.start_position().row as u32,
+                    end_line: child.end_position().row as u32,
+                    start_col: child.start_position().column as u32,
+                    children,
+                });
+            }
+            // Nested class/object declarations
+            "class_declaration" | "object_declaration" => {
+                let inner = extract_kotlin_symbols(child, source, file, prefix);
+                members.extend(inner);
+            }
+            // Enum entries
+            "enum_entry" => {
+                // enum_entry has identifier child, not a "name" field
+                let mut entry_cursor = child.walk();
+                let ident = child
+                    .children(&mut entry_cursor)
+                    .find(|c| c.kind() == "identifier");
+                let ident = match ident {
+                    Some(i) => i,
+                    None => continue,
+                };
+                if let Ok(name) = ident.utf8_text(source.as_bytes()) {
+                    let name = name.to_string();
+                    members.push(SymbolInfo {
+                        name_path: make_name_path(prefix, &name),
+                        name,
+                        kind: SymbolKind::EnumMember,
+                        file: file.clone(),
+                        start_line: child.start_position().row as u32,
+                        end_line: child.end_position().row as u32,
+                        start_col: child.start_position().column as u32,
+                        children: vec![],
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    members
+}
+
+// ---------------------------------------------------------------------------
 // TypeScript / JavaScript
 // ---------------------------------------------------------------------------
 
@@ -1046,6 +1506,131 @@ fn strip_jsdoc(s: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Docstring extraction — Java (Javadoc)
+// ---------------------------------------------------------------------------
+
+fn extract_java_docstrings(node: Node, source: &str) -> Vec<DocstringInfo> {
+    let mut docs = Vec::new();
+    collect_java_docstrings(node, source, &mut docs);
+    docs
+}
+
+fn collect_java_docstrings(node: Node, source: &str, docs: &mut Vec<DocstringInfo>) {
+    let mut cursor = node.walk();
+    let children: Vec<_> = node.children(&mut cursor).collect();
+
+    for (i, child) in children.iter().enumerate() {
+        // Java uses block_comment for Javadoc (/** ... */)
+        if child.kind() == "block_comment" {
+            let text = child.utf8_text(source.as_bytes()).unwrap_or("");
+            if !text.starts_with("/**") {
+                continue;
+            }
+            let start_line = child.start_position().row as u32;
+            let end_line = child.end_position().row as u32;
+
+            let symbol_name = children.get(i + 1).and_then(|next| match next.kind() {
+                "class_declaration"
+                | "interface_declaration"
+                | "enum_declaration"
+                | "record_declaration" => child_name(*next, source, "name"),
+                "method_declaration" | "constructor_declaration" => {
+                    child_name(*next, source, "name")
+                }
+                _ => None,
+            });
+
+            let content = strip_jsdoc(text);
+            docs.push(DocstringInfo {
+                symbol_name,
+                content,
+                start_line,
+                end_line,
+            });
+        }
+
+        // Recurse into class/interface/enum bodies for inner Javadoc
+        match child.kind() {
+            "class_declaration" => {
+                if let Some(body) = find_child_by_kind(*child, "class_body") {
+                    collect_java_docstrings(body, source, docs);
+                }
+            }
+            "interface_declaration" => {
+                if let Some(body) = find_child_by_kind(*child, "interface_body") {
+                    collect_java_docstrings(body, source, docs);
+                }
+            }
+            "enum_declaration" => {
+                if let Some(body) = find_child_by_kind(*child, "enum_body") {
+                    collect_java_docstrings(body, source, docs);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Docstring extraction — Kotlin (KDoc)
+// ---------------------------------------------------------------------------
+
+fn extract_kotlin_docstrings(node: Node, source: &str) -> Vec<DocstringInfo> {
+    let mut docs = Vec::new();
+    collect_kotlin_docstrings(node, source, &mut docs);
+    docs
+}
+
+fn collect_kotlin_docstrings(node: Node, source: &str, docs: &mut Vec<DocstringInfo>) {
+    let mut cursor = node.walk();
+    let children: Vec<_> = node.children(&mut cursor).collect();
+
+    for (i, child) in children.iter().enumerate() {
+        // Kotlin uses block_comment for KDoc (/** ... */)
+        if child.kind() == "block_comment" {
+            let text = child.utf8_text(source.as_bytes()).unwrap_or("");
+            if !text.starts_with("/**") {
+                continue;
+            }
+            let start_line = child.start_position().row as u32;
+            let end_line = child.end_position().row as u32;
+
+            let symbol_name = children.get(i + 1).and_then(|next| match next.kind() {
+                "class_declaration" | "object_declaration" => child_name(*next, source, "name"),
+                "function_declaration" => child_name(*next, source, "name"),
+                "property_declaration" => extract_kotlin_property_name(*next, source),
+                _ => None,
+            });
+
+            let content = strip_jsdoc(text);
+            docs.push(DocstringInfo {
+                symbol_name,
+                content,
+                start_line,
+                end_line,
+            });
+        }
+
+        // Recurse into class/object bodies
+        match child.kind() {
+            "class_declaration" => {
+                let body = find_child_by_kind(*child, "class_body")
+                    .or_else(|| find_child_by_kind(*child, "enum_class_body"));
+                if let Some(body) = body {
+                    collect_kotlin_docstrings(body, source, docs);
+                }
+            }
+            "object_declaration" | "companion_object" => {
+                if let Some(body) = find_child_by_kind(*child, "class_body") {
+                    collect_kotlin_docstrings(body, source, docs);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1330,6 +1915,317 @@ class Animal:
             .find(|d| d.symbol_name.as_deref() == Some("Animal"))
             .unwrap();
         assert!(animal_doc.content.contains("animal base class"));
+    }
+
+    #[test]
+    fn java_symbols() {
+        let source = r#"
+package com.example;
+
+public class Calculator {
+    private int value;
+
+    public Calculator(int initial) {
+        this.value = initial;
+    }
+
+    public int add(int x) {
+        return value + x;
+    }
+
+    public static void main(String[] args) {
+        System.out.println("Hello");
+    }
+}
+
+interface Computable {
+    int compute(int x);
+}
+
+enum Color {
+    RED,
+    GREEN,
+    BLUE;
+}
+
+record Point(int x, int y) {}
+"#;
+        let syms = extract_symbols_from_source(source, Some("java"), Path::new("Calculator.java"))
+            .unwrap();
+        let names: Vec<&str> = syms.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"Calculator"),
+            "missing Calculator: {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"Computable"),
+            "missing Computable: {:?}",
+            names
+        );
+        assert!(names.contains(&"Color"), "missing Color: {:?}", names);
+        assert!(names.contains(&"Point"), "missing Point: {:?}", names);
+
+        // Class members
+        let calc = syms.iter().find(|s| s.name == "Calculator").unwrap();
+        assert_eq!(calc.kind, SymbolKind::Class);
+        let member_names: Vec<&str> = calc.children.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            member_names.contains(&"add"),
+            "missing add method: {:?}",
+            member_names
+        );
+        assert!(
+            member_names.contains(&"main"),
+            "missing main method: {:?}",
+            member_names
+        );
+        assert!(
+            member_names.contains(&"Calculator"),
+            "missing constructor: {:?}",
+            member_names
+        );
+        assert!(
+            member_names.contains(&"value"),
+            "missing field: {:?}",
+            member_names
+        );
+
+        // Enum constants
+        let color = syms.iter().find(|s| s.name == "Color").unwrap();
+        assert_eq!(color.kind, SymbolKind::Enum);
+        assert_eq!(color.children.len(), 3);
+        assert_eq!(color.children[0].name, "RED");
+
+        // Interface
+        let comp = syms.iter().find(|s| s.name == "Computable").unwrap();
+        assert_eq!(comp.kind, SymbolKind::Interface);
+
+        // Record
+        let point = syms.iter().find(|s| s.name == "Point").unwrap();
+        assert_eq!(point.kind, SymbolKind::Struct);
+    }
+
+    #[test]
+    fn java_docstrings() {
+        let source = r#"
+package com.example;
+
+/**
+ * A calculator class.
+ * @author Test
+ */
+public class Calculator {
+    /** Add two numbers. */
+    public int add(int a, int b) {
+        return a + b;
+    }
+}
+"#;
+        let docs =
+            extract_docstrings_from_source(source, Some("java"), Path::new("Calculator.java"))
+                .unwrap();
+        assert!(
+            docs.len() >= 2,
+            "expected at least 2 Javadoc comments, got {:?}",
+            docs
+        );
+        let class_doc = docs
+            .iter()
+            .find(|d| d.symbol_name.as_deref() == Some("Calculator"))
+            .unwrap();
+        assert!(class_doc.content.contains("calculator class"));
+        let method_doc = docs
+            .iter()
+            .find(|d| d.symbol_name.as_deref() == Some("add"))
+            .unwrap();
+        assert!(method_doc.content.contains("Add two numbers"));
+    }
+
+    #[test]
+    fn kotlin_symbols() {
+        let source = r#"
+package com.example
+
+fun greet(name: String): String {
+    return "Hello, $name"
+}
+
+class Animal(val name: String) {
+    var sound: String = ""
+
+    fun speak(): String {
+        return sound
+    }
+
+    companion object {
+        fun create(name: String): Animal = Animal(name)
+    }
+}
+
+object Singleton {
+    fun doSomething() {}
+}
+
+enum class Direction {
+    NORTH,
+    SOUTH,
+    EAST,
+    WEST
+}
+
+interface Drawable {
+    fun draw()
+}
+
+val PI = 3.14159
+"#;
+        let syms =
+            extract_symbols_from_source(source, Some("kotlin"), Path::new("main.kt")).unwrap();
+        let names: Vec<&str> = syms.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"greet"), "missing greet: {:?}", names);
+        assert!(names.contains(&"Animal"), "missing Animal: {:?}", names);
+        assert!(
+            names.contains(&"Singleton"),
+            "missing Singleton: {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"Direction"),
+            "missing Direction: {:?}",
+            names
+        );
+        assert!(names.contains(&"Drawable"), "missing Drawable: {:?}", names);
+        assert!(names.contains(&"PI"), "missing PI property: {:?}", names);
+
+        // Class members
+        let animal = syms.iter().find(|s| s.name == "Animal").unwrap();
+        assert_eq!(animal.kind, SymbolKind::Class);
+        let member_names: Vec<&str> = animal.children.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            member_names.contains(&"speak"),
+            "missing speak: {:?}",
+            member_names
+        );
+        assert!(
+            member_names.contains(&"sound"),
+            "missing sound property: {:?}",
+            member_names
+        );
+        assert!(
+            member_names.contains(&"Companion"),
+            "missing companion: {:?}",
+            member_names
+        );
+
+        // Companion object members
+        let companion = animal
+            .children
+            .iter()
+            .find(|s| s.name == "Companion")
+            .unwrap();
+        assert_eq!(companion.children.len(), 1);
+        assert_eq!(companion.children[0].name, "create");
+
+        // Enum class members
+        let direction = syms.iter().find(|s| s.name == "Direction").unwrap();
+        assert_eq!(direction.kind, SymbolKind::Enum);
+        assert_eq!(direction.children.len(), 4);
+        assert_eq!(direction.children[0].name, "NORTH");
+
+        // Interface
+        let drawable = syms.iter().find(|s| s.name == "Drawable").unwrap();
+        assert_eq!(drawable.kind, SymbolKind::Interface);
+    }
+
+    #[test]
+    fn kotlin_docstrings() {
+        let source = r#"
+package com.example
+
+/**
+ * Greet someone by name.
+ * @param name the person's name
+ */
+fun greet(name: String): String {
+    return "Hello, $name"
+}
+
+/**
+ * An animal class.
+ */
+class Animal(val name: String) {
+    /** Make a sound. */
+    fun speak() {}
+}
+"#;
+        let docs =
+            extract_docstrings_from_source(source, Some("kotlin"), Path::new("main.kt")).unwrap();
+        assert!(
+            docs.len() >= 2,
+            "expected at least 2 KDoc comments, got {:?}",
+            docs
+        );
+        let greet_doc = docs
+            .iter()
+            .find(|d| d.symbol_name.as_deref() == Some("greet"))
+            .unwrap();
+        assert!(greet_doc.content.contains("Greet someone"));
+        let animal_doc = docs
+            .iter()
+            .find(|d| d.symbol_name.as_deref() == Some("Animal"))
+            .unwrap();
+        assert!(animal_doc.content.contains("animal class"));
+    }
+
+    #[test]
+    fn tsx_symbols() {
+        let source = r#"
+import React from 'react';
+
+interface Props {
+    name: string;
+    count: number;
+}
+
+function Greeting({ name }: Props): JSX.Element {
+    return <div>Hello, {name}!</div>;
+}
+
+class Counter extends React.Component<Props> {
+    render() {
+        return <span>{this.props.count}</span>;
+    }
+}
+
+export default Greeting;
+"#;
+        let syms = extract_symbols_from_source(source, Some("tsx"), Path::new("App.tsx")).unwrap();
+        let names: Vec<&str> = syms.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"Props"),
+            "missing Props interface: {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"Greeting"),
+            "missing Greeting function: {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"Counter"),
+            "missing Counter class: {:?}",
+            names
+        );
+
+        let counter = syms.iter().find(|s| s.name == "Counter").unwrap();
+        assert_eq!(counter.kind, SymbolKind::Class);
+        let member_names: Vec<&str> = counter.children.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            member_names.contains(&"render"),
+            "missing render method: {:?}",
+            member_names
+        );
     }
 
     #[test]
