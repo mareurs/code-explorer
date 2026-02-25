@@ -25,15 +25,26 @@ impl Tool for SemanticSearch {
                     "type": "string",
                     "description": "Natural language description or code snippet to search for"
                 },
-                "limit": { "type": "integer", "default": 10 }
+                "limit": { "type": "integer", "default": 10 },
+                "detail_level": {
+                    "type": "string",
+                    "description": "Output detail: omit for compact preview (default), 'full' for complete chunk content"
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "Skip this many results (focused mode pagination)"
+                }
             }
         })
     }
     async fn call(&self, input: Value, ctx: &ToolContext) -> anyhow::Result<Value> {
+        use super::output::OutputGuard;
+
         let query = input["query"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("missing 'query' parameter"))?;
         let limit = input["limit"].as_u64().unwrap_or(10) as usize;
+        let guard = OutputGuard::from_input(&input);
 
         let (root, model) = {
             let inner = ctx.agent.inner.read().await;
@@ -49,17 +60,44 @@ impl Tool for SemanticSearch {
         let query_embedding = crate::embed::embed_one(embedder.as_ref(), query).await?;
         let results = crate::embed::index::search(&conn, &query_embedding, limit)?;
 
-        Ok(json!({
-            "results": results.iter().map(|r| json!({
-                "file_path": r.file_path,
-                "language": r.language,
-                "content": r.content,
-                "start_line": r.start_line,
-                "end_line": r.end_line,
-                "score": r.score,
-            })).collect::<Vec<_>>(),
-            "total": results.len(),
-        }))
+        // Transform results based on mode
+        let result_items: Vec<Value> = results
+            .iter()
+            .map(|r| {
+                let content_field = if guard.should_include_body() {
+                    // Focused mode: full content
+                    r.content.clone()
+                } else {
+                    // Exploring mode: preview (first 150 chars)
+                    let preview_len = 150.min(r.content.len());
+                    let mut preview = r.content[..preview_len].to_string();
+                    if r.content.len() > preview_len {
+                        preview.push_str("...");
+                    }
+                    preview
+                };
+                json!({
+                    "file_path": r.file_path,
+                    "language": r.language,
+                    "content": content_field,
+                    "start_line": r.start_line,
+                    "end_line": r.end_line,
+                    "score": r.score,
+                })
+            })
+            .collect();
+
+        // Apply pagination/capping
+        let (result_items, overflow) = guard.cap_items(
+            result_items,
+            "Use detail_level='full' with offset for pagination",
+        );
+        let total = overflow.as_ref().map_or(result_items.len(), |o| o.total);
+        let mut result = json!({ "results": result_items, "total": total });
+        if let Some(ov) = overflow {
+            result["overflow"] = OutputGuard::overflow_json(&ov);
+        }
+        Ok(result)
     }
 }
 
@@ -216,5 +254,36 @@ mod tests {
         assert_eq!(stats.file_count, 0);
         assert_eq!(stats.chunk_count, 0);
         assert_eq!(stats.embedding_count, 0);
+    }
+
+    #[tokio::test]
+    async fn semantic_search_schema_has_detail_level() {
+        let schema = SemanticSearch.input_schema();
+        let props = schema["properties"].as_object().unwrap();
+        assert!(
+            props.contains_key("detail_level"),
+            "should accept detail_level parameter"
+        );
+        assert!(
+            props.contains_key("offset"),
+            "should accept offset parameter"
+        );
+    }
+
+    #[test]
+    fn preview_truncation_works() {
+        let long_content = "x".repeat(500);
+        let preview_len = 150.min(long_content.len());
+        let mut preview = long_content[..preview_len].to_string();
+        if long_content.len() > preview_len {
+            preview.push_str("...");
+        }
+        assert_eq!(preview.len(), 153); // 150 + "..."
+        assert!(preview.ends_with("..."));
+
+        let short_content = "short";
+        let preview_len2 = 150.min(short_content.len());
+        let preview2 = short_content[..preview_len2].to_string();
+        assert_eq!(preview2, "short"); // no truncation for short content
     }
 }

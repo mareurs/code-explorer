@@ -6,7 +6,7 @@ Rust MCP server giving LLMs IDE-grade code intelligence — symbol-level navigat
 
 ```bash
 cargo build                        # Build
-cargo test                         # Run tests (176 passing)
+cargo test                         # Run tests (186 passing)
 cargo clippy -- -D warnings        # Lint
 cargo fmt                          # Format
 cargo run -- start --project .     # Run MCP server (stdio)
