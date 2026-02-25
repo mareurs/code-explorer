@@ -239,10 +239,15 @@ impl Tool for GetSymbolsOverview {
                 .collect();
             Ok(json!({ "file": rel_path, "symbols": json_symbols }))
         } else if full_path.is_dir() {
-            // Collect file paths from directory
+            // Collect file paths from directory.
+            // Project root → walk recursively so nested src/ files are found.
+            // Subdirectory → shallow (depth 1) to avoid dumping entire subtrees.
+            let is_project_root = rel_path == "." || rel_path.is_empty();
             let mut dir_files = vec![];
             let walker = ignore::WalkBuilder::new(&full_path)
-                .max_depth(Some(1))
+                .max_depth(if is_project_root { None } else { Some(1) })
+                .hidden(true)
+                .git_ignore(true)
                 .build();
             for entry in walker.flatten() {
                 if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
@@ -263,31 +268,42 @@ impl Tool for GetSymbolsOverview {
                     continue;
                 };
                 let language_id = crate::lsp::servers::lsp_language_id(lang);
-                if let Ok(client) = ctx.lsp.get_or_start(lang, &root).await {
-                    if let Ok(symbols) = client.document_symbols(path, language_id).await {
-                        let rel = path.strip_prefix(&root).unwrap_or(path);
-                        let source = if include_body {
-                            std::fs::read_to_string(path).ok()
-                        } else {
-                            None
-                        };
-                        let json_symbols: Vec<Value> = symbols
-                            .iter()
-                            .map(|s| {
-                                symbol_to_json(
-                                    s,
-                                    include_body,
-                                    source.as_deref(),
-                                    depth.saturating_sub(1),
-                                )
-                            })
-                            .collect();
-                        result.push(json!({
-                            "file": rel.display().to_string(),
-                            "symbols": json_symbols,
-                        }));
-                    }
+
+                // Try LSP first, fall back to tree-sitter if unavailable
+                let mut symbols = if let Ok(client) = ctx.lsp.get_or_start(lang, &root).await {
+                    client
+                        .document_symbols(path, language_id)
+                        .await
+                        .unwrap_or_default()
+                } else {
+                    vec![]
+                };
+
+                // Tree-sitter fallback when LSP is unavailable or returned nothing
+                if symbols.is_empty() {
+                    symbols = crate::ast::extract_symbols(path).unwrap_or_default();
                 }
+
+                if symbols.is_empty() {
+                    continue;
+                }
+
+                let rel = path.strip_prefix(&root).unwrap_or(path);
+                let source = if include_body {
+                    std::fs::read_to_string(path).ok()
+                } else {
+                    None
+                };
+                let json_symbols: Vec<Value> = symbols
+                    .iter()
+                    .map(|s| {
+                        symbol_to_json(s, include_body, source.as_deref(), depth.saturating_sub(1))
+                    })
+                    .collect();
+                result.push(json!({
+                    "file": rel.display().to_string(),
+                    "symbols": json_symbols,
+                }));
             }
             let mut result_json = json!({ "directory": rel_path, "files": result });
             if let Some(ov) = file_overflow {
@@ -1226,6 +1242,83 @@ impl Point {
                 .any(|s| s["name"].as_str().unwrap() == "UniqueTestStruct"),
             "should find struct via tree-sitter fallback: {:?}",
             result2
+        );
+    }
+
+    #[tokio::test]
+    async fn get_symbols_overview_finds_nested_files() {
+        // No LSP needed — verifies recursive walk + tree-sitter fallback.
+        // Source files ONLY in subdirectories (not at root).
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::write(
+            dir.path().join("src/lib.rs"),
+            "pub fn nested_function() -> i32 { 42 }\n",
+        )
+        .unwrap();
+        // Also one at root for comparison
+        std::fs::write(dir.path().join("main.rs"), "fn main() {}\n").unwrap();
+
+        let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
+        let ctx = ToolContext { agent, lsp: lsp() };
+
+        // Project-wide (no path) — should find both root and nested files
+        let result = GetSymbolsOverview.call(json!({}), &ctx).await.unwrap();
+
+        let files = result["files"].as_array().unwrap();
+        let file_names: Vec<&str> = files.iter().map(|f| f["file"].as_str().unwrap()).collect();
+        assert!(
+            files.len() >= 2,
+            "should find files in subdirectories, got: {:?}",
+            file_names
+        );
+        assert!(
+            file_names.iter().any(|f| f.contains("src/lib.rs")),
+            "should find nested src/lib.rs, got: {:?}",
+            file_names
+        );
+        assert!(
+            file_names.iter().any(|f| f.contains("main.rs")),
+            "should find root main.rs, got: {:?}",
+            file_names
+        );
+    }
+
+    #[tokio::test]
+    async fn get_symbols_overview_subdir_stays_shallow() {
+        // When targeting a specific subdirectory (not root), should NOT recurse.
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src/deep/nested")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::write(dir.path().join("src/top.rs"), "pub fn top_level() {}\n").unwrap();
+        std::fs::write(
+            dir.path().join("src/deep/nested/hidden.rs"),
+            "pub fn deeply_nested() {}\n",
+        )
+        .unwrap();
+
+        let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
+        let ctx = ToolContext { agent, lsp: lsp() };
+
+        // Target "src" specifically — should be shallow (depth 1)
+        let result = GetSymbolsOverview
+            .call(json!({ "relative_path": "src" }), &ctx)
+            .await
+            .unwrap();
+
+        let files = result["files"].as_array().unwrap();
+        let file_names: Vec<&str> = files.iter().map(|f| f["file"].as_str().unwrap()).collect();
+        assert!(
+            file_names.iter().any(|f| f.contains("top.rs")),
+            "should find src/top.rs in shallow walk, got: {:?}",
+            file_names
+        );
+        // The deeply nested file should NOT appear with shallow walk
+        assert!(
+            !file_names.iter().any(|f| f.contains("hidden.rs")),
+            "should NOT find deeply nested file with shallow walk, got: {:?}",
+            file_names
         );
     }
 
