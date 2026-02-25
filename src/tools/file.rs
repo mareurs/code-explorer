@@ -4,7 +4,7 @@ use anyhow::Result;
 use serde_json::{json, Value};
 
 use crate::util::text::extract_lines;
-use super::Tool;
+use super::{Tool, ToolContext};
 
 // ── read_file ────────────────────────────────────────────────────────────────
 
@@ -30,7 +30,7 @@ impl Tool for ReadFile {
         })
     }
 
-    async fn call(&self, input: Value) -> Result<Value> {
+    async fn call(&self, input: Value, _ctx: &ToolContext) -> Result<Value> {
         let path = input["path"].as_str().ok_or_else(|| anyhow::anyhow!("missing path"))?;
         let text = std::fs::read_to_string(path)?;
         let content = match (input["start_line"].as_u64(), input["end_line"].as_u64()) {
@@ -64,7 +64,7 @@ impl Tool for ListDir {
         })
     }
 
-    async fn call(&self, input: Value) -> Result<Value> {
+    async fn call(&self, input: Value, _ctx: &ToolContext) -> Result<Value> {
         let path = input["path"].as_str().unwrap_or(".");
         let recursive = input["recursive"].as_bool().unwrap_or(false);
         let depth = if recursive { usize::MAX } else { 1 };
@@ -108,7 +108,7 @@ impl Tool for SearchForPattern {
         })
     }
 
-    async fn call(&self, input: Value) -> Result<Value> {
+    async fn call(&self, input: Value, _ctx: &ToolContext) -> Result<Value> {
         let pattern = input["pattern"].as_str().ok_or_else(|| anyhow::anyhow!("missing pattern"))?;
         let search_path = input["path"].as_str().unwrap_or(".");
         let max = input["max_results"].as_u64().unwrap_or(50) as usize;
@@ -143,23 +143,30 @@ impl Tool for SearchForPattern {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::Agent;
     use serde_json::json;
     use tempfile::tempdir;
+
+    async fn test_ctx() -> ToolContext {
+        ToolContext { agent: Agent::new(None).await.unwrap() }
+    }
 
     // ── ReadFile ──────────────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn read_file_returns_full_content() {
+        let ctx = test_ctx().await;
         let dir = tempdir().unwrap();
         let file = dir.path().join("hello.txt");
         std::fs::write(&file, "hello world").unwrap();
 
-        let result = ReadFile.call(json!({ "path": file.to_str().unwrap() })).await.unwrap();
+        let result = ReadFile.call(json!({ "path": file.to_str().unwrap() }), &ctx).await.unwrap();
         assert_eq!(result["content"], "hello world");
     }
 
     #[tokio::test]
     async fn read_file_with_line_range() {
+        let ctx = test_ctx().await;
         let dir = tempdir().unwrap();
         let file = dir.path().join("lines.txt");
         std::fs::write(&file, "line1\nline2\nline3\nline4\nline5").unwrap();
@@ -168,20 +175,22 @@ mod tests {
             "path": file.to_str().unwrap(),
             "start_line": 2,
             "end_line": 4
-        })).await.unwrap();
+        }), &ctx).await.unwrap();
 
         assert_eq!(result["content"], "line2\nline3\nline4");
     }
 
     #[tokio::test]
     async fn read_file_missing_errors() {
-        let result = ReadFile.call(json!({ "path": "/no/such/file.txt" })).await;
+        let ctx = test_ctx().await;
+        let result = ReadFile.call(json!({ "path": "/no/such/file.txt" }), &ctx).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn read_file_missing_path_param_errors() {
-        let result = ReadFile.call(json!({})).await;
+        let ctx = test_ctx().await;
+        let result = ReadFile.call(json!({}), &ctx).await;
         assert!(result.is_err());
     }
 
@@ -189,12 +198,13 @@ mod tests {
 
     #[tokio::test]
     async fn list_dir_returns_shallow_entries() {
+        let ctx = test_ctx().await;
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("a.rs"), "").unwrap();
         std::fs::write(dir.path().join("b.rs"), "").unwrap();
 
         let result = ListDir
-            .call(json!({ "path": dir.path().to_str().unwrap() }))
+            .call(json!({ "path": dir.path().to_str().unwrap() }), &ctx)
             .await
             .unwrap();
 
@@ -211,13 +221,14 @@ mod tests {
 
     #[tokio::test]
     async fn list_dir_shallow_does_not_descend() {
+        let ctx = test_ctx().await;
         let dir = tempdir().unwrap();
         let sub = dir.path().join("sub");
         std::fs::create_dir(&sub).unwrap();
         std::fs::write(sub.join("deep.rs"), "").unwrap();
 
         let result = ListDir
-            .call(json!({ "path": dir.path().to_str().unwrap(), "recursive": false }))
+            .call(json!({ "path": dir.path().to_str().unwrap(), "recursive": false }), &ctx)
             .await
             .unwrap();
 
@@ -233,13 +244,14 @@ mod tests {
 
     #[tokio::test]
     async fn list_dir_recursive_descends() {
+        let ctx = test_ctx().await;
         let dir = tempdir().unwrap();
         let sub = dir.path().join("sub");
         std::fs::create_dir(&sub).unwrap();
         std::fs::write(sub.join("deep.rs"), "").unwrap();
 
         let result = ListDir
-            .call(json!({ "path": dir.path().to_str().unwrap(), "recursive": true }))
+            .call(json!({ "path": dir.path().to_str().unwrap(), "recursive": true }), &ctx)
             .await
             .unwrap();
 
@@ -256,11 +268,12 @@ mod tests {
 
     #[tokio::test]
     async fn search_finds_matching_line() {
+        let ctx = test_ctx().await;
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("code.rs"), "fn main() {}\nlet x = 42;\n").unwrap();
 
         let result = SearchForPattern
-            .call(json!({ "pattern": "fn main", "path": dir.path().to_str().unwrap() }))
+            .call(json!({ "pattern": "fn main", "path": dir.path().to_str().unwrap() }), &ctx)
             .await
             .unwrap();
 
@@ -272,11 +285,12 @@ mod tests {
 
     #[tokio::test]
     async fn search_returns_no_matches_when_absent() {
+        let ctx = test_ctx().await;
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("code.rs"), "fn main() {}").unwrap();
 
         let result = SearchForPattern
-            .call(json!({ "pattern": "xyz_not_present", "path": dir.path().to_str().unwrap() }))
+            .call(json!({ "pattern": "xyz_not_present", "path": dir.path().to_str().unwrap() }), &ctx)
             .await
             .unwrap();
 
@@ -285,6 +299,7 @@ mod tests {
 
     #[tokio::test]
     async fn search_respects_max_results() {
+        let ctx = test_ctx().await;
         let dir = tempdir().unwrap();
         let content = (0..20).map(|i| format!("match_{}", i)).collect::<Vec<_>>().join("\n");
         std::fs::write(dir.path().join("data.txt"), &content).unwrap();
@@ -294,7 +309,7 @@ mod tests {
                 "pattern": "match_",
                 "path": dir.path().to_str().unwrap(),
                 "max_results": 5
-            }))
+            }), &ctx)
             .await
             .unwrap();
 
@@ -303,13 +318,15 @@ mod tests {
 
     #[tokio::test]
     async fn search_invalid_regex_errors() {
-        let result = SearchForPattern.call(json!({ "pattern": "[invalid" })).await;
+        let ctx = test_ctx().await;
+        let result = SearchForPattern.call(json!({ "pattern": "[invalid" }), &ctx).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn search_missing_pattern_errors() {
-        let result = SearchForPattern.call(json!({})).await;
+        let ctx = test_ctx().await;
+        let result = SearchForPattern.call(json!({}), &ctx).await;
         assert!(result.is_err());
     }
 }

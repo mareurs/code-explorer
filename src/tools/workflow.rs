@@ -2,7 +2,7 @@
 
 use anyhow::anyhow;
 use serde_json::{json, Value};
-use super::Tool;
+use super::{Tool, ToolContext};
 
 pub struct Onboarding;
 pub struct CheckOnboardingPerformed;
@@ -18,7 +18,7 @@ impl Tool for Onboarding {
     fn input_schema(&self) -> Value {
         json!({ "type": "object", "properties": {} })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("onboarding: not yet implemented"))
     }
 }
@@ -32,7 +32,7 @@ impl Tool for CheckOnboardingPerformed {
     fn input_schema(&self) -> Value {
         json!({ "type": "object", "properties": {} })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("check_onboarding_performed: not yet wired to MemoryStore"))
     }
 }
@@ -53,7 +53,7 @@ impl Tool for ExecuteShellCommand {
             }
         })
     }
-    async fn call(&self, input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         let command = input["command"]
             .as_str()
             .ok_or_else(|| anyhow!("missing 'command' parameter"))?;

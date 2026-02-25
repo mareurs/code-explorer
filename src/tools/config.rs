@@ -2,7 +2,7 @@
 
 use anyhow::anyhow;
 use serde_json::{json, Value};
-use super::Tool;
+use super::{Tool, ToolContext};
 
 pub struct ActivateProject;
 pub struct GetCurrentConfig;
@@ -23,7 +23,7 @@ impl Tool for ActivateProject {
             }
         })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("activate_project: not yet wired to Agent::activate"))
     }
 }
@@ -35,7 +35,7 @@ impl Tool for GetCurrentConfig {
     fn input_schema(&self) -> Value {
         json!({ "type": "object", "properties": {} })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("get_current_config: not yet wired to Agent"))
     }
 }

@@ -2,7 +2,7 @@
 
 use anyhow::anyhow;
 use serde_json::{json, Value};
-use super::Tool;
+use super::{Tool, ToolContext};
 
 pub struct ListFunctions;
 pub struct ExtractDocstrings;
@@ -20,7 +20,7 @@ impl Tool for ListFunctions {
             "properties": { "path": { "type": "string" } }
         })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("list_functions: not yet wired to tree-sitter"))
     }
 }
@@ -38,7 +38,7 @@ impl Tool for ExtractDocstrings {
             "properties": { "path": { "type": "string" } }
         })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("extract_docstrings: not yet wired to tree-sitter"))
     }
 }

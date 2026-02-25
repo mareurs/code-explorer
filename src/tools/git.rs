@@ -2,7 +2,7 @@
 
 use anyhow::anyhow;
 use serde_json::{json, Value};
-use super::Tool;
+use super::{Tool, ToolContext};
 
 pub struct GitBlame;
 pub struct GitLog;
@@ -25,7 +25,7 @@ impl Tool for GitBlame {
             }
         })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("git_blame: not yet wired to git::blame::blame_file"))
     }
 }
@@ -43,7 +43,7 @@ impl Tool for GitLog {
             }
         })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("git_log: not yet wired to git::file_log"))
     }
 }
@@ -63,7 +63,7 @@ impl Tool for GitDiff {
             }
         })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("git_diff: not yet wired to git2 diff"))
     }
 }

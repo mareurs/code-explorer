@@ -2,7 +2,7 @@
 
 use anyhow::anyhow;
 use serde_json::{json, Value};
-use super::Tool;
+use super::{Tool, ToolContext};
 
 pub struct FindSymbol;
 pub struct FindReferencingSymbols;
@@ -31,7 +31,7 @@ impl Tool for FindSymbol {
             }
         })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("find_symbol: not yet implemented (requires LSP)"))
     }
 }
@@ -50,7 +50,7 @@ impl Tool for FindReferencingSymbols {
             }
         })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("find_referencing_symbols: not yet implemented (requires LSP)"))
     }
 }
@@ -68,7 +68,7 @@ impl Tool for GetSymbolsOverview {
             }
         })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("get_symbols_overview: not yet implemented (requires LSP or tree-sitter)"))
     }
 }
@@ -90,7 +90,7 @@ impl Tool for ReplaceSymbolBody {
             }
         })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("replace_symbol_body: not yet implemented"))
     }
 }
@@ -110,7 +110,7 @@ impl Tool for InsertBeforeSymbol {
             }
         })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("insert_before_symbol: not yet implemented"))
     }
 }
@@ -130,7 +130,7 @@ impl Tool for InsertAfterSymbol {
             }
         })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("insert_after_symbol: not yet implemented"))
     }
 }
@@ -150,7 +150,7 @@ impl Tool for RenameSymbol {
             }
         })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("rename_symbol: not yet implemented (requires LSP)"))
     }
 }

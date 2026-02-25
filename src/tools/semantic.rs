@@ -2,7 +2,7 @@
 
 use anyhow::anyhow;
 use serde_json::{json, Value};
-use super::Tool;
+use super::{Tool, ToolContext};
 
 pub struct SemanticSearch;
 pub struct IndexProject;
@@ -30,7 +30,7 @@ impl Tool for SemanticSearch {
             }
         })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("semantic_search: not yet wired to embed::index (run index_project first)"))
     }
 }
@@ -50,7 +50,7 @@ impl Tool for IndexProject {
             }
         })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("index_project: not yet wired to embed::index::build_index"))
     }
 }
@@ -64,7 +64,7 @@ impl Tool for IndexStatus {
     fn input_schema(&self) -> Value {
         json!({ "type": "object", "properties": {} })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("index_status: not yet implemented"))
     }
 }

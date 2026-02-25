@@ -27,7 +27,7 @@ use crate::tools::{
         InsertBeforeSymbol, RenameSymbol, ReplaceSymbolBody,
     },
     workflow::{CheckOnboardingPerformed, ExecuteShellCommand, Onboarding},
-    Tool,
+    Tool, ToolContext,
 };
 
 /// The MCP server handler — holds shared agent state and a registry of tools.
@@ -140,7 +140,8 @@ impl ServerHandler for CodeExplorerServer {
             .map(Value::Object)
             .unwrap_or(Value::Object(Default::default()));
 
-        match tool.call(input).await {
+        let ctx = ToolContext { agent: self.agent.clone() };
+        match tool.call(input, &ctx).await {
             Ok(output) => {
                 let text = serde_json::to_string_pretty(&output)
                     .unwrap_or_else(|_| output.to_string());

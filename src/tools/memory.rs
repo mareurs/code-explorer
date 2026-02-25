@@ -2,7 +2,7 @@
 
 use anyhow::anyhow;
 use serde_json::{json, Value};
-use super::Tool;
+use super::{Tool, ToolContext};
 
 pub struct WriteMemory;
 pub struct ReadMemory;
@@ -26,7 +26,7 @@ impl Tool for WriteMemory {
             }
         })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("write_memory: not yet wired to MemoryStore"))
     }
 }
@@ -42,7 +42,7 @@ impl Tool for ReadMemory {
             "properties": { "topic": { "type": "string" } }
         })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("read_memory: not yet wired to MemoryStore"))
     }
 }
@@ -54,7 +54,7 @@ impl Tool for ListMemories {
     fn input_schema(&self) -> Value {
         json!({ "type": "object", "properties": {} })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("list_memories: not yet wired to MemoryStore"))
     }
 }
@@ -70,7 +70,7 @@ impl Tool for DeleteMemory {
             "properties": { "topic": { "type": "string" } }
         })
     }
-    async fn call(&self, _input: Value) -> anyhow::Result<Value> {
+    async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
         Err(anyhow!("delete_memory: not yet wired to MemoryStore"))
     }
 }
