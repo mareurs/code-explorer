@@ -1360,4 +1360,46 @@ impl Point {
         assert!(find_symbol_by_name_path(&symbols, "Foo/bar").is_some());
         assert!(find_symbol_by_name_path(&symbols, "nonexistent").is_none());
     }
+
+    #[test]
+    fn find_symbol_by_name_path_exact_match() {
+        let symbols = vec![SymbolInfo {
+            name: "MyStruct".to_string(),
+            name_path: "MyStruct".to_string(),
+            kind: crate::lsp::SymbolKind::Struct,
+            file: PathBuf::from("/tmp/test.rs"),
+            start_line: 0,
+            end_line: 10,
+            start_col: 0,
+            children: vec![SymbolInfo {
+                name: "my_method".to_string(),
+                name_path: "MyStruct/my_method".to_string(),
+                kind: crate::lsp::SymbolKind::Method,
+                file: PathBuf::from("/tmp/test.rs"),
+                start_line: 2,
+                end_line: 5,
+                start_col: 4,
+                children: vec![],
+            }],
+        }];
+
+        // Exact name_path match for nested symbol
+        let found = find_symbol_by_name_path(&symbols, "MyStruct/my_method");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().name, "my_method");
+
+        // Exact name_path match for top-level
+        let found = find_symbol_by_name_path(&symbols, "MyStruct");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().name, "MyStruct");
+
+        // Bare name match (fallback)
+        let found = find_symbol_by_name_path(&symbols, "my_method");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().name, "my_method");
+
+        // Miss
+        let found = find_symbol_by_name_path(&symbols, "nonexistent");
+        assert!(found.is_none());
+    }
 }
