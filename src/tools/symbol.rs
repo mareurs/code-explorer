@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::anyhow;
 use serde_json::{json, Value};
 
-use super::output::OutputGuard;
+use super::output::{OutputGuard, OutputMode};
 use super::{Tool, ToolContext};
 use crate::ast;
 use crate::lsp::SymbolInfo;
@@ -349,7 +349,20 @@ impl Tool for FindSymbol {
         let pattern_lower = pattern.to_lowercase();
         let mut matches = vec![];
 
+        // In exploring mode, stop searching files once we have enough results.
+        // Collect max_results+1 to detect overflow without querying every file.
+        let early_cap = match guard.mode {
+            OutputMode::Exploring => Some(guard.max_results + 1),
+            OutputMode::Focused => None,
+        };
+
         for file_path in &files {
+            if let Some(cap) = early_cap {
+                if matches.len() >= cap {
+                    break;
+                }
+            }
+
             let Some(lang) = ast::detect_language(file_path) else {
                 continue;
             };
@@ -393,9 +406,23 @@ impl Tool for FindSymbol {
             );
         }
 
-        let total = matches.len();
-        let (matches, overflow) =
-            guard.cap_items(matches, "Restrict with a file path or glob pattern");
+        let hit_early_cap = early_cap.is_some() && matches.len() > guard.max_results;
+
+        let (matches, overflow) = if hit_early_cap {
+            use super::output::OverflowInfo;
+            matches.truncate(guard.max_results);
+            let overflow = OverflowInfo {
+                shown: guard.max_results,
+                total: guard.max_results + 1, // at least this many
+                hint: "Restrict with a file path or glob pattern".to_string(),
+                next_offset: None,
+            };
+            (matches, Some(overflow))
+        } else {
+            guard.cap_items(matches, "Restrict with a file path or glob pattern")
+        };
+
+        let total = overflow.as_ref().map_or(matches.len(), |o| o.total);
         let mut result = json!({ "symbols": matches, "total": total });
         if let Some(ov) = overflow {
             result["overflow"] = OutputGuard::overflow_json(&ov);
