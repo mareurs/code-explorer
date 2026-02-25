@@ -423,7 +423,10 @@ impl Tool for FindReferencingSymbols {
             "required": ["name_path", "relative_path"],
             "properties": {
                 "name_path": { "type": "string", "description": "Symbol name path (e.g. 'MyStruct/my_method')" },
-                "relative_path": { "type": "string", "description": "File containing the symbol" }
+                "relative_path": { "type": "string", "description": "File containing the symbol" },
+                "detail_level": { "type": "string", "description": "Output detail: omit for compact (default), 'full' for complete with bodies" },
+                "offset": { "type": "integer", "description": "Skip this many results (focused mode pagination)" },
+                "limit": { "type": "integer", "description": "Max results per page (focused mode, default 50)" }
             }
         })
     }
@@ -474,7 +477,14 @@ impl Tool for FindReferencingSymbols {
             })
             .collect();
 
-        Ok(json!({ "references": locations, "total": locations.len() }))
+        let guard = OutputGuard::from_input(&input);
+        let total = locations.len();
+        let (locations, overflow) = guard.cap_items(locations, "This symbol has many references. Use detail_level='full' with offset/limit to paginate");
+        let mut result = json!({ "references": locations, "total": total });
+        if let Some(ov) = overflow {
+            result["overflow"] = OutputGuard::overflow_json(&ov);
+        }
+        Ok(result)
     }
 }
 
