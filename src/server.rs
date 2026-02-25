@@ -38,15 +38,18 @@ pub struct CodeExplorerServer {
     agent: Agent,
     lsp: Arc<LspManager>,
     tools: Vec<Arc<dyn Tool>>,
+    instructions: String,
 }
 
 impl CodeExplorerServer {
-    pub fn new(agent: Agent) -> Self {
-        Self::from_parts(agent, Arc::new(LspManager::new()))
+    pub async fn new(agent: Agent) -> Self {
+        Self::from_parts(agent, Arc::new(LspManager::new())).await
     }
 
     /// Create a server with an existing LspManager (used for HTTP multi-session).
-    pub fn from_parts(agent: Agent, lsp: Arc<LspManager>) -> Self {
+    pub async fn from_parts(agent: Agent, lsp: Arc<LspManager>) -> Self {
+        let status = agent.project_status().await;
+        let instructions = crate::prompts::build_server_instructions(status.as_ref());
         let tools: Vec<Arc<dyn Tool>> = vec![
             // File tools (fully implemented)
             Arc::new(ReadFile),
@@ -87,7 +90,12 @@ impl CodeExplorerServer {
             Arc::new(ActivateProject),
             Arc::new(GetCurrentConfig),
         ];
-        Self { agent, lsp, tools }
+        Self {
+            agent,
+            lsp,
+            tools,
+            instructions,
+        }
     }
 
     fn find_tool(&self, name: &str) -> Option<&Arc<dyn Tool>> {
@@ -98,12 +106,7 @@ impl CodeExplorerServer {
 impl ServerHandler for CodeExplorerServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
-            instructions: Some(
-                "code-explorer MCP server: high-performance semantic code intelligence. \
-                 Provides file operations, symbol navigation (LSP), AST analysis (tree-sitter), \
-                 git history/blame, semantic search (embeddings), and project memory."
-                    .into(),
-            ),
+            instructions: Some(self.instructions.clone()),
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             ..Default::default()
         }
@@ -176,7 +179,7 @@ pub async fn run(project: Option<PathBuf>, transport: &str, host: &str, port: u1
     match transport {
         "stdio" => {
             tracing::info!("code-explorer MCP server ready (stdio)");
-            let server = CodeExplorerServer::from_parts(agent, lsp);
+            let server = CodeExplorerServer::from_parts(agent, lsp).await;
             let service = server
                 .serve(rmcp::transport::stdio())
                 .await
@@ -202,7 +205,7 @@ pub async fn run(project: Option<PathBuf>, transport: &str, host: &str, port: u1
                 let agent = agent.clone();
                 let lsp = lsp.clone();
                 tokio::spawn(async move {
-                    let handler = CodeExplorerServer::from_parts(agent, lsp);
+                    let handler = CodeExplorerServer::from_parts(agent, lsp).await;
                     match handler.serve(transport).await {
                         Ok(service) => {
                             if let Err(e) = service.waiting().await {

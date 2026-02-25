@@ -66,6 +66,21 @@ impl Agent {
             .ok_or_else(|| anyhow::anyhow!("No active project. Use activate_project first."))
     }
 
+    /// Get the current project status for building server instructions.
+    pub async fn project_status(&self) -> Option<crate::prompts::ProjectStatus> {
+        let inner = self.inner.read().await;
+        let project = inner.active_project.as_ref()?;
+        let memories = project.memory.list().unwrap_or_default();
+        let has_index = crate::embed::index::db_path(&project.root).exists();
+        Some(crate::prompts::ProjectStatus {
+            name: project.config.project.name.clone(),
+            path: project.root.display().to_string(),
+            languages: project.config.project.languages.clone(),
+            memories,
+            has_index,
+        })
+    }
+
     /// Run a closure with a read-lock on the active project.
     /// Returns an error if no project is active.
     pub async fn with_project<F, T>(&self, f: F) -> Result<T>
