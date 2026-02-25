@@ -5,11 +5,11 @@
 
 ## Current State
 
-- 32 source files, 9 modules, 60 tests passing
-- 4 tools working: `read_file`, `list_dir`, `search_for_pattern`, `execute_shell_command`
-- 23 tools stubbed (14 have backing implementations ready to wire)
+- 32 source files, 9 modules, **84 tests passing**
+- **18 tools working** (was 4): file (3), workflow (3), memory (4), git (3), config (2), semantic (3)
+- 9 tools stubbed: symbol (7, need LSP), AST (2, need tree-sitter)
 - MCP server working over stdio (rmcp)
-- Core libraries implemented: chunker, embedding index, memory store, git blame/log, config
+- Core libraries: chunker, embedding index, memory store, git blame/log/diff, config, language detection
 
 ## Architecture Decision: ToolContext
 
@@ -47,14 +47,15 @@ Introduce `ToolContext`, change `Tool::call` signature, update all 27 tools and 
 Zero behavioral change — mechanical refactor.
 
 **Tasks:**
-- [ ] Create `ToolContext` struct in `src/tools/mod.rs`
-- [ ] Change `Tool::call` signature to `async fn call(&self, input: Value, ctx: &ToolContext) -> Result<Value>`
-- [ ] Update `CodeExplorerServer::call_tool()` to construct and pass `ToolContext`
-- [ ] Update all 27 tool implementations (add `ctx` parameter, unused for now)
-- [ ] Verify: `cargo test` passes, `cargo clippy` clean
+- [x] Create `ToolContext` struct in `src/tools/mod.rs`
+- [x] Change `Tool::call` signature to `async fn call(&self, input: Value, ctx: &ToolContext) -> Result<Value>`
+- [x] Update `CodeExplorerServer::call_tool()` to construct and pass `ToolContext`
+- [x] Update all 27 tool implementations (add `ctx` parameter, unused for now)
+- [x] Verify: `cargo test` passes, `cargo clippy` clean
 
 **Files:** `src/tools/mod.rs`, `src/server.rs`, all 8 `src/tools/*.rs` files
 **Acceptance:** 60 tests pass, MCP handshake works, no behavioral change
+**Done:** `e924850` — also added `Agent::with_project()` helper
 
 ---
 
@@ -65,60 +66,64 @@ Zero behavioral change — mechanical refactor.
 Wire memory tools to the already-implemented `MemoryStore`.
 
 **Tasks:**
-- [ ] `write_memory`: parse topic + content from input, call `ctx.agent` → `active_project.memory.write()`
-- [ ] `read_memory`: parse topic, call `memory.read()`, return content or "not found"
-- [ ] `list_memories`: call `memory.list()`, return topics array
-- [ ] `delete_memory`: parse topic, call `memory.delete()`
-- [ ] Add tool-level integration tests (tempdir-based)
+- [x] `write_memory`: parse topic + content from input, call `ctx.agent` → `active_project.memory.write()`
+- [x] `read_memory`: parse topic, call `memory.read()`, return content or "not found"
+- [x] `list_memories`: call `memory.list()`, return topics array
+- [x] `delete_memory`: parse topic, call `memory.delete()`
+- [x] Add tool-level integration tests (tempdir-based)
 
-**Access pattern:** `ctx.agent.inner.read().await` → `active_project.memory`
+**Access pattern:** `ctx.agent.with_project()` → `memory`
 **Files:** `src/tools/memory.rs`
 **Acceptance:** 4 memory tools work end-to-end via MCP
+**Done:** `9f66f43` — 6 new tests (write/read roundtrip, list, delete, nested topics, no-project error)
 
 ### Sprint 1.2 — Git Tools (3 tools)
 
 Wire git tools to `git2` backends. One new function needed for diff.
 
 **Tasks:**
-- [ ] `git_blame`: parse path + optional line range, call `git::blame::blame_file()`
-- [ ] `git_log`: parse optional path + limit, call `git::file_log()`
-- [ ] Implement `git::diff_workdir()` — new function using git2 diff API
-- [ ] `git_diff`: parse optional path + commit, call `git::diff_workdir()`
-- [ ] Add tests using temp git repos with commits
+- [x] `git_blame`: parse path + optional line range, call `git::blame::blame_file()`
+- [x] `git_log`: parse optional path + limit, call `git::file_log()`
+- [x] Implement `git::diff_workdir()` — new function using git2 diff API
+- [x] `git_diff`: parse optional path + commit, call `git::diff_workdir()`
+- [x] Add tests using temp git repos with commits
 
 **Access pattern:** `ctx.agent` → project root → `git2::Repository::open(root)`
 **Files:** `src/tools/git.rs`, `src/git/mod.rs` (new `diff_workdir`)
 **Acceptance:** blame, log, diff all return real data for a git repo
+**Done:** `268d99d` — 7 new tests with temp git repos (blame, blame+range, log, project-wide log, diff, clean diff, no-project error)
 
 ### Sprint 1.3 — Config + Workflow Tools (4 tools)
 
 Wire config and workflow tools to Agent.
 
 **Tasks:**
-- [ ] `activate_project`: parse path, call `ctx.agent.activate(path)`
-- [ ] `get_current_config`: read Agent inner state, return config as JSON
-- [ ] `onboarding`: detect languages in project, create `.code-explorer/project.toml`
-- [ ] `check_onboarding_performed`: check if `.code-explorer/` directory exists
-- [ ] Add tests for activation roundtrip and onboarding
+- [x] `activate_project`: parse path, call `ctx.agent.activate(path)`
+- [x] `get_current_config`: read Agent inner state, return config as JSON
+- [x] `onboarding`: detect languages in project, create `.code-explorer/project.toml`
+- [x] `check_onboarding_performed`: check if `.code-explorer/` directory exists
+- [x] Add tests for activation roundtrip and onboarding
 
 **Files:** `src/tools/config.rs`, `src/tools/workflow.rs`
 **Acceptance:** can activate a project, read its config, run onboarding
+**Done:** `5755b82` — 7 new tests (activate+config, nonexistent path, re-activate, onboarding detects languages, creates config, before/after check, no-project error)
 
 ### Sprint 1.4 — Semantic Tools (3 tools)
 
 Wire semantic search to the embedding index. Requires embedder for query embedding.
 
 **Tasks:**
-- [ ] `index_project`: parse optional `force` flag, call `embed::index::build_index()`
-- [ ] `semantic_search`: embed query via `create_embedder()`, call `embed::index::search()`
-- [ ] Implement `embed::index::index_stats()` — new function querying SQLite for counts
-- [ ] `index_status`: call `index_stats()`, return file/chunk counts + model info
-- [ ] Add tests (mock embedder or small test corpus with known embeddings)
+- [x] `index_project`: parse optional `force` flag, call `embed::index::build_index()`
+- [x] `semantic_search`: embed query via `create_embedder()`, call `embed::index::search()`
+- [x] Implement `embed::index::index_stats()` — new function querying SQLite for counts
+- [x] `index_status`: call `index_stats()`, return file/chunk counts + model info
+- [x] Add tests (mock embedder or small test corpus with known embeddings)
 
 **Access pattern:** `ctx.agent` → project root + config → `open_db()` + `create_embedder()`
 **Files:** `src/tools/semantic.rs`, `src/embed/index.rs` (new `index_stats`)
 **Acceptance:** can index a project and search it; stats reflect indexed content
-**Note:** Requires running embedding API (Ollama/OpenAI) for full integration test
+**Done:** `5302c42` — 4 new tests (no-index status, with-data status, no-project errors, stats function)
+**Note:** semantic_search and index_project require a running embedding API for full E2E test
 
 ---
 
