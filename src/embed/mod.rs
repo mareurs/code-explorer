@@ -45,10 +45,11 @@ pub async fn embed_one(embedder: &dyn Embedder, text: &str) -> Result<Embedding>
 /// Create the default embedder based on a model string.
 ///
 /// Model string format:
-///   "local:<model-id>"     → local inference (requires local-embed feature)
-///   "openai:<model-id>"    → OpenAI API
-///   "ollama:<model-id>"    → Ollama local HTTP API
-///   "http:<url>"           → generic OpenAI-compatible endpoint
+///   "local:<model-id>"                      → local inference (requires local-embed feature)
+///   "openai:<model-id>"                     → OpenAI API
+///   "ollama:<model-id>"                     → Ollama local HTTP API
+///   "custom:<model-id>@<base_url>"          → generic OpenAI-compatible endpoint
+///     e.g. "custom:mxbai-embed-large@http://localhost:1234"
 pub async fn create_embedder(model: &str) -> Result<Box<dyn Embedder>> {
     #[cfg(feature = "remote-embed")]
     if let Some(model_id) = model.strip_prefix("openai:") {
@@ -59,20 +60,53 @@ pub async fn create_embedder(model: &str) -> Result<Box<dyn Embedder>> {
         return Ok(Box::new(remote::RemoteEmbedder::ollama(model_id)?));
     }
     #[cfg(feature = "remote-embed")]
-    if let Some(url) = model.strip_prefix("http:") {
-        return Ok(Box::new(remote::RemoteEmbedder::custom(url, model)?));
+    if let Some(rest) = model.strip_prefix("custom:") {
+        let (model_id, base_url) = rest.split_once('@').ok_or_else(|| {
+            anyhow::anyhow!(
+                "custom: format is 'custom:<model>@<base_url>', e.g. \
+                 'custom:mxbai-embed-large@http://localhost:1234'"
+            )
+        })?;
+        return Ok(Box::new(remote::RemoteEmbedder::custom(base_url, model_id)?));
     }
 
     if model.starts_with("local:") {
         anyhow::bail!(
             "Local embedding requires the 'local-embed' feature. \
              Rebuild with: cargo build --features local-embed\n\
-             Alternatively use an Ollama model: ollama:nomic-embed-code"
+             Alternatively use an Ollama model: ollama:mxbai-embed-large"
         );
     }
 
     anyhow::bail!(
-        "Unknown model prefix in '{}'. Use 'local:', 'openai:', or 'ollama:'.",
+        "Unknown model prefix in '{}'. Supported: 'ollama:', 'openai:', 'custom:', 'local:'.",
         model
     )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn unknown_prefix_returns_error() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(super::create_embedder("bogus:model"));
+        let err = result.err().expect("expected an error");
+        assert!(err.to_string().contains("Unknown model prefix"));
+    }
+
+    #[test]
+    fn local_prefix_returns_helpful_error() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(super::create_embedder("local:anything"));
+        let err = result.err().expect("expected an error");
+        assert!(err.to_string().contains("local-embed"));
+    }
+
+    #[test]
+    fn custom_prefix_missing_at_sign_returns_error() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(super::create_embedder("custom:no-at-sign"));
+        let err = result.err().expect("expected an error");
+        assert!(err.to_string().contains("custom:<model>@<base_url>"));
+    }
 }
