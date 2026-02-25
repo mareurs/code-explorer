@@ -284,8 +284,15 @@ fn nodes_to_chunks(
                 end_line: node_end,
             });
         } else {
-            // Sub-split oversized node (temporary stub — uses plain line splitting)
-            let sub = sub_split_node(&lines, expanded_start, node_end, chunk_size, chunk_overlap);
+            // Sub-split oversized node with doc+signature prefix on each sub-chunk
+            let sub = sub_split_node(
+                &lines,
+                expanded_start,
+                node_end,
+                chunk_size,
+                chunk_overlap,
+                doc_prefixes,
+            );
             chunks.extend(sub);
         }
 
@@ -316,22 +323,90 @@ fn nodes_to_chunks(
     chunks
 }
 
-/// Temporary stub: sub-split an oversized node with plain line splitting.
-/// Will be replaced with prefix-carrying logic in Task 4.
+/// Sub-split an oversized AST node, prepending doc comment + signature prefix
+/// to every sub-chunk so each chunk retains the context of what it belongs to.
 fn sub_split_node(
     lines: &[&str],
     start: usize,
     end: usize,
     chunk_size: usize,
     chunk_overlap: usize,
+    doc_prefixes: &[&str],
 ) -> Vec<RawChunk> {
-    let content = lines[start..end].join("\n");
-    let sub = super::chunker::split(&content, chunk_size, chunk_overlap);
-    sub.into_iter()
-        .map(|mut sc| {
-            sc.start_line += start;
-            sc.end_line += start;
-            sc
+    let node_lines = &lines[start..end];
+
+    // --- Step 1: Extract the prefix (doc comment + signature) ---
+    let mut sig_end = 0; // exclusive index into node_lines where prefix ends
+
+    // Consume doc comment lines from the start.
+    while sig_end < node_lines.len() && is_doc_line(node_lines[sig_end], doc_prefixes) {
+        sig_end += 1;
+    }
+
+    // After doc lines, consume non-doc lines until we find a signature terminator
+    // (line containing `{`, ending with `:`, or containing `=>`). Cap at 3 non-doc lines.
+    let sig_search_start = sig_end;
+    let max_sig_lines = 3;
+    while sig_end < node_lines.len() && (sig_end - sig_search_start) < max_sig_lines {
+        sig_end += 1;
+        let line = node_lines[sig_end - 1];
+        let trimmed = line.trim();
+        if trimmed.contains('{') || trimmed.ends_with(':') || trimmed.contains("=>") {
+            break;
+        }
+    }
+
+    let prefix = node_lines[..sig_end].join("\n");
+
+    // --- Step 2: Sub-split the body ---
+    let body_lines = &node_lines[sig_end..];
+    if body_lines.is_empty() {
+        // No body beyond the prefix — emit as single chunk
+        return vec![RawChunk {
+            content: node_lines.join("\n"),
+            start_line: start + 1,
+            end_line: end,
+        }];
+    }
+
+    let continued_marker = "    // ... (continued)";
+    let overhead = prefix.len() + 1 /* newline */ + continued_marker.len() + 1 /* newline */;
+    let body_chunk_size = if chunk_size > overhead {
+        chunk_size - overhead
+    } else {
+        // Pathological: chunk_size is tiny, just use a minimal body budget
+        chunk_size / 2
+    };
+
+    let body_text = body_lines.join("\n");
+    let sub_chunks = super::chunker::split(&body_text, body_chunk_size, chunk_overlap);
+
+    // --- Step 3: Prepend prefix to each sub-chunk ---
+    sub_chunks
+        .into_iter()
+        .enumerate()
+        .map(|(i, sc)| {
+            let content = if i == 0 {
+                format!("{}\n{}", prefix, sc.content)
+            } else {
+                format!("{}\n{}\n{}", prefix, continued_marker, sc.content)
+            };
+
+            // sc.start_line / sc.end_line are 1-indexed relative to body_text.
+            // Convert to file-level 1-indexed line numbers.
+            let body_offset = start + sig_end; // 0-indexed file line where body starts
+            let start_line = if i == 0 {
+                start + 1 // include prefix lines
+            } else {
+                body_offset + sc.start_line // sc.start_line is 1-indexed
+            };
+            let end_line = body_offset + sc.end_line; // sc.end_line is 1-indexed inclusive
+
+            RawChunk {
+                content,
+                start_line,
+                end_line,
+            }
         })
         .collect()
 }
@@ -674,5 +749,63 @@ mod tests {
         let has_fn = chunks.iter().any(|c| c.content.contains("fn foo"));
         assert!(has_use, "should capture use statements as gap chunk");
         assert!(has_fn, "should capture function");
+    }
+
+    // ---------- Sub-split with prefix ----------
+
+    #[test]
+    fn oversized_node_is_sub_split_with_prefix() {
+        let mut source = String::from("/// Important function.\nfn big() {\n");
+        for i in 0..50 {
+            source.push_str(&format!("    let x{} = {};\n", i, i));
+        }
+        source.push_str("}\n");
+
+        let chunks = split_file(&source, "rust", Path::new("test.rs"), 300, 50);
+        assert!(
+            chunks.len() > 1,
+            "oversized fn should be sub-split, got {}",
+            chunks.len()
+        );
+
+        // Every sub-chunk should contain the doc + signature prefix
+        for (i, chunk) in chunks.iter().enumerate() {
+            assert!(
+                chunk.content.contains("/// Important function"),
+                "sub-chunk {} missing doc prefix",
+                i
+            );
+            assert!(
+                chunk.content.contains("fn big()"),
+                "sub-chunk {} missing signature prefix",
+                i
+            );
+        }
+
+        // First chunk should NOT have the "(continued)" marker
+        assert!(!chunks[0].content.contains("(continued)"));
+        // Second+ chunks should have it
+        if chunks.len() > 1 {
+            assert!(chunks[1].content.contains("(continued)"));
+        }
+    }
+
+    #[test]
+    fn sub_split_covers_all_body_lines() {
+        let mut source = String::from("fn big() {\n");
+        let body_lines: Vec<String> = (0..40)
+            .map(|i| format!("    let x{} = {};", i, i))
+            .collect();
+        source.push_str(&body_lines.join("\n"));
+        source.push_str("\n}\n");
+
+        let chunks = split_file(&source, "rust", Path::new("test.rs"), 200, 30);
+        // Every body line should appear in at least one chunk
+        for (i, body_line) in body_lines.iter().enumerate() {
+            let covered = chunks
+                .iter()
+                .any(|c| c.content.contains(body_line.as_str()));
+            assert!(covered, "body line {} not covered: {}", i, body_line);
+        }
     }
 }
