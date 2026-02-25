@@ -6,7 +6,7 @@ Rust MCP server giving LLMs IDE-grade code intelligence — symbol-level navigat
 
 ```bash
 cargo build                        # Build
-cargo test                         # Run tests (60 passing)
+cargo test                         # Run tests (150+ passing)
 cargo clippy -- -D warnings        # Lint
 cargo fmt                          # Format
 cargo run -- start --project .     # Run MCP server (stdio)
@@ -39,6 +39,26 @@ src/
 │   └── config.rs    #   activate_project, get_current_config  ← stubs
 └── util/            # fs helpers, text processing
 ```
+
+## Design Principles
+
+**Progressive Disclosure** — Every tool defaults to the most compact useful
+representation. Details are available on demand via `detail_level: "full"` +
+pagination. Tools never dump unbounded output. See `docs/plans/2026-02-25-progressive-disclosure-design.md`.
+
+**Token Efficiency** — The LLM's context window is a scarce resource. Tools
+minimize output by default: names + locations in exploring mode, full bodies
+only in focused mode. Overflow produces actionable guidance ("showing N of M,
+narrow with..."), not truncated garbage.
+
+**Two Modes** — `Exploring` (default): compact, capped at 200 items. `Focused`:
+full detail, paginated via offset/limit. Enforced via `OutputGuard`
+(`src/tools/output.rs`), a project-wide pattern not per-tool logic.
+
+**Tool Selection by Knowledge Level** — Know the name → LSP/AST tools
+(`find_symbol`, `get_symbols_overview`). Know the concept → semantic search
+first, then drill down. Know nothing → `list_dir` + `get_symbols_overview` at
+top level, then semantic search.
 
 ## Key Patterns
 
