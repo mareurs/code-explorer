@@ -67,7 +67,9 @@ pub async fn create_embedder(model: &str) -> Result<Box<dyn Embedder>> {
                  'custom:mxbai-embed-large@http://localhost:1234'"
             )
         })?;
-        return Ok(Box::new(remote::RemoteEmbedder::custom(base_url, model_id)?));
+        return Ok(Box::new(remote::RemoteEmbedder::custom(
+            base_url, model_id,
+        )?));
     }
 
     if model.starts_with("local:") {

@@ -348,12 +348,7 @@ fn extract_rust_impl_methods(
     methods
 }
 
-fn extract_enum_variants(
-    node: Node,
-    source: &str,
-    file: &Path,
-    prefix: &str,
-) -> Vec<SymbolInfo> {
+fn extract_enum_variants(node: Node, source: &str, file: &Path, prefix: &str) -> Vec<SymbolInfo> {
     let mut variants = Vec::new();
     let body = match find_child_by_kind(node, "enum_variant_list") {
         Some(b) => b,

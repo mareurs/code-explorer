@@ -236,9 +236,14 @@ pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
         chunks: Vec<chunker::RawChunk>,
     }
 
+    let ignored = config.ignored_paths.patterns.clone();
     let walker = ignore::WalkBuilder::new(project_root)
         .hidden(true)
         .git_ignore(true)
+        .filter_entry(move |entry| {
+            let name = entry.file_name().to_string_lossy();
+            !ignored.iter().any(|p| p.as_str() == name.as_ref())
+        })
         .build();
 
     let mut works: Vec<FileWork> = Vec::new();

@@ -285,6 +285,119 @@ async fn workflow_create_git_history() {
 }
 
 // ---------------------------------------------------------------------------
+// Workflow: Ollama index → semantic search (requires live Ollama)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+#[ignore = "requires running Ollama with nomic-embed-text"]
+async fn workflow_ollama_index_and_search() {
+    use code_explorer::embed::index;
+    use code_explorer::tools::config::ActivateProject;
+    use code_explorer::tools::semantic::{IndexProject, SemanticSearch};
+
+    let (dir, ctx) = project_with_files(&[
+        (
+            "src/auth.rs",
+            "/// Verify a user's password against a stored hash.\n\
+             pub fn verify_password(hash: &str, input: &str) -> bool {\n\
+             bcrypt::verify(input, hash).unwrap_or(false)\n\
+             }\n\
+             \n\
+             /// Issue a JWT token for the given user ID.\n\
+             pub fn issue_jwt(user_id: u64, secret: &str) -> String {\n\
+             format!(\"jwt:{}:{}\", user_id, secret)\n\
+             }\n",
+        ),
+        (
+            "src/db.rs",
+            "use rusqlite::Connection;\n\
+             \n\
+             /// Open a SQLite connection to the given path.\n\
+             pub fn open_db(path: &str) -> Connection {\n\
+             Connection::open(path).expect(\"failed to open db\")\n\
+             }\n\
+             \n\
+             /// Insert a new user record.\n\
+             pub fn insert_user(conn: &Connection, name: &str, email: &str) {\n\
+             conn.execute(\"INSERT INTO users (name, email) VALUES (?1, ?2)\", \
+             [name, email]).unwrap();\n\
+             }\n",
+        ),
+        (
+            ".code-explorer/project.toml",
+            "[project]\nname = \"test\"\n\n\
+             [embeddings]\nmodel = \"ollama:nomic-embed-text\"\n",
+        ),
+    ])
+    .await;
+
+    // Activate project so tools know the root
+    ActivateProject
+        .call(json!({ "path": dir.path().display().to_string() }), &ctx)
+        .await
+        .unwrap();
+
+    // Index the project
+    let index_result = IndexProject.call(json!({}), &ctx).await.unwrap();
+    assert_eq!(index_result["status"], "ok");
+    let files_indexed = index_result["files_indexed"].as_u64().unwrap();
+    assert!(
+        files_indexed >= 2,
+        "expected at least auth.rs and db.rs indexed"
+    );
+
+    // Search for authentication-related code
+    let auth_results = SemanticSearch
+        .call(
+            json!({ "query": "password verification authentication", "limit": 5 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+    let hits = auth_results["results"].as_array().unwrap();
+    assert!(!hits.is_empty(), "expected at least one result");
+
+    // The top result should be from auth.rs (it contains password/auth code)
+    let top_hit = &hits[0];
+    assert!(
+        top_hit["file_path"].as_str().unwrap().contains("auth"),
+        "top result for 'password verification' should be auth.rs, got: {:?}",
+        top_hit["file_path"]
+    );
+    assert!(
+        top_hit["score"].as_f64().unwrap() > 0.5,
+        "score should be reasonably high"
+    );
+
+    // Search for database code
+    let db_results = SemanticSearch
+        .call(
+            json!({ "query": "open database connection sqlite", "limit": 5 }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+    let db_hits = db_results["results"].as_array().unwrap();
+    assert!(!db_hits.is_empty());
+    assert!(
+        db_hits[0]["file_path"].as_str().unwrap().contains("db"),
+        "top result for 'sqlite database' should be db.rs, got: {:?}",
+        db_hits[0]["file_path"]
+    );
+
+    // Verify the index is queryable without re-indexing (incremental: force=false skips unchanged)
+    let conn = index::open_db(dir.path()).unwrap();
+    let stats = index::index_stats(&conn).unwrap();
+    assert!(stats.chunk_count > 0);
+    assert_eq!(
+        stats.file_count,
+        stats.embedding_count.min(files_indexed as usize)
+    );
+
+    drop(dir);
+}
+
+// ---------------------------------------------------------------------------
 // Workflow: Onboarding → List dir
 // ---------------------------------------------------------------------------
 

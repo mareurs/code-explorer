@@ -98,3 +98,100 @@ impl Embedder for RemoteEmbedder {
         Ok(all)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MODEL: &str = "nomic-embed-text";
+
+    fn make_embedder() -> RemoteEmbedder {
+        RemoteEmbedder::ollama(MODEL).unwrap()
+    }
+
+    async fn embed_one(text: &str) -> Vec<f32> {
+        let mut results = make_embedder().embed(&[text]).await.expect("embed failed");
+        results.pop().expect("empty response")
+    }
+
+    #[tokio::test]
+    #[ignore = "requires running Ollama"]
+    async fn ollama_returns_nonzero_dimensions() {
+        let vec = embed_one("fn main() {}").await;
+        assert!(!vec.is_empty(), "embedding should be non-empty");
+        assert!(
+            vec.iter().any(|&v| v != 0.0),
+            "embedding should be non-zero"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires running Ollama"]
+    async fn ollama_batch_consistent_dimensions() {
+        let embedder = make_embedder();
+        let texts = &["fn main() {}", "struct Config {}", "impl Foo for Bar {}"];
+        let results = embedder.embed(texts).await.expect("embed failed");
+        assert_eq!(results.len(), texts.len(), "one vector per input");
+        let dims = results[0].len();
+        assert!(dims > 0);
+        assert!(
+            results.iter().all(|v| v.len() == dims),
+            "all vectors same dims"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires running Ollama"]
+    async fn ollama_different_texts_produce_different_vectors() {
+        let a = embed_one("fn authenticate_user(password: &str) -> bool").await;
+        let b = embed_one("SELECT * FROM orders WHERE status = 'pending'").await;
+        let l1_diff: f32 = a.iter().zip(b.iter()).map(|(x, y)| (x - y).abs()).sum();
+        assert!(
+            l1_diff > 1.0,
+            "distinct texts should produce distinct embeddings (diff={l1_diff:.3})"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires running Ollama"]
+    async fn ollama_similar_texts_score_higher_than_unrelated() {
+        fn cosine(a: &[f32], b: &[f32]) -> f32 {
+            let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+            let na: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+            let nb: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+            if na == 0.0 || nb == 0.0 {
+                return 0.0;
+            }
+            (dot / (na * nb)).clamp(-1.0, 1.0)
+        }
+
+        let auth1 = embed_one("fn check_password(hash: &str, input: &str) -> bool").await;
+        let auth2 = embed_one("fn verify_credentials(username: &str, pwd: &str) -> bool").await;
+        let unrelated = embed_one("CREATE TABLE products (id INT, price DECIMAL)").await;
+
+        let sim_related = cosine(&auth1, &auth2);
+        let sim_unrelated = cosine(&auth1, &unrelated);
+        assert!(
+            sim_related > sim_unrelated,
+            "semantically similar code should score higher: {sim_related:.3} vs {sim_unrelated:.3}"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires running Ollama"]
+    async fn ollama_large_batch_exceeding_batch_size() {
+        // BATCH_SIZE is 8; send 20 texts to exercise the chunking logic
+        let embedder = make_embedder();
+        let texts: Vec<String> = (0..20)
+            .map(|i| format!("fn function_{i}() -> i32 {{ {i} }}"))
+            .collect();
+        let refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+        let results = embedder.embed(&refs).await.expect("large batch failed");
+        assert_eq!(results.len(), 20);
+        let dims = results[0].len();
+        assert!(
+            results.iter().all(|v| v.len() == dims),
+            "all vectors same dims"
+        );
+    }
+}

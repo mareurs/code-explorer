@@ -52,10 +52,6 @@ pub fn detect_language(path: &Path) -> Option<&'static str> {
         "hs" => Some("haskell"),
         "lua" => Some("lua"),
         "sh" | "bash" => Some("bash"),
-        "md" => Some("markdown"),
-        "toml" => Some("toml"),
-        "yaml" | "yml" => Some("yaml"),
-        "json" => Some("json"),
         _ => None,
     }
 }

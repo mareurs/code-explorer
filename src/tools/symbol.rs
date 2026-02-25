@@ -618,7 +618,11 @@ impl Tool for RenameSymbol {
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 /// Write lines back to a file, preserving a trailing newline if the original had one.
-fn write_lines(path: &std::path::Path, lines: &[&str], had_trailing_newline: bool) -> std::io::Result<()> {
+fn write_lines(
+    path: &std::path::Path,
+    lines: &[&str],
+    had_trailing_newline: bool,
+) -> std::io::Result<()> {
     let mut out = lines.join("\n");
     if had_trailing_newline {
         out.push('\n');
