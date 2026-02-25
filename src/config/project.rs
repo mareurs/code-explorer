@@ -59,7 +59,7 @@ fn default_timeout() -> u64 {
     60
 }
 fn default_embed_model() -> String {
-    "local:jina-embeddings-v2-base-code".into()
+    "ollama:nomic-embed-text".into()
 }
 fn default_chunk_size() -> usize {
     4000
