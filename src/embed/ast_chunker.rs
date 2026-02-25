@@ -191,6 +191,67 @@ pub fn split_file(
     super::chunker::split(source, chunk_size, chunk_overlap)
 }
 
+/// Returns `true` if the given line is a doc comment line.
+///
+/// A line is considered a doc comment if:
+/// - Its trimmed form starts with any of the given `doc_prefixes`, or
+/// - Its trimmed form is `*/` (closing a block doc comment).
+pub fn is_doc_line(line: &str, doc_prefixes: &[&str]) -> bool {
+    let trimmed = line.trim_start();
+    if trimmed.is_empty() {
+        return false;
+    }
+    // Closing `*/` always matches as part of a block doc comment.
+    if trimmed.starts_with("*/") {
+        return true;
+    }
+    doc_prefixes.iter().any(|prefix| {
+        // Check the trimmed line for prefixes without leading whitespace,
+        // and the original line for prefixes that include leading whitespace
+        // (e.g. " *" in Javadoc blocks).
+        trimmed.starts_with(prefix) || line.starts_with(prefix)
+    })
+}
+
+/// Expand a node's start line upward to include preceding doc comments.
+///
+/// Scans backward from `node_start_line`, skipping blank lines, to find
+/// contiguous doc comment lines. Returns the earliest line that is part of
+/// the doc comment block, or `node_start_line` if none is found.
+pub fn expand_doc_comment_start(
+    lines: &[&str],
+    node_start_line: usize,
+    doc_prefixes: &[&str],
+) -> usize {
+    if node_start_line == 0 {
+        return 0;
+    }
+
+    // Phase 1: skip blank lines immediately above the node.
+    let mut cursor = node_start_line;
+    while cursor > 0 && lines[cursor - 1].trim().is_empty() {
+        cursor -= 1;
+    }
+
+    // If we only found blank lines all the way to the top, no doc comment.
+    if cursor == 0 && lines[0].trim().is_empty() {
+        return node_start_line;
+    }
+
+    // Check if the line at cursor-1 is a doc line.
+    if cursor == 0 || !is_doc_line(lines[cursor - 1], doc_prefixes) {
+        return node_start_line;
+    }
+
+    // Phase 2: consume contiguous doc comment lines upward.
+    let mut doc_start = cursor - 1;
+    while doc_start > 0 && is_doc_line(lines[doc_start - 1], doc_prefixes) {
+        doc_start -= 1;
+    }
+
+    doc_start
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -290,5 +351,66 @@ mod tests {
         let chunks = split_file(source, "rust", Path::new("main.rs"), 4000, 400);
         assert_eq!(chunks.len(), 1);
         assert!(chunks[0].content.contains("fn main"));
+    }
+
+    // ---------- Doc comment expansion ----------
+
+    #[test]
+    fn expand_doc_comments_rust() {
+        let source =
+            "use std::io;\n\n/// Adds two numbers.\n/// Returns the sum.\nfn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n";
+        let lines: Vec<&str> = source.lines().collect();
+        // fn add is at line index 4 (0-indexed)
+        let expanded = expand_doc_comment_start(&lines, 4, &["///", "//!"]);
+        assert_eq!(expanded, 2, "should expand to include both /// lines");
+    }
+
+    #[test]
+    fn expand_doc_comments_java_block() {
+        let source = "import foo;\n\n/**\n * Does something.\n */\npublic void doIt() {\n}\n";
+        let lines: Vec<&str> = source.lines().collect();
+        // method starts at line index 5 (0-indexed)
+        let expanded = expand_doc_comment_start(&lines, 5, &["/**", " *", " */"]);
+        assert_eq!(expanded, 2, "should expand to include /** block");
+    }
+
+    #[test]
+    fn expand_doc_comments_none() {
+        let source = "use std::io;\n\nfn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n";
+        let lines: Vec<&str> = source.lines().collect();
+        let expanded = expand_doc_comment_start(&lines, 2, &["///", "//!"]);
+        assert_eq!(expanded, 2, "no doc comment — should not expand");
+    }
+
+    #[test]
+    fn expand_skips_blank_lines_between_doc_and_node() {
+        let source = "/// Documented.\n\nfn foo() {}\n";
+        let lines: Vec<&str> = source.lines().collect();
+        let expanded = expand_doc_comment_start(&lines, 2, &["///"]);
+        assert_eq!(expanded, 0, "should cross blank line to find doc comment");
+    }
+
+    #[test]
+    fn expand_at_line_zero() {
+        let source = "fn foo() {}\n";
+        let lines: Vec<&str> = source.lines().collect();
+        let expanded = expand_doc_comment_start(&lines, 0, &["///"]);
+        assert_eq!(expanded, 0, "already at start — no expansion possible");
+    }
+
+    #[test]
+    fn is_doc_line_matches_prefix() {
+        assert!(is_doc_line("/// hello", &["///"]));
+        assert!(is_doc_line("  /// indented", &["///"]));
+        assert!(is_doc_line(" * middle of block", &[" *"]));
+        assert!(is_doc_line(" */", &[" *"]));
+        assert!(is_doc_line("*/", &[]), "closing */ always matches");
+    }
+
+    #[test]
+    fn is_doc_line_rejects_non_doc() {
+        assert!(!is_doc_line("fn foo() {}", &["///"]));
+        assert!(!is_doc_line("// regular comment", &["///"]));
+        assert!(!is_doc_line("", &["///"]));
     }
 }
