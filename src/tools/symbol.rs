@@ -16,8 +16,14 @@ fn is_glob(path: &str) -> bool {
 }
 
 /// Resolve a relative path against the project root.
+///
+/// `"."` and `""` resolve to the project root directly (not `root.join(".")`)
+/// to avoid spurious `./` prefixes when stripping the root later.
 async fn resolve_path(ctx: &ToolContext, relative_path: &str) -> anyhow::Result<PathBuf> {
     let root = ctx.agent.require_project_root().await?;
+    if relative_path == "." || relative_path.is_empty() {
+        return Ok(root);
+    }
     let full = root.join(relative_path);
     if !full.exists() {
         anyhow::bail!("path not found: {}", full.display());
@@ -90,8 +96,14 @@ async fn get_lsp_client(
     ctx: &ToolContext,
     path: &Path,
 ) -> anyhow::Result<(std::sync::Arc<crate::lsp::LspClient>, String)> {
-    let lang = ast::detect_language(path)
-        .ok_or_else(|| anyhow!("cannot detect language for: {:?}", path))?;
+    let lang = ast::detect_language(path).ok_or_else(|| {
+        anyhow!(
+            "unsupported file type: {:?}. Languages with LSP support: \
+             rust, python, typescript, tsx, javascript, jsx, go, java, kotlin, \
+             c, cpp, csharp, ruby",
+            path
+        )
+    })?;
     let root = ctx.agent.require_project_root().await?;
     let client = ctx.lsp.get_or_start(lang, &root).await?;
     let language_id = crate::lsp::servers::lsp_language_id(lang);
