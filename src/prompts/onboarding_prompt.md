@@ -1,64 +1,158 @@
-You are viewing this project for the first time. Your task is to explore it and create memories that will help you (and future conversations) work effectively with this codebase.
+You have just onboarded this project. Below you'll find pre-gathered context from key project files. Your job is to **synthesize this into 6 memories** using `write_memory(topic, content)`.
 
-## What to Explore
+## Rules
 
-Use code-explorer's semantic tools to gather information efficiently. Do NOT read entire source files — use symbol-level tools.
-
-### 1. Project Purpose
-- Read `README.md` or similar top-level documentation
-- Identify what the project does and who it's for
-
-### 2. Tech Stack
-- Check build files (Cargo.toml, package.json, pyproject.toml, go.mod, etc.)
-- Note key dependencies, frameworks, and runtime requirements
-
-### 3. Code Architecture
-- Run `get_symbols_overview("src")` (or equivalent source directory) to map the structure
-- For key modules, go deeper: `get_symbols_overview("src/module", depth=1)`
-- Identify the entry point(s) and how the application starts
-
-### 4. Key Abstractions
-- Find the core types, traits, interfaces, or classes that define the architecture
-- Use `find_symbol(name, include_body=true)` on the most important ones
-- Note inheritance/implementation hierarchies
-
-### 5. Code Conventions
-- Look for linting config (.eslintrc, .clippy.toml, .ruff.toml, etc.)
-- Look for formatting config (.prettierrc, rustfmt.toml, etc.)
-- Note naming conventions, error handling patterns, test organization
-- Check for a CONTRIBUTING.md or similar style guide
-
-### 6. Development Commands
-- Find test, lint, format, build, and run commands from build configs
-- Check CI configuration (.github/workflows/, .gitlab-ci.yml, etc.)
-- Note any special setup steps or prerequisites
-
-### 7. Architectural Patterns
-- Identify design patterns in use (dependency injection, layered architecture, event-driven, etc.)
-- Note how modules communicate (direct calls, messages, events, shared state)
-- Look at the dependency graph between modules
-
-Read only the necessary files — use symbol-level tools, not full-file reads. If something is unclear from the code alone, ask the user.
+1. **Do NOT duplicate CLAUDE.md** — If CLAUDE.md content is provided below, it's loaded every session automatically. Memories should *supplement* it, not repeat it. If CLAUDE.md already covers dev commands, your `development-commands` memory should only add what's missing.
+2. **Be specific** — Include file paths, exact command names, concrete patterns. "Uses clean architecture" is useless. "api/ → service/ → repository/ with interface+impl pattern" is useful.
+3. **Be concise** — Each memory should be 15–40 lines. Longer means too much detail.
+4. **Explore before writing** — The gathered data gives you a head start, but use code-explorer tools to verify and fill gaps: `get_symbols_overview("src")` for architecture, `find_symbol` for key abstractions, `list_functions` for API surface.
+5. **Confirm with the user** — After creating all 6 memories, summarize what you wrote and ask if anything needs correction.
 
 ## Memories to Create
 
-After exploring, call `write_memory` for each of these topics:
+### 1. `project-overview`
 
-### `project-overview`
-Project purpose, tech stack, key dependencies, runtime requirements.
+**What:** Project purpose, tech stack, key dependencies, runtime requirements.
 
-### `architecture`
-Module structure, key abstractions (with file locations), data flow between components, design patterns in use, entry points.
+**Template:**
+```
+# [Project Name]
 
-### `conventions`
-Code style rules, naming conventions, error handling patterns, testing patterns, documentation conventions.
+## Purpose
+[1-2 sentences: what does this project do and who is it for?]
 
-### `development-commands`
-Build, test, lint, format, run commands. Include prerequisites and any environment setup needed.
+## Tech Stack
+- **Language:** [lang] [version if known]
+- **Framework:** [framework] [version]
+- **Database:** [if any]
+- **Key deps:** [3-5 most important dependencies]
 
-### `task-completion-checklist`
-What to do when finishing a task: which tests to run, how to format, how to lint, what to check. Be specific about commands.
+## Runtime Requirements
+[What's needed to run: Node 20+, Java 21+, Docker, specific env vars, etc.]
+```
 
-Use "/" in memory names for deeper organization if needed (e.g., "architecture/data-flow").
+**Anti-patterns:** Don't list every dependency. Don't include directory listings. Don't copy the README.
 
-**IMPORTANT:** After creating all memories, confirm with the user that the information looks accurate.
+---
+
+### 2. `architecture`
+
+**What:** Module structure, key abstractions with file locations, data flow, design patterns, entry points.
+
+**Template:**
+```
+# Architecture
+
+## Layer Structure
+[Main modules/layers and their responsibilities]
+[Include file paths: `src/services/` → business logic]
+
+## Key Abstractions
+[3-5 most important types/traits/interfaces]
+[Name + file path for each]
+
+## Data Flow
+[How a typical request flows through the system]
+[Entry point → layer 1 → layer 2 → output]
+
+## Design Patterns
+[Only patterns actually in use: DI, repository, event-driven, etc.]
+```
+
+**Anti-patterns:** Don't list every file. Don't describe standard library types. DO include file paths for every abstraction.
+
+---
+
+### 3. `conventions`
+
+**What:** Code style, naming conventions, error handling, testing patterns.
+
+**Template:**
+```
+# Conventions
+
+## Naming
+[Table: entity type → convention → example]
+
+## Patterns
+[Key patterns: error handling, DI, async, testing]
+[Short code examples where helpful]
+
+## Code Quality
+[Linter, formatter, type checker — exact commands]
+
+## Testing
+[Framework, organization, how to write a new test]
+```
+
+**Anti-patterns:** Don't describe language-standard conventions everyone knows. Focus on project-specific conventions.
+
+---
+
+### 4. `development-commands`
+
+**What:** Build, test, lint, format, run commands with gotchas. Includes pre-completion checklist.
+
+**Template:**
+```
+# Development Commands
+
+## Build & Run
+[command] — [what it does] [gotchas if any]
+
+## Test
+[command] — [scope]
+
+## Quality
+[lint, format, type-check commands]
+
+## Before Completing Work
+1. [Step 1: specific command]
+2. [Step 2: specific command]
+...
+```
+
+**Anti-patterns:** Don't duplicate commands already in CLAUDE.md (reference "see CLAUDE.md" instead). DO include non-obvious gotchas.
+
+---
+
+### 5. `domain-glossary`
+
+**What:** Project-specific terms, abbreviations, concepts that aren't obvious from code alone.
+
+**Template:**
+```
+# Domain Glossary
+
+**[Term]** — [1-sentence definition]. [File/module where it lives if relevant.]
+**[Term]** — [1-sentence definition].
+```
+
+**What to include:** Domain model names with specific meaning, project-specific abbreviations, concepts requiring context.
+
+**Anti-patterns:** Don't define standard programming terms (API, REST, ORM). DO define terms used in project-specific ways.
+
+---
+
+### 6. `gotchas`
+
+**What:** Known issues, common mistakes, things that trip people up.
+
+**Template:**
+```
+# Gotchas & Known Issues
+
+## [Category]
+- **Problem:** [what goes wrong]
+  **Fix:** [what to do instead]
+```
+
+**What to include:** Config pitfalls, framework traps, build/test gotchas, flaky tests.
+
+**Anti-patterns:** Don't invent problems that don't exist. If nothing is obvious, write "No known gotchas discovered during onboarding. Update this memory as issues are found."
+
+---
+
+## Gathered Project Data
+
+The data below was collected automatically. Use it as your starting point, then explore with code-explorer tools to fill gaps.

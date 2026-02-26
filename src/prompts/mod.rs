@@ -61,23 +61,72 @@ pub struct ProjectStatus {
 pub const ONBOARDING_PROMPT: &str = include_str!("onboarding_prompt.md");
 
 /// Build the onboarding prompt, substituting detected project information.
-pub fn build_onboarding_prompt(languages: &[String], top_level: &[String]) -> String {
+#[allow(clippy::too_many_arguments)]
+pub fn build_onboarding_prompt(
+    languages: &[String],
+    top_level: &[String],
+    readme: Option<&str>,
+    build_file: Option<(&str, &str)>, // (name, content)
+    claude_md: Option<&str>,
+    ci_files: &[String],
+    entry_points: &[String],
+    test_dirs: &[String],
+) -> String {
     let mut prompt = ONBOARDING_PROMPT.to_string();
-    if !languages.is_empty() || !top_level.is_empty() {
-        prompt.push_str("\n\n---\n\n## Detected Project Information\n\n");
-        if !languages.is_empty() {
-            prompt.push_str(&format!(
-                "**Detected languages:** {}\n\n",
-                languages.join(", ")
-            ));
-        }
-        if !top_level.is_empty() {
-            prompt.push_str(&format!(
-                "**Top-level structure:**\n```\n{}\n```\n",
-                top_level.join("\n")
-            ));
-        }
+
+    // Append gathered data after the "Gathered Project Data" section header
+    prompt.push_str("\n\n---\n\n");
+
+    if !languages.is_empty() {
+        prompt.push_str(&format!(
+            "**Detected languages:** {}\n\n",
+            languages.join(", ")
+        ));
     }
+
+    if !top_level.is_empty() {
+        prompt.push_str(&format!(
+            "**Top-level structure:**\n```\n{}\n```\n\n",
+            top_level.join("\n")
+        ));
+    }
+
+    if !entry_points.is_empty() {
+        prompt.push_str(&format!(
+            "**Entry points found:** {}\n\n",
+            entry_points.join(", ")
+        ));
+    }
+
+    if !test_dirs.is_empty() {
+        prompt.push_str(&format!(
+            "**Test directories:** {}\n\n",
+            test_dirs.join(", ")
+        ));
+    }
+
+    if !ci_files.is_empty() {
+        prompt.push_str(&format!("**CI config files:** {}\n\n", ci_files.join(", ")));
+    }
+
+    if let Some(content) = readme {
+        prompt.push_str(&format!("**README.md:**\n```\n{}\n```\n\n", content));
+    }
+
+    if let Some((name, content)) = build_file {
+        prompt.push_str(&format!(
+            "**Build file (`{}`):**\n```\n{}\n```\n\n",
+            name, content
+        ));
+    }
+
+    if let Some(content) = claude_md {
+        prompt.push_str(&format!(
+            "**CLAUDE.md (loaded every session — do NOT duplicate this in memories):**\n```\n{}\n```\n\n",
+            content
+        ));
+    }
+
     prompt
 }
 
@@ -133,13 +182,15 @@ mod tests {
 
     #[test]
     fn onboarding_prompt_contains_key_sections() {
-        assert!(ONBOARDING_PROMPT.contains("## What to Explore"));
+        assert!(ONBOARDING_PROMPT.contains("## Rules"));
         assert!(ONBOARDING_PROMPT.contains("## Memories to Create"));
         assert!(ONBOARDING_PROMPT.contains("project-overview"));
         assert!(ONBOARDING_PROMPT.contains("architecture"));
         assert!(ONBOARDING_PROMPT.contains("conventions"));
         assert!(ONBOARDING_PROMPT.contains("development-commands"));
-        assert!(ONBOARDING_PROMPT.contains("task-completion-checklist"));
+        assert!(ONBOARDING_PROMPT.contains("domain-glossary"));
+        assert!(ONBOARDING_PROMPT.contains("gotchas"));
+        assert!(ONBOARDING_PROMPT.contains("## Gathered Project Data"));
     }
 
     #[test]
@@ -147,17 +198,41 @@ mod tests {
         let result = build_onboarding_prompt(
             &["rust".into(), "python".into()],
             &["src/".into(), "tests/".into()],
+            None,
+            None,
+            None,
+            &[],
+            &[],
+            &[],
         );
         assert!(result.contains("rust, python"));
         assert!(result.contains("src/"));
-        assert!(result.contains("Detected Project Information"));
     }
 
     #[test]
     fn build_onboarding_handles_empty() {
-        let result = build_onboarding_prompt(&[], &[]);
-        assert!(result.contains("## What to Explore"));
+        let result = build_onboarding_prompt(&[], &[], None, None, None, &[], &[], &[]);
+        assert!(result.contains("## Rules"));
         assert!(!result.contains("Detected languages"));
-        assert!(!result.contains("Detected Project Information"));
+    }
+
+    #[test]
+    fn build_onboarding_includes_gathered_context() {
+        let result = build_onboarding_prompt(
+            &["rust".into(), "python".into()],
+            &["src/".into(), "tests/".into()],
+            Some("# My Project\nA cool thing."),
+            Some(("Cargo.toml", "[package]\nname = \"cool\"")),
+            Some("# CLAUDE.md\nDev commands here."),
+            &[".github/workflows/ci.yml".into()],
+            &["src/main.rs".into()],
+            &["tests".into()],
+        );
+        assert!(result.contains("# My Project"));
+        assert!(result.contains("Cargo.toml"));
+        assert!(result.contains("ci.yml"));
+        assert!(result.contains("src/main.rs"));
+        assert!(result.contains("Detected languages"));
+        assert!(result.contains("CLAUDE.md (loaded every session"));
     }
 }

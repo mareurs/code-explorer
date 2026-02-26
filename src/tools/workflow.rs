@@ -8,14 +8,141 @@ pub struct Onboarding;
 pub struct CheckOnboardingPerformed;
 pub struct ExecuteShellCommand;
 
+/// Context gathered from well-known project files during onboarding.
+#[derive(Debug, Default)]
+struct GatheredContext {
+    readme: Option<String>,
+    build_file_name: Option<String>,
+    build_file_content: Option<String>,
+    claude_md: Option<String>,
+    ci_files: Vec<String>,
+    entry_points: Vec<String>,
+    test_dirs: Vec<String>,
+}
+
+const MAX_GATHERED_FILE_BYTES: u64 = 32_000;
+
+/// Read a file if it exists and is within the size cap.
+fn read_capped(path: &std::path::Path) -> Option<String> {
+    let meta = std::fs::metadata(path).ok()?;
+    if meta.len() > MAX_GATHERED_FILE_BYTES {
+        let content = std::fs::read_to_string(path).ok()?;
+        let truncated: String = content
+            .chars()
+            .take(MAX_GATHERED_FILE_BYTES as usize)
+            .collect();
+        Some(format!(
+            "{}\n\n[... truncated at {} bytes ...]",
+            truncated, MAX_GATHERED_FILE_BYTES
+        ))
+    } else {
+        std::fs::read_to_string(path).ok()
+    }
+}
+
+/// Read key project files up-front so the onboarding prompt can include them.
+fn gather_project_context(root: &std::path::Path) -> GatheredContext {
+    let mut ctx = GatheredContext::default();
+
+    // README (try common names)
+    for name in &["README.md", "README.rst", "README.txt", "README"] {
+        if let Some(content) = read_capped(&root.join(name)) {
+            ctx.readme = Some(content);
+            break;
+        }
+    }
+
+    // CLAUDE.md
+    ctx.claude_md = read_capped(&root.join("CLAUDE.md"));
+
+    // Build file (first match wins, ordered by popularity)
+    let build_files = [
+        "Cargo.toml",
+        "package.json",
+        "pyproject.toml",
+        "build.gradle.kts",
+        "build.gradle",
+        "go.mod",
+        "pom.xml",
+        "Makefile",
+        "CMakeLists.txt",
+        "setup.py",
+        "mix.exs",
+        "Gemfile",
+    ];
+    for name in &build_files {
+        if let Some(content) = read_capped(&root.join(name)) {
+            ctx.build_file_name = Some(name.to_string());
+            ctx.build_file_content = Some(content);
+            break;
+        }
+    }
+
+    // CI config files (just names, not contents)
+    for dir in &[".github/workflows", ".gitlab", ".circleci"] {
+        let ci_path = root.join(dir);
+        if ci_path.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(&ci_path) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if name.ends_with(".yml") || name.ends_with(".yaml") {
+                        ctx.ci_files.push(format!("{}/{}", dir, name));
+                    }
+                }
+            }
+        }
+    }
+    ctx.ci_files.sort();
+
+    // Entry points (check common locations)
+    let entry_candidates = [
+        "src/main.rs",
+        "src/lib.rs",
+        "src/main.py",
+        "src/index.ts",
+        "src/index.js",
+        "src/app.ts",
+        "src/app.py",
+        "main.go",
+        "cmd/main.go",
+        "lib/main.dart",
+        "index.js",
+        "index.ts",
+        "app.py",
+        "manage.py",
+    ];
+    for candidate in &entry_candidates {
+        if root.join(candidate).exists() {
+            ctx.entry_points.push(candidate.to_string());
+        }
+    }
+
+    // Test directories
+    for candidate in &[
+        "tests",
+        "test",
+        "spec",
+        "src/test",
+        "src/tests",
+        "__tests__",
+    ] {
+        if root.join(candidate).is_dir() {
+            ctx.test_dirs.push(candidate.to_string());
+        }
+    }
+
+    ctx
+}
+
 #[async_trait::async_trait]
 impl Tool for Onboarding {
     fn name(&self) -> &str {
         "onboarding"
     }
     fn description(&self) -> &str {
-        "Perform initial project discovery: detect languages, list top-level structure, \
-         create config. Requires an active project."
+        "Perform initial project discovery: detect languages, read key files \
+         (README, build config, CLAUDE.md), and return instructions for creating \
+         project memories. Requires an active project."
     }
     fn input_schema(&self) -> Value {
         json!({ "type": "object", "properties": {} })
@@ -81,14 +208,21 @@ impl Tool for Onboarding {
             false
         };
 
+        // Gather rich context from well-known project files
+        let gathered = gather_project_context(&root);
+
         // Store onboarding result in memory
+        let lang_list: Vec<String> = languages.iter().cloned().collect();
         ctx.agent
             .with_project(|p| {
                 let summary = format!(
-                    "Languages: {}\nTop-level: {}\nConfig created: {}",
-                    languages.iter().cloned().collect::<Vec<_>>().join(", "),
-                    top_level.join(", "),
-                    created_config
+                    "Languages: {}\nHas README: {}\nHas CLAUDE.md: {}\nBuild file: {}\nEntry points: {}\nTest dirs: {}",
+                    lang_list.join(", "),
+                    gathered.readme.is_some(),
+                    gathered.claude_md.is_some(),
+                    gathered.build_file_name.as_deref().unwrap_or("none"),
+                    if gathered.entry_points.is_empty() { "none".to_string() } else { gathered.entry_points.join(", ") },
+                    if gathered.test_dirs.is_empty() { "none".to_string() } else { gathered.test_dirs.join(", ") },
                 );
                 p.memory.write("onboarding", &summary)?;
                 Ok(())
@@ -96,13 +230,30 @@ impl Tool for Onboarding {
             .await?;
 
         // Build the onboarding instruction prompt
-        let lang_list: Vec<String> = languages.iter().cloned().collect();
-        let prompt = crate::prompts::build_onboarding_prompt(&lang_list, &top_level);
+        let prompt = crate::prompts::build_onboarding_prompt(
+            &lang_list,
+            &top_level,
+            gathered.readme.as_deref(),
+            gathered
+                .build_file_name
+                .as_deref()
+                .zip(gathered.build_file_content.as_deref()),
+            gathered.claude_md.as_deref(),
+            &gathered.ci_files,
+            &gathered.entry_points,
+            &gathered.test_dirs,
+        );
 
         Ok(json!({
             "languages": lang_list,
             "top_level": top_level,
             "config_created": created_config,
+            "has_readme": gathered.readme.is_some(),
+            "has_claude_md": gathered.claude_md.is_some(),
+            "build_file": gathered.build_file_name,
+            "entry_points": gathered.entry_points,
+            "test_dirs": gathered.test_dirs,
+            "ci_files": gathered.ci_files,
             "instructions": prompt,
         }))
     }
@@ -353,7 +504,7 @@ mod tests {
         let (_dir, ctx) = project_ctx().await;
         let result = Onboarding.call(json!({}), &ctx).await.unwrap();
         let instructions = result["instructions"].as_str().unwrap();
-        assert!(instructions.contains("## What to Explore"));
+        assert!(instructions.contains("## Rules"));
         assert!(instructions.contains("## Memories to Create"));
         assert!(instructions.contains("rust")); // detected language
     }
@@ -490,5 +641,81 @@ mod tests {
             "stdout should contain 'hello': {}",
             stdout
         );
+    }
+
+    #[test]
+    fn gather_context_reads_readme_and_build_file() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("README.md"),
+            "# My Project\nA test project.",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"test\"\nversion = \"0.1.0\"",
+        )
+        .unwrap();
+        let ctx = gather_project_context(dir.path());
+        assert_eq!(ctx.readme.as_deref(), Some("# My Project\nA test project."));
+        assert_eq!(ctx.build_file_name.as_deref(), Some("Cargo.toml"));
+        assert!(ctx.build_file_content.as_ref().unwrap().contains("test"));
+        assert!(ctx.claude_md.is_none());
+    }
+
+    #[test]
+    fn gather_context_finds_ci_files() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".github/workflows")).unwrap();
+        std::fs::write(dir.path().join(".github/workflows/ci.yml"), "name: CI").unwrap();
+        let ctx = gather_project_context(dir.path());
+        assert_eq!(ctx.ci_files, vec![".github/workflows/ci.yml"]);
+    }
+
+    #[test]
+    fn gather_context_finds_entry_points_and_test_dirs() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/main.rs"), "fn main() {}").unwrap();
+        std::fs::create_dir_all(dir.path().join("tests")).unwrap();
+        let ctx = gather_project_context(dir.path());
+        assert!(ctx.entry_points.contains(&"src/main.rs".to_string()));
+        assert!(ctx.test_dirs.contains(&"tests".to_string()));
+    }
+
+    #[test]
+    fn gather_context_handles_empty_project() {
+        let dir = tempdir().unwrap();
+        let ctx = gather_project_context(dir.path());
+        assert!(ctx.readme.is_none());
+        assert!(ctx.build_file_name.is_none());
+        assert!(ctx.claude_md.is_none());
+        assert!(ctx.ci_files.is_empty());
+        assert!(ctx.entry_points.is_empty());
+        assert!(ctx.test_dirs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn onboarding_returns_gathered_context_fields() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::write(dir.path().join("main.rs"), "fn main() {}").unwrap();
+        std::fs::write(dir.path().join("README.md"), "# Test Project").unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
+        std::fs::create_dir_all(dir.path().join("tests")).unwrap();
+        let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
+        let ctx = ToolContext { agent, lsp: lsp() };
+        let result = Onboarding.call(json!({}), &ctx).await.unwrap();
+
+        assert_eq!(result["has_readme"], true);
+        assert_eq!(result["build_file"], "Cargo.toml");
+        assert!(result["test_dirs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v == "tests"));
+        // Verify the instructions now contain the gathered README content
+        let instructions = result["instructions"].as_str().unwrap();
+        assert!(instructions.contains("# Test Project"));
     }
 }
