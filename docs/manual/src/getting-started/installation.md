@@ -1,5 +1,7 @@
 # Installation
 
+> **Platform support:** code-explorer has been tested on **Linux**. macOS and Windows may work but have not been verified. Contributions welcome.
+
 ## Prerequisites
 
 You need a working Rust toolchain. If you do not have one, install it via [rustup](https://rustup.rs/):

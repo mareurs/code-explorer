@@ -23,6 +23,10 @@ code-explorer is an MCP server that gives your AI coding agent the same navigati
 
 Plus file operations (6 tools), AST analysis (2 tools), workflow (3 tools), and config (2 tools) — **30 tools total**.
 
+## Platform Support
+
+Tested on **Linux**. macOS and Windows may work but have not been verified. Contributions welcome.
+
 ## Installation
 
 code-explorer has two components that work together:
