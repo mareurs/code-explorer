@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::config::project::ProjectConfig;
+use crate::library::registry::LibraryRegistry;
 use crate::memory::MemoryStore;
 
 /// Shared agent state — cloned into each tool invocation.
@@ -22,6 +23,7 @@ pub struct ActiveProject {
     pub root: PathBuf,
     pub config: ProjectConfig,
     pub memory: MemoryStore,
+    pub library_registry: LibraryRegistry,
 }
 
 impl Agent {
@@ -29,10 +31,13 @@ impl Agent {
         let active_project = if let Some(root) = project {
             let config = ProjectConfig::load_or_default(&root)?;
             let memory = MemoryStore::open(&root)?;
+            let registry_path = root.join(".code-explorer").join("libraries.json");
+            let library_registry = LibraryRegistry::load(&registry_path).unwrap_or_default();
             Some(ActiveProject {
                 root,
                 config,
                 memory,
+                library_registry,
             })
         } else {
             None
@@ -47,11 +52,14 @@ impl Agent {
     pub async fn activate(&self, root: PathBuf) -> Result<()> {
         let config = ProjectConfig::load_or_default(&root)?;
         let memory = MemoryStore::open(&root)?;
+        let registry_path = root.join(".code-explorer").join("libraries.json");
+        let library_registry = LibraryRegistry::load(&registry_path).unwrap_or_default();
         let mut inner = self.inner.write().await;
         inner.active_project = Some(ActiveProject {
             root,
             config,
             memory,
+            library_registry,
         });
         Ok(())
     }
@@ -108,6 +116,27 @@ impl Agent {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No active project. Use activate_project first."))?;
         f(project)
+    }
+
+    /// Get a clone of the library registry, if a project is active.
+    pub async fn library_registry(&self) -> Option<LibraryRegistry> {
+        self.inner
+            .read()
+            .await
+            .active_project
+            .as_ref()
+            .map(|p| p.library_registry.clone())
+    }
+
+    /// Persist the library registry to disk.
+    pub async fn save_library_registry(&self) -> Result<()> {
+        let inner = self.inner.read().await;
+        let project = inner
+            .active_project
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No active project"))?;
+        let path = project.root.join(".code-explorer").join("libraries.json");
+        project.library_registry.save(&path)
     }
 }
 
@@ -222,5 +251,24 @@ mod tests {
         // Clone should see the activation
         let root = agent2.require_project_root().await.unwrap();
         assert_eq!(root, dir.path());
+    }
+
+    #[tokio::test]
+    async fn activate_creates_empty_library_registry() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
+
+        let reg = agent.library_registry().await.unwrap();
+        assert!(
+            reg.all().is_empty(),
+            "fresh project should have empty library registry"
+        );
+    }
+
+    #[tokio::test]
+    async fn library_registry_none_without_project() {
+        let agent = Agent::new(None).await.unwrap();
+        assert!(agent.library_registry().await.is_none());
     }
 }

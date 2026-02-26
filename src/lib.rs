@@ -7,6 +7,7 @@ pub mod ast;
 pub mod config;
 pub mod embed;
 pub mod git;
+pub mod library;
 pub mod lsp;
 pub mod memory;
 pub mod prompts;
