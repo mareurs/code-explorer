@@ -101,6 +101,7 @@ fn get_path_param(input: &Value, required: bool) -> anyhow::Result<Option<&str>>
     match input["relative_path"]
         .as_str()
         .or_else(|| input["path"].as_str())
+        .or_else(|| input["file"].as_str())
     {
         Some(p) => Ok(Some(p)),
         None if required => Err(anyhow!("missing 'relative_path' (or 'path') parameter")),
