@@ -36,29 +36,50 @@ impl LspManager {
     ///
     /// If the existing client has a different workspace root or has crashed,
     /// it is replaced with a new instance.
+    ///
+    /// The mutex is held only for the fast cache check, not during the slow
+    /// LSP process startup.  This allows concurrent cold-starts for different
+    /// languages to proceed in parallel.
     pub async fn get_or_start(
         &self,
         language: &str,
         workspace_root: &Path,
     ) -> Result<Arc<LspClient>> {
-        let mut clients = self.clients.lock().await;
-
-        if let Some(client) = clients.get(language) {
-            if client.is_alive() && client.workspace_root == workspace_root {
-                return Ok(client.clone());
+        // Phase 1: quick cache check under a short lock.
+        // If alive and matching workspace, return immediately.
+        // If dead or wrong workspace, evict it now so we restart below.
+        {
+            let mut clients = self.clients.lock().await;
+            if let Some(client) = clients.get(language) {
+                if client.is_alive() && client.workspace_root == workspace_root {
+                    return Ok(client.clone());
+                }
+                // Dead or wrong workspace — evict.
+                let old = clients.remove(language).unwrap();
+                let _ = old.shutdown().await;
             }
-            // Dead or wrong workspace — shut down and replace
-            let old = clients.remove(language).unwrap();
-            let _ = old.shutdown().await;
         }
+        // Lock released: concurrent callers for *different* languages now
+        // start their LSP processes in parallel.
 
         let config = servers::default_config(language, workspace_root).ok_or_else(|| {
             anyhow::anyhow!("No LSP server configured for language: {}", language)
         })?;
 
-        let client = Arc::new(LspClient::start(config).await?);
-        clients.insert(language.to_string(), client.clone());
-        Ok(client)
+        let new_client = Arc::new(LspClient::start(config).await?);
+
+        // Phase 2: re-acquire to insert.  A concurrent caller for the *same*
+        // language may have already stored a client while we were starting
+        // ours — if so, prefer theirs and discard ours.
+        let mut clients = self.clients.lock().await;
+        if let Some(existing) = clients.get(language) {
+            if existing.is_alive() && existing.workspace_root == workspace_root {
+                let _ = new_client.shutdown().await;
+                return Ok(existing.clone());
+            }
+        }
+        clients.insert(language.to_string(), new_client.clone());
+        Ok(new_client)
     }
 
     /// Get an existing alive client without starting one.

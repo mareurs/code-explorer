@@ -453,11 +453,21 @@ impl Tool for FindSymbol {
                 }
             }
 
-            for lang in &languages {
-                let Ok(client) = ctx.lsp.get_or_start(lang, &root).await else {
-                    continue;
-                };
-                let Ok(symbols) = client.workspace_symbols(&pattern_lower).await else {
+            // Concurrently start/query all LSP servers so different languages
+            // (e.g. Kotlin JVM startup) don't block each other.
+            let languages: Vec<&str> = languages.into_iter().collect();
+            let mut join_set = tokio::task::JoinSet::new();
+            for lang in languages {
+                let lsp = ctx.lsp.clone();
+                let root = root.clone();
+                let pattern = pattern_lower.clone();
+                join_set.spawn(async move {
+                    let client = lsp.get_or_start(lang, &root).await?;
+                    client.workspace_symbols(&pattern).await
+                });
+            }
+            while let Some(task_result) = join_set.join_next().await {
+                let Ok(Ok(symbols)) = task_result else {
                     continue;
                 };
                 for sym in symbols {
