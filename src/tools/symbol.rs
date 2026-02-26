@@ -1058,6 +1058,47 @@ fn apply_text_edits(content: &str, edits: &[lsp_types::TextEdit]) -> String {
     lines.join("\n")
 }
 
+/// Check if a path is outside the project root. If so, attempt to discover
+/// and register the library. Returns the source tag.
+#[allow(dead_code)]
+/// and register the library. Returns the source tag.
+async fn tag_external_path(
+    path: &std::path::Path,
+    project_root: &std::path::Path,
+    agent: &crate::agent::Agent,
+) -> String {
+    if path.starts_with(project_root) {
+        return "project".to_string();
+    }
+
+    // Check if already registered
+    if let Some(registry) = agent.library_registry().await {
+        if let Some(entry) = registry.is_library_path(path) {
+            return format!("lib:{}", entry.name);
+        }
+    }
+
+    // Attempt auto-discovery
+    if let Some(discovered) = crate::library::discovery::discover_library_root(path) {
+        let name = discovered.name.clone();
+        let mut inner = agent.inner.write().await;
+        if let Some(project) = inner.active_project.as_mut() {
+            project.library_registry.register(
+                discovered.name,
+                discovered.path,
+                discovered.language,
+                crate::library::registry::DiscoveryMethod::LspFollowThrough,
+            );
+            // Best-effort save — don't fail the tool call if this fails
+            let registry_path = project.root.join(".code-explorer").join("libraries.json");
+            let _ = project.library_registry.save(&registry_path);
+        }
+        format!("lib:{}", name)
+    } else {
+        "external".to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1624,5 +1665,43 @@ fn main() {
         let tool = FindReferencingSymbols;
         let schema = tool.input_schema();
         assert!(schema["properties"]["scope"].is_object());
+    }
+
+    #[tokio::test]
+    async fn tag_external_path_returns_project_for_internal() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
+        let root = agent.require_project_root().await.unwrap();
+        let internal = root.join("src/main.rs");
+        let tag = tag_external_path(&internal, &root, &agent).await;
+        assert_eq!(tag, "project");
+    }
+
+    #[tokio::test]
+    async fn tag_external_path_discovers_and_registers() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
+        let root = agent.require_project_root().await.unwrap();
+
+        // Create a fake library directory with Cargo.toml
+        let lib_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            lib_dir.path().join("Cargo.toml"),
+            "[package]\nname = \"fake_lib\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        let lib_src = lib_dir.path().join("src");
+        std::fs::create_dir_all(&lib_src).unwrap();
+        let lib_file = lib_src.join("lib.rs");
+        std::fs::write(&lib_file, "pub fn hello() {}").unwrap();
+
+        let tag = tag_external_path(&lib_file, &root, &agent).await;
+        assert_eq!(tag, "lib:fake_lib");
+
+        // Verify it was registered
+        let registry = agent.library_registry().await.unwrap();
+        assert!(registry.lookup("fake_lib").is_some());
     }
 }
