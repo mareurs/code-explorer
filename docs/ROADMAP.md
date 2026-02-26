@@ -27,7 +27,6 @@ See the detailed implementation plan: [`plans/2026-02-25-v1-implementation-plan.
 
 ## What's Next
 
-- HTTP/SSE transport (in addition to stdio)
 - Additional tree-sitter grammars
 - Additional LSP server configurations
 - sqlite-vec integration for vector similarity (currently pure-Rust cosine)

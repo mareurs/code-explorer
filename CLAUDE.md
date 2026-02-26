@@ -6,7 +6,7 @@ Rust MCP server giving LLMs IDE-grade code intelligence — symbol-level navigat
 
 ```bash
 cargo build                        # Build
-cargo test                         # Run tests (411 passing)
+cargo test                         # Run tests (432 passing)
 cargo clippy -- -D warnings        # Lint
 cargo fmt                          # Format
 cargo run -- start --project .     # Run MCP server (stdio)
@@ -20,7 +20,7 @@ cargo run -- index --project .     # Build embedding index
 ```
 src/
 ├── main.rs          # CLI: start (MCP server) and index subcommands
-├── server.rs        # rmcp ServerHandler — bridges Tool trait to MCP
+├── server.rs        # rmcp ServerHandler — bridges Tool trait to MCP, signal handling + graceful LSP shutdown
 ├── agent.rs         # Orchestrator: active project, config, memory
 ├── config/          # ProjectConfig (.code-explorer/project.toml), modes
 ├── lsp/             # LSP types, server configs (9 langs), JSON-RPC client

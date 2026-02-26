@@ -33,10 +33,11 @@ code-explorer is an MCP server that gives LLMs IDE-grade code intelligence. It e
 Bridges the internal `Tool` trait to rmcp's `ServerHandler`. All tools are registered as `Vec<Arc<dyn Tool>>` and dispatched dynamically in `call_tool`.
 
 - Stdio transport via `rmcp::transport::stdio()`
+- HTTP/SSE transport via `rmcp::transport::sse_server::SseServer`
 - `route_tool_error` in `server.rs` routes tool failures:
   `RecoverableError` → `isError:false` + JSON hint (sibling calls not aborted);
   other errors → `isError:true` (fatal)
-- HTTP transport planned but not yet implemented
+- **Graceful shutdown**: `shutdown_signal()` listens for SIGINT/SIGTERM via `tokio::select!`. Both transport paths call `lsp.shutdown_all()` before exiting, ensuring child LSP processes are properly terminated.
 
 ### Agent (`src/agent.rs`)
 
@@ -54,7 +55,7 @@ Central orchestrator holding active project state behind `RwLock`. Manages:
 
 - `symbols.rs` — Language-agnostic `SymbolInfo`/`SymbolKind` types with `From<lsp_types::SymbolKind>`
 - `servers/mod.rs` — Default LSP server configs for 9 languages (rust-analyzer, pyright, typescript-language-server, gopls, jdtls, kotlin-language-server, clangd, omnisharp, solargraph)
-- `client.rs` — `LspClient` with JSON-RPC transport, lifecycle management, and full LSP request support
+- `client.rs` — `LspClient` with JSON-RPC transport, lifecycle management, and full LSP request support. Stores `child_pid` for kill-on-drop safety net (SIGTERM via `libc::kill` in `Drop` impl).
 
 ### AST Engine (`src/ast/`)
 
@@ -131,6 +132,7 @@ Each tool implements the `Tool` trait (`name`, `description`, `input_schema`, `a
 | Vector store | `rusqlite` (bundled SQLite) |
 | Hashing | `sha2`, `hex` |
 | Schema gen | `schemars` |
+| Process mgmt | `libc` (SIGTERM in LspClient Drop) |
 
 ## Design Principles
 

@@ -154,8 +154,11 @@ struct handles the LSP initialization handshake, sends requests
 etc.), and parses responses using `lsp-types`.
 
 Server processes are long-lived: once started, they persist for the lifetime of
-the MCP session. On shutdown (when the MCP connection closes), the `Drop`
-implementation on `LspClient` sends a shutdown request and kills the process.
+the MCP session. On shutdown (SIGINT, SIGTERM, or MCP connection close), the
+server calls `LspManager::shutdown_all()`, which sends proper LSP
+`shutdown`/`exit` messages to each language server for a clean exit. As a safety
+net, the `LspClient` Drop implementation also sends SIGTERM to the child process
+via `libc::kill`, ensuring cleanup even if the graceful path is bypassed.
 
 ### AST Engine
 
@@ -298,6 +301,7 @@ team members share the same configuration. See
 | `clap` | CLI argument parsing |
 | `serde` / `serde_json` | JSON serialization |
 | `tracing` | Structured logging |
+| `libc` | POSIX signals for LSP process cleanup |
 
 ---
 

@@ -423,8 +423,14 @@ Language servers can use significant memory, especially `jdtls` and
 simultaneously compounds this.
 
 **Fix:** code-explorer starts language servers on demand, so only languages
-you actively use consume memory. If memory is tight, restart the MCP server
-to kill all language server processes and start fresh.
+you actively use consume memory. When the MCP server exits (or receives
+SIGINT/SIGTERM), it gracefully shuts down all language servers via the LSP
+shutdown protocol. As a safety net, the `LspClient` Drop implementation also
+sends SIGTERM to child processes, ensuring cleanup even on abrupt exits.
+
+If you have multiple Claude Code sessions, each spawns its own code-explorer
+process with its own language servers. Close unused sessions to reclaim
+memory.
 
 ---
 
