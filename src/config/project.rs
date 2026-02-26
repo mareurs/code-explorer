@@ -125,6 +125,7 @@ impl SecuritySection {
             file_write_enabled: self.file_write_enabled,
             git_enabled: self.git_enabled,
             indexing_enabled: self.indexing_enabled,
+            library_paths: Vec::new(),
         }
     }
 }
@@ -225,9 +226,15 @@ mod tests {
         // Previously derived Default gave false for all bool fields,
         // silently disabling write tools for projects without a [security] TOML block.
         let sec = SecuritySection::default();
-        assert!(sec.file_write_enabled, "file_write_enabled should default to true");
+        assert!(
+            sec.file_write_enabled,
+            "file_write_enabled should default to true"
+        );
         assert!(sec.git_enabled, "git_enabled should default to true");
-        assert!(sec.indexing_enabled, "indexing_enabled should default to true");
+        assert!(
+            sec.indexing_enabled,
+            "indexing_enabled should default to true"
+        );
         assert!(!sec.shell_enabled, "shell_enabled should default to false");
     }
 

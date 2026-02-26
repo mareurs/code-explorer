@@ -7,6 +7,7 @@ pub mod ast;
 pub mod config;
 pub mod file;
 pub mod git;
+pub mod library;
 pub mod memory;
 pub mod output;
 pub mod semantic;

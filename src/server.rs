@@ -24,6 +24,7 @@ use crate::tools::{
         CreateTextFile, EditLines, FindFile, ListDir, ReadFile, ReplaceContent, SearchForPattern,
     },
     git::{GitBlame, GitDiff, GitLog},
+    library::ListLibraries,
     memory::{DeleteMemory, ListMemories, ReadMemory, WriteMemory},
     semantic::{IndexProject, IndexStatus, SemanticSearch},
     symbol::{
@@ -96,6 +97,8 @@ impl CodeExplorerServer {
             // Config tools (stub — require Agent wiring)
             Arc::new(ActivateProject),
             Arc::new(GetCurrentConfig),
+            // Library tools
+            Arc::new(ListLibraries),
         ];
         Self {
             agent,
@@ -345,6 +348,7 @@ mod tests {
             "index_status",
             "activate_project",
             "get_current_config",
+            "list_libraries",
         ];
         assert_eq!(
             server.tools.len(),

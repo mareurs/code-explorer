@@ -45,13 +45,28 @@ impl Tool for ReadFile {
             project_root.as_deref(),
             &security,
         )?;
+
+        // Determine source tag
+        let source_tag = {
+            let inner = ctx.agent.inner.read().await;
+            if let Some(project) = &inner.active_project {
+                if let Some(lib) = project.library_registry.is_library_path(&resolved) {
+                    format!("lib:{}", lib.name)
+                } else {
+                    "project".to_string()
+                }
+            } else {
+                "project".to_string()
+            }
+        };
+
         let text = std::fs::read_to_string(&resolved)?;
 
         // If explicit line range given, use it directly (no capping)
         if let (Some(start), Some(end)) = (input["start_line"].as_u64(), input["end_line"].as_u64())
         {
             let content = extract_lines(&text, start as usize, end as usize);
-            return Ok(json!({ "content": content }));
+            return Ok(json!({ "content": content, "source": source_tag }));
         }
 
         // No line range: cap in exploring mode
@@ -70,11 +85,12 @@ impl Tool for ReadFile {
                 ),
                 next_offset: None,
             };
-            let mut result = json!({ "content": content, "total_lines": total_lines });
+            let mut result =
+                json!({ "content": content, "total_lines": total_lines, "source": source_tag });
             result["overflow"] = OutputGuard::overflow_json(&overflow);
             Ok(result)
         } else {
-            Ok(json!({ "content": text, "total_lines": total_lines }))
+            Ok(json!({ "content": text, "total_lines": total_lines, "source": source_tag }))
         }
     }
 }
@@ -1697,5 +1713,19 @@ mod tests {
             .await;
 
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn read_file_tags_project_source() {
+        let (dir, ctx) = project_ctx().await;
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "hello world").unwrap();
+
+        let tool = ReadFile;
+        let result = tool
+            .call(json!({ "path": "test.txt" }), &ctx)
+            .await
+            .unwrap();
+        assert_eq!(result["source"], "project");
     }
 }

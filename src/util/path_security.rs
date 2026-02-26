@@ -53,6 +53,8 @@ pub struct PathSecurityConfig {
     pub git_enabled: bool,
     /// Enable semantic search and indexing tools (default: true)
     pub indexing_enabled: bool,
+    /// Read-only library paths (registered via LibraryRegistry).
+    pub library_paths: Vec<PathBuf>,
 }
 
 impl Default for PathSecurityConfig {
@@ -66,6 +68,7 @@ impl Default for PathSecurityConfig {
             file_write_enabled: true,
             git_enabled: true,
             indexing_enabled: true,
+            library_paths: Vec::new(),
         }
     }
 }
@@ -659,5 +662,11 @@ mod tests {
             err.to_string().contains("project.toml"),
             "error should mention config file"
         );
+    }
+
+    #[test]
+    fn library_paths_default_is_empty() {
+        let config = PathSecurityConfig::default();
+        assert!(config.library_paths.is_empty());
     }
 }
