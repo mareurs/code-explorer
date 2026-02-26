@@ -142,7 +142,9 @@ fn collect_matching(
     out: &mut Vec<Value>,
 ) {
     for sym in symbols {
-        if sym.name.to_lowercase().contains(pattern) {
+        if sym.name.to_lowercase().contains(pattern)
+            || sym.name_path.to_lowercase().contains(pattern)
+        {
             out.push(symbol_to_json(
                 sym,
                 include_body,
@@ -427,7 +429,21 @@ impl Tool for FindSymbol {
             let files: Vec<PathBuf> = if is_glob(rel) {
                 resolve_glob(ctx, rel).await?
             } else {
-                vec![root.join(rel)]
+                let full = root.join(rel);
+                if full.is_dir() {
+                    // Walk directory to find source files (same pattern as GetSymbolsOverview)
+                    let walker = ignore::WalkBuilder::new(&full)
+                        .hidden(true)
+                        .git_ignore(true)
+                        .build();
+                    walker
+                        .flatten()
+                        .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+                        .map(|e| e.path().to_path_buf())
+                        .collect()
+                } else {
+                    vec![full]
+                }
             };
 
             // In exploring mode, stop early once we have enough results.
@@ -1777,5 +1793,81 @@ fn main() {
         // Verify it was registered
         let registry = agent.library_registry().await.unwrap();
         assert!(registry.lookup("fake_lib").is_some());
+    }
+
+    #[tokio::test]
+    async fn find_symbol_directory_relative_path() {
+        let Some((_dir, ctx)) = rust_project_ctx().await else {
+            return; // skip if rust-analyzer not available
+        };
+
+        // "src" is a directory — should walk it and find symbols inside
+        let result = FindSymbol
+            .call(json!({ "pattern": "add", "relative_path": "src" }), &ctx)
+            .await
+            .unwrap();
+
+        let symbols = result["symbols"].as_array().unwrap();
+        assert!(
+            !symbols.is_empty(),
+            "find_symbol with directory relative_path should find symbols"
+        );
+        assert!(symbols.iter().any(|s| s["name"] == "add"));
+    }
+
+    #[test]
+    fn collect_matching_matches_name_path() {
+        let symbols = vec![SymbolInfo {
+            name: "MyStruct".into(),
+            name_path: "MyStruct".into(),
+            kind: crate::lsp::SymbolKind::Struct,
+            file: PathBuf::from("test.rs"),
+            start_line: 0,
+            end_line: 10,
+            start_col: 0,
+            children: vec![SymbolInfo {
+                name: "my_method".into(),
+                name_path: "MyStruct/my_method".into(),
+                kind: crate::lsp::SymbolKind::Method,
+                file: PathBuf::from("test.rs"),
+                start_line: 2,
+                end_line: 5,
+                start_col: 4,
+                children: vec![],
+            }],
+        }];
+
+        // Pattern with "/" should match via name_path
+        let mut results = vec![];
+        collect_matching(
+            &symbols,
+            "mystruct/my_method",
+            false,
+            None,
+            0,
+            "project",
+            &mut results,
+        );
+        assert!(
+            !results.is_empty(),
+            "pattern with '/' should match against name_path"
+        );
+        assert_eq!(results[0]["name"], "my_method");
+
+        // Pattern without "/" should still match via name as before
+        let mut results2 = vec![];
+        collect_matching(
+            &symbols,
+            "my_method",
+            false,
+            None,
+            0,
+            "project",
+            &mut results2,
+        );
+        assert!(
+            !results2.is_empty(),
+            "pattern without '/' should still match via name"
+        );
     }
 }

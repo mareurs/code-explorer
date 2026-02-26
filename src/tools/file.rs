@@ -39,10 +39,12 @@ impl Tool for ReadFile {
         let path = input["path"]
             .as_str()
             .or_else(|| input["file_path"].as_str())
-            .ok_or_else(|| RecoverableError::with_hint(
-                "missing required parameter 'path'",
-                "Provide the file path as: path=\"relative/path/to/file\"",
-            ))?;
+            .ok_or_else(|| {
+                RecoverableError::with_hint(
+                    "missing required parameter 'path'",
+                    "Provide the file path as: path=\"relative/path/to/file\"",
+                )
+            })?;
         let project_root = ctx.agent.project_root().await;
         let security = ctx.agent.security_config().await;
         let resolved = crate::util::path_security::validate_read_path(
