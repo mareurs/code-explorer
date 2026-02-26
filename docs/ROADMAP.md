@@ -51,6 +51,36 @@ Search and navigate third-party library/dependency source code. Read-only access
 
 ---
 
+### Project Dashboard
+
+A unified view of project health, configuration, and activity — surfaced via a `dashboard` CLI subcommand and/or a `get_dashboard` MCP tool.
+
+**Motivation:** As projects grow, project state is scattered across multiple sources: `project.toml` for config, `embeddings.db` for index state, LSP lifecycle logs for language server health, and (once implemented) `usage.db` for tool statistics. The dashboard aggregates these into a single, scannable snapshot.
+
+**What to show:**
+
+| Section | Data |
+|---------|------|
+| **Project** | Name, root path, detected languages, active LSP servers |
+| **Settings** | Embedding model, chunk size, ignored paths, enabled features |
+| **Index** | File count, chunk count, last indexed commit/timestamp, staleness status |
+| **Drift** | Drift report summary (files changed, avg/max drift score) — if enabled |
+| **Tool calls** | Per-tool call counts, error rates, p50/p99 latency — from `usage.db` |
+| **Errors** | Recent errors by tool (last N, with timestamps) |
+| **LSP** | Active language servers, health status, pending requests |
+
+**Implementation sketch:**
+- `cargo run -- dashboard --project .` CLI subcommand: reads all sources, renders a terminal table/summary
+- `get_dashboard` MCP tool: same data as structured JSON — lets the LLM report project status without running shell commands
+- Both are read-only aggregations; no new storage needed beyond what Tool Usage Monitor and existing modules already track
+
+**Phasing:**
+1. **Phase 1** (no dependencies): project config + index status + language detection — useful immediately
+2. **Phase 2** (depends on Tool Usage Monitor): tool call statistics + error log
+3. **Phase 3** (optional): LSP health, drift summary, realtime refresh via `--watch`
+
+---
+
 ### Tool Usage Monitor / Statistics
 
 Track tool call patterns to surface bugs, usage drift, and performance regressions over time.
