@@ -56,7 +56,8 @@ pub fn open_db(project_root: &Path) -> Result<Connection> {
             content    TEXT NOT NULL,
             start_line INTEGER NOT NULL,
             end_line   INTEGER NOT NULL,
-            file_hash  TEXT NOT NULL
+            file_hash  TEXT NOT NULL,
+            source     TEXT NOT NULL DEFAULT 'project'
         );
 
         -- TODO: replace with sqlite-vec virtual table once extension is loaded:
@@ -87,8 +88,8 @@ pub fn hash_file(path: &Path) -> Result<String> {
 /// Insert a chunk and its embedding into the database.
 pub fn insert_chunk(conn: &Connection, chunk: &CodeChunk, embedding: &[f32]) -> Result<i64> {
     conn.execute(
-        "INSERT INTO chunks (file_path, language, content, start_line, end_line, file_hash)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO chunks (file_path, language, content, start_line, end_line, file_hash, source)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
             chunk.file_path,
             chunk.language,
@@ -96,6 +97,7 @@ pub fn insert_chunk(conn: &Connection, chunk: &CodeChunk, embedding: &[f32]) -> 
             chunk.start_line,
             chunk.end_line,
             chunk.file_hash,
+            chunk.source,
         ],
     )?;
     let row_id = conn.last_insert_rowid();
@@ -154,26 +156,77 @@ pub fn search(
     query_embedding: &[f32],
     limit: usize,
 ) -> Result<Vec<SearchResult>> {
-    let mut stmt = conn.prepare(
-        "SELECT c.file_path, c.language, c.content, c.start_line, c.end_line, ce.embedding
-         FROM chunks c JOIN chunk_embeddings ce ON c.id = ce.rowid",
-    )?;
+    search_scoped(conn, query_embedding, limit, None)
+}
 
-    let qnorm = l2_norm(query_embedding);
-    let mut scored: Vec<(f32, SearchResult)> = stmt
-        .query_map([], |row| {
-            let blob: Vec<u8> = row.get(5)?;
-            Ok((
+/// Scoped cosine similarity search with optional source filtering.
+///
+/// `source_filter`:
+///   - `None` → all sources (no filter)
+///   - `Some("project")` → only project chunks
+///   - `Some("libraries")` → all non-project chunks
+///   - `Some("lib:<name>")` → only chunks from that specific library
+pub fn search_scoped(
+    conn: &Connection,
+    query_embedding: &[f32],
+    limit: usize,
+    source_filter: Option<&str>,
+) -> Result<Vec<SearchResult>> {
+    let (where_clause, filter_param): (&str, Option<String>) = match source_filter {
+        None => ("", None),
+        Some("project") => ("WHERE c.source = ?1", Some("project".to_string())),
+        Some("libraries") => ("WHERE c.source != 'project'", None),
+        Some(x) if x.starts_with("lib:") => ("WHERE c.source = ?1", Some(x.to_string())),
+        Some(x) => ("WHERE c.source = ?1", Some(x.to_string())),
+    };
+
+    let sql = format!(
+        "SELECT c.file_path, c.language, c.content, c.start_line, c.end_line, c.source, ce.embedding
+         FROM chunks c JOIN chunk_embeddings ce ON c.id = ce.rowid {where_clause}"
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+
+    // Collect rows into a Vec to avoid closure type mismatch between if/else branches
+    type Row = (String, String, String, usize, usize, String, Vec<u8>);
+    let rows: Vec<Row> = if let Some(ref param) = filter_param {
+        let mut rows_out = Vec::new();
+        let mut query_rows = stmt.query(params![param])?;
+        while let Some(row) = query_rows.next()? {
+            let blob: Vec<u8> = row.get(6)?;
+            rows_out.push((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, usize>(3)?,
                 row.get::<_, usize>(4)?,
+                row.get::<_, String>(5)?,
                 blob,
-            ))
-        })?
-        .filter_map(|r| r.ok())
-        .map(|(fp, lang, content, sl, el, blob)| {
+            ));
+        }
+        rows_out
+    } else {
+        let mut rows_out = Vec::new();
+        let mut query_rows = stmt.query([])?;
+        while let Some(row) = query_rows.next()? {
+            let blob: Vec<u8> = row.get(6)?;
+            rows_out.push((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, usize>(3)?,
+                row.get::<_, usize>(4)?,
+                row.get::<_, String>(5)?,
+                blob,
+            ));
+        }
+        rows_out
+    };
+
+    let qnorm = l2_norm(query_embedding);
+    let mut scored: Vec<(f32, SearchResult)> = rows
+        .into_iter()
+        .map(|(fp, lang, content, sl, el, source, blob)| {
             let emb = bytes_to_f32(&blob);
             let sim = cosine_sim(query_embedding, &emb, qnorm);
             (
@@ -185,6 +238,7 @@ pub fn search(
                     start_line: sl,
                     end_line: el,
                     score: sim,
+                    source,
                 },
             )
         })
@@ -354,6 +408,7 @@ pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
                 start_line: raw.start_line,
                 end_line: raw.end_line,
                 file_hash: result.hash.clone(),
+                source: "project".into(),
             };
             insert_chunk(&conn, &chunk, emb)?;
         }
@@ -366,6 +421,166 @@ pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
         "Index complete: {} files indexed, {} unchanged",
         indexed,
         skipped
+    );
+    Ok(())
+}
+
+/// Build or incrementally update the embedding index for a library.
+///
+/// Similar to `build_index` but walks `library_path` instead of the project root,
+/// and tags all chunks with the given `source` string (e.g. "lib:serde").
+/// The DB is stored under `project_root/.code-explorer/embeddings.db` (shared with project).
+pub async fn build_library_index(
+    project_root: &Path,
+    library_path: &Path,
+    source: &str,
+    force: bool,
+) -> Result<()> {
+    use crate::ast::detect_language;
+    use crate::config::ProjectConfig;
+    use crate::embed::{create_embedder, Embedding};
+    use std::sync::Arc;
+    use tokio::sync::Semaphore;
+    use tokio::task::JoinSet;
+
+    let config = ProjectConfig::load_or_default(project_root)?;
+    let conn = open_db(project_root)?;
+    if !force {
+        check_model_mismatch(&conn, &config.embeddings.model)?;
+    }
+    let embedder: Arc<dyn crate::embed::Embedder> =
+        Arc::from(create_embedder(&config.embeddings.model).await?);
+
+    // ── Phase 1: Walk library path, hash, chunk ───────────────────────────────
+    struct FileWork {
+        rel: String,
+        hash: String,
+        lang: String,
+        chunks: Vec<super::chunker::RawChunk>,
+    }
+
+    let walker = ignore::WalkBuilder::new(library_path)
+        .hidden(true)
+        .git_ignore(true)
+        .build();
+
+    let mut works: Vec<FileWork> = Vec::new();
+    let mut skipped = 0usize;
+
+    for entry in walker.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(lang) = detect_language(path) else {
+            continue;
+        };
+
+        // Use library-relative paths prefixed with source for uniqueness
+        let rel = path
+            .strip_prefix(library_path)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let rel = format!("[{}]/{}", source, rel);
+        let hash = hash_file(path)?;
+
+        if !force {
+            if let Some(stored) = get_file_hash(&conn, &rel)? {
+                if stored == hash {
+                    skipped += 1;
+                    continue;
+                }
+            }
+        }
+
+        let file_source = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let chunks = super::ast_chunker::split_file(
+            &file_source,
+            lang,
+            path,
+            config.embeddings.chunk_size,
+            config.embeddings.chunk_overlap,
+        );
+        if chunks.is_empty() {
+            continue;
+        }
+
+        works.push(FileWork {
+            rel,
+            hash,
+            lang: lang.to_string(),
+            chunks,
+        });
+    }
+
+    // ── Phase 2: Concurrent embedding ─────────────────────────────────────────
+    struct FileResult {
+        rel: String,
+        hash: String,
+        lang: String,
+        chunks: Vec<super::chunker::RawChunk>,
+        embeddings: Vec<Embedding>,
+    }
+
+    const MAX_CONCURRENT: usize = 4;
+    let sem = Arc::new(Semaphore::new(MAX_CONCURRENT));
+    let mut tasks: JoinSet<Result<FileResult>> = JoinSet::new();
+
+    for work in works {
+        let embedder = Arc::clone(&embedder);
+        let sem = Arc::clone(&sem);
+        tasks.spawn(async move {
+            let _permit = sem.acquire().await.expect("semaphore closed");
+            let texts: Vec<&str> = work.chunks.iter().map(|c| c.content.as_str()).collect();
+            let embeddings = embedder.embed(&texts).await?;
+            Ok(FileResult {
+                rel: work.rel,
+                hash: work.hash,
+                lang: work.lang,
+                chunks: work.chunks,
+                embeddings,
+            })
+        });
+    }
+
+    let mut results: Vec<FileResult> = Vec::new();
+    while let Some(res) = tasks.join_next().await {
+        results.push(res.map_err(|e| anyhow::anyhow!(e))??);
+    }
+
+    // ── Phase 3: Single transaction for all DB writes ─────────────────────────
+    let indexed = results.len();
+    let source_owned = source.to_string();
+    conn.execute_batch("BEGIN")?;
+    for result in results {
+        delete_file_chunks(&conn, &result.rel)?;
+        for (raw, emb) in result.chunks.iter().zip(result.embeddings.iter()) {
+            let chunk = CodeChunk {
+                id: None,
+                file_path: result.rel.clone(),
+                language: result.lang.clone(),
+                content: raw.content.clone(),
+                start_line: raw.start_line,
+                end_line: raw.end_line,
+                file_hash: result.hash.clone(),
+                source: source_owned.clone(),
+            };
+            insert_chunk(&conn, &chunk, emb)?;
+        }
+        upsert_file_hash(&conn, &result.rel, &result.hash)?;
+        tracing::debug!("indexed {} ({} chunks)", result.rel, result.chunks.len());
+    }
+    set_meta(&conn, "embed_model", &config.embeddings.model)?;
+    conn.execute_batch("COMMIT")?;
+    tracing::info!(
+        "Library index complete: {} files indexed, {} unchanged (source={})",
+        indexed,
+        skipped,
+        source
     );
     Ok(())
 }
@@ -393,6 +608,41 @@ pub fn index_stats(conn: &Connection) -> Result<IndexStats> {
         embedding_count,
         model,
     })
+}
+
+/// Per-source statistics for the embedding index.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SourceStats {
+    pub file_count: usize,
+    pub chunk_count: usize,
+}
+
+/// Query index statistics grouped by source (e.g. "project", "lib:serde").
+pub fn index_stats_by_source(
+    conn: &Connection,
+) -> Result<std::collections::HashMap<String, SourceStats>> {
+    let mut stmt = conn.prepare(
+        "SELECT source, COUNT(DISTINCT file_path), COUNT(*) FROM chunks GROUP BY source",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, usize>(1)?,
+            row.get::<_, usize>(2)?,
+        ))
+    })?;
+    let mut map = std::collections::HashMap::new();
+    for row in rows {
+        let (source, file_count, chunk_count) = row?;
+        map.insert(
+            source,
+            SourceStats {
+                file_count,
+                chunk_count,
+            },
+        );
+    }
+    Ok(map)
 }
 
 /// Read a value from the `meta` key-value table.
@@ -453,6 +703,20 @@ mod tests {
             start_line: 1,
             end_line: 3,
             file_hash: "testhash".to_string(),
+            source: "project".into(),
+        }
+    }
+
+    fn dummy_chunk_with_source(file_path: &str, content: &str, source: &str) -> CodeChunk {
+        CodeChunk {
+            id: None,
+            file_path: file_path.to_string(),
+            language: "rust".to_string(),
+            content: content.to_string(),
+            start_line: 1,
+            end_line: 3,
+            file_hash: "testhash".to_string(),
+            source: source.to_string(),
         }
     }
 
@@ -713,5 +977,101 @@ mod tests {
             .to_string_lossy()
             .replace('\\', "/");
         assert_eq!(rel, "src/tools/file.rs");
+    }
+
+    #[test]
+    fn insert_chunk_stores_source() {
+        let (_dir, conn) = open_test_db();
+        let chunk = dummy_chunk_with_source("lib.rs", "fn x() {}", "lib:serde");
+        insert_chunk(&conn, &chunk, &[0.1, 0.2]).unwrap();
+        let stored: String = conn
+            .query_row(
+                "SELECT source FROM chunks WHERE file_path = 'lib.rs'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, "lib:serde");
+    }
+
+    #[test]
+    fn search_returns_source() {
+        let (_dir, conn) = open_test_db();
+        insert_chunk(
+            &conn,
+            &dummy_chunk_with_source("a.rs", "fn a() {}", "lib:tokio"),
+            &[1.0, 0.0],
+        )
+        .unwrap();
+        let results = search(&conn, &[1.0, 0.0], 1).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].source, "lib:tokio");
+    }
+
+    #[test]
+    fn search_scoped_filters_by_source() {
+        let (_dir, conn) = open_test_db();
+        // Insert project chunk and library chunk with orthogonal embeddings
+        insert_chunk(
+            &conn,
+            &dummy_chunk("proj.rs", "fn proj() {}"),
+            &[1.0, 0.0, 0.0],
+        )
+        .unwrap();
+        insert_chunk(
+            &conn,
+            &dummy_chunk_with_source("serde.rs", "fn serde() {}", "lib:serde"),
+            &[0.0, 1.0, 0.0],
+        )
+        .unwrap();
+        insert_chunk(
+            &conn,
+            &dummy_chunk_with_source("tokio.rs", "fn tokio() {}", "lib:tokio"),
+            &[0.0, 0.0, 1.0],
+        )
+        .unwrap();
+
+        // No filter → all 3
+        let all = search_scoped(&conn, &[1.0, 1.0, 1.0], 10, None).unwrap();
+        assert_eq!(all.len(), 3);
+
+        // Project only
+        let proj = search_scoped(&conn, &[1.0, 1.0, 1.0], 10, Some("project")).unwrap();
+        assert_eq!(proj.len(), 1);
+        assert_eq!(proj[0].source, "project");
+
+        // Libraries (all non-project)
+        let libs = search_scoped(&conn, &[1.0, 1.0, 1.0], 10, Some("libraries")).unwrap();
+        assert_eq!(libs.len(), 2);
+        assert!(libs.iter().all(|r| r.source != "project"));
+
+        // Specific library
+        let serde_only = search_scoped(&conn, &[1.0, 1.0, 1.0], 10, Some("lib:serde")).unwrap();
+        assert_eq!(serde_only.len(), 1);
+        assert_eq!(serde_only[0].source, "lib:serde");
+    }
+
+    #[test]
+    fn index_stats_by_source_groups() {
+        let (_dir, conn) = open_test_db();
+        insert_chunk(&conn, &dummy_chunk("a.rs", "fn a() {}"), &[0.1]).unwrap();
+        insert_chunk(&conn, &dummy_chunk("b.rs", "fn b() {}"), &[0.2]).unwrap();
+        insert_chunk(
+            &conn,
+            &dummy_chunk_with_source("serde.rs", "fn serde() {}", "lib:serde"),
+            &[0.3],
+        )
+        .unwrap();
+
+        let by_source = index_stats_by_source(&conn).unwrap();
+        assert_eq!(by_source.len(), 2);
+
+        let project = by_source.get("project").unwrap();
+        assert_eq!(project.file_count, 2);
+        assert_eq!(project.chunk_count, 2);
+
+        let serde = by_source.get("lib:serde").unwrap();
+        assert_eq!(serde.file_count, 1);
+        assert_eq!(serde.chunk_count, 1);
     }
 }

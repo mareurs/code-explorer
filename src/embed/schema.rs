@@ -19,6 +19,8 @@ pub struct CodeChunk {
     pub end_line: usize,
     /// SHA-256 hash of the file content at index time (for incremental updates)
     pub file_hash: String,
+    /// Source identifier: "project" for project files, "lib:<name>" for libraries
+    pub source: String,
 }
 
 /// A ranked result from a semantic search query.
@@ -31,4 +33,6 @@ pub struct SearchResult {
     pub end_line: usize,
     /// Cosine similarity score in [0, 1]; higher is more relevant.
     pub score: f32,
+    /// Source identifier: "project" or "lib:<name>"
+    pub source: String,
 }

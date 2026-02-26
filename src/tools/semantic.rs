@@ -33,6 +33,10 @@ impl Tool for SemanticSearch {
                 "offset": {
                     "type": "integer",
                     "description": "Skip this many results (focused mode pagination)"
+                },
+                "scope": {
+                    "type": "string",
+                    "description": "Search scope: 'project' (default), 'libraries', 'all', or 'lib:<name>' for a specific library"
                 }
             }
         })
@@ -55,10 +59,23 @@ impl Tool for SemanticSearch {
             (p.root.clone(), p.config.embeddings.model.clone())
         };
 
+        let scope = crate::library::scope::Scope::parse(input["scope"].as_str());
+        let source_filter = match &scope {
+            crate::library::scope::Scope::Project => Some("project".to_string()),
+            crate::library::scope::Scope::Library(name) => Some(format!("lib:{}", name)),
+            crate::library::scope::Scope::Libraries => Some("libraries".to_string()),
+            crate::library::scope::Scope::All => None,
+        };
+
         let conn = crate::embed::index::open_db(&root)?;
         let embedder = crate::embed::create_embedder(&model).await?;
         let query_embedding = crate::embed::embed_one(embedder.as_ref(), query).await?;
-        let results = crate::embed::index::search(&conn, &query_embedding, limit)?;
+        let results = crate::embed::index::search_scoped(
+            &conn,
+            &query_embedding,
+            limit,
+            source_filter.as_deref(),
+        )?;
 
         // Transform results based on mode
         let result_items: Vec<Value> = results
@@ -83,6 +100,7 @@ impl Tool for SemanticSearch {
                     "start_line": r.start_line,
                     "end_line": r.end_line,
                     "score": r.score,
+                    "source": r.source,
                 })
             })
             .collect();
@@ -166,6 +184,17 @@ impl Tool for IndexStatus {
 
         let conn = crate::embed::index::open_db(&root)?;
         let stats = crate::embed::index::index_stats(&conn)?;
+        let by_source = crate::embed::index::index_stats_by_source(&conn)?;
+
+        let by_source_json: serde_json::Map<String, Value> = by_source
+            .iter()
+            .map(|(source, ss)| {
+                (
+                    source.clone(),
+                    json!({ "files": ss.file_count, "chunks": ss.chunk_count }),
+                )
+            })
+            .collect();
 
         Ok(json!({
             "indexed": true,
@@ -175,6 +204,7 @@ impl Tool for IndexStatus {
             "chunk_count": stats.chunk_count,
             "embedding_count": stats.embedding_count,
             "db_path": db_path.display().to_string(),
+            "by_source": by_source_json,
         }))
     }
 }
@@ -221,6 +251,7 @@ mod tests {
             start_line: 1,
             end_line: 1,
             file_hash: "abc".to_string(),
+            source: "project".to_string(),
         };
         index::insert_chunk(&conn, &chunk, &[0.1, 0.2, 0.3]).unwrap();
         index::upsert_file_hash(&conn, "test.rs", "abc").unwrap();
@@ -286,5 +317,43 @@ mod tests {
         let preview_len2 = 150.min(short_content.len());
         let preview2 = short_content[..preview_len2].to_string();
         assert_eq!(preview2, "short"); // no truncation for short content
+    }
+
+    #[tokio::test]
+    async fn semantic_search_schema_has_scope() {
+        let schema = SemanticSearch.input_schema();
+        let props = schema["properties"].as_object().unwrap();
+        assert!(props.contains_key("scope"), "should accept scope parameter");
+    }
+
+    #[tokio::test]
+    async fn index_status_includes_by_source() {
+        let (dir, ctx) = project_ctx().await;
+        // Create the DB and insert some data with different sources
+        let conn = index::open_db(dir.path()).unwrap();
+        let chunk = crate::embed::schema::CodeChunk {
+            id: None,
+            file_path: "test.rs".to_string(),
+            language: "rust".to_string(),
+            content: "fn test() {}".to_string(),
+            start_line: 1,
+            end_line: 1,
+            file_hash: "abc".to_string(),
+            source: "project".to_string(),
+        };
+        index::insert_chunk(&conn, &chunk, &[0.1, 0.2, 0.3]).unwrap();
+        index::upsert_file_hash(&conn, "test.rs", "abc").unwrap();
+        drop(conn);
+
+        let result = IndexStatus.call(json!({}), &ctx).await.unwrap();
+        assert_eq!(result["indexed"], true);
+        assert!(
+            result["by_source"].is_object(),
+            "should include by_source breakdown"
+        );
+        assert!(
+            result["by_source"]["project"].is_object(),
+            "should have project source entry"
+        );
     }
 }
