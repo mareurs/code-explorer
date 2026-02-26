@@ -61,6 +61,27 @@ To use a different Ollama host (e.g. a remote machine or a custom port), set the
 export OLLAMA_HOST=http://192.168.1.50:11434
 ```
 
+### Automatic CPU Fallback
+
+When code-explorer is built with both `remote-embed` and `local-embed` features, it probes
+Ollama before every indexing or search call. If the daemon is not reachable within 2 seconds,
+it automatically falls back to `local:BGESmallENV15Q` and emits a warning:
+
+```
+Ollama not reachable at http://localhost:11434: …
+Falling back to local:BGESmallENV15Q (CPU-friendly, ~20 MB).
+Set embeddings.model in .code-explorer/project.toml to suppress this.
+```
+
+This means machines without Ollama installed — or without a GPU — still get working semantic
+search out of the box, just with the smaller local model. To silence the warning and make the
+fallback permanent, set the model explicitly:
+
+```toml
+[embeddings]
+model = "local:BGESmallENV15Q"
+```
+
 ### Recommended Ollama Models
 
 | Model | Dimensions | Notes |
@@ -236,7 +257,11 @@ recorded in the existing index.
 A practical decision tree:
 
 - **You want zero setup and are comfortable with a local daemon** → use the default
-  `ollama:mxbai-embed-large`.
+  `ollama:mxbai-embed-large`. If Ollama is absent, it falls back to `local:BGESmallENV15Q`
+  automatically (requires the `local-embed` feature).
+- **You have no GPU or just want something that works everywhere** → build with
+  `--features remote-embed,local-embed` and leave the default model in place. The fallback
+  kicks in automatically whenever Ollama is unreachable.
 - **You want the best search quality and do not mind API costs** → use
   `openai:text-embedding-3-small`.
 - **You are on an air-gapped machine or want complete data privacy** → use
