@@ -52,7 +52,7 @@ Controls which embedding model is used and how source files are chunked before e
 model = "ollama:mxbai-embed-large"
 chunk_size = 1200
 chunk_overlap = 200
-drift_detection_enabled = false
+drift_detection_enabled = true
 ```
 
 | Field | Type | Default | Description |
@@ -60,7 +60,7 @@ drift_detection_enabled = false
 | `model` | string | `"ollama:mxbai-embed-large"` | Embedding model. The prefix selects the backend. See [Embedding Backends](embedding-backends.md) for the full list of supported prefixes and models. |
 | `chunk_size` | integer | `1200` | Target size of each text chunk in characters before embedding. Larger values give more context per result but reduce search precision. |
 | `chunk_overlap` | integer | `200` | Number of characters shared between adjacent chunks. Overlap prevents relevant content from being split across chunk boundaries. |
-| `drift_detection_enabled` | bool | `false` | Enable semantic drift detection during index builds. When `true`, `index_project` compares old and new chunk embeddings to score how much each changed file's *meaning* shifted. Results queryable via `check_drift`. Experimental — adds memory overhead proportional to changed-file count. |
+| `drift_detection_enabled` | bool | `true` | Enable semantic drift detection during index builds. `index_project` compares old and new chunk embeddings to score how much each changed file's *meaning* shifted. Results queryable via `check_drift`. Set to `false` to opt out. Experimental — adds memory overhead proportional to changed-file count. |
 
 **Changing the model after indexing:** If you change `model`, you must rebuild the index
 (`index_project` with `force: true`). code-explorer detects model mismatches and will warn
@@ -214,7 +214,7 @@ tool_timeout_secs = 120
 model = "local:BGESmallENV15Q"
 chunk_size = 1000
 chunk_overlap = 150
-drift_detection_enabled = false   # set to true to enable semantic drift scoring
+drift_detection_enabled = true    # set to false to opt out of semantic drift scoring
 
 [ignored_paths]
 patterns = [

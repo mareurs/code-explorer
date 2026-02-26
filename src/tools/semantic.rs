@@ -304,12 +304,12 @@ impl Tool for CheckDrift {
                 .active_project
                 .as_ref()
                 .map(|p| p.config.embeddings.drift_detection_enabled)
-                .unwrap_or(false)
+                .unwrap_or(true)
         };
         if !drift_enabled {
             return Ok(serde_json::json!({
                 "status": "disabled",
-                "hint": "Drift detection is disabled by default. Enable it in .code-explorer/project.toml:\n[embeddings]\ndrift_detection_enabled = true"
+                "hint": "Drift detection is opted out. Re-enable it in .code-explorer/project.toml:\n[embeddings]\ndrift_detection_enabled = true"
             }));
         }
 
@@ -562,8 +562,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn check_drift_disabled_by_default() {
+    async fn check_drift_enabled_by_default() {
+        // drift_detection_enabled defaults to true — check_drift should NOT
+        // return the "disabled" status when no explicit config is present.
         let (_dir, ctx) = project_ctx().await;
+        let result = CheckDrift.call(json!({}), &ctx).await.unwrap();
+        assert_ne!(
+            result["status"], "disabled",
+            "drift should be enabled by default, got: {:?}",
+            result
+        );
+    }
+
+    #[tokio::test]
+    async fn check_drift_disabled_when_opted_out() {
+        // Explicit opt-out via project.toml should still return "disabled".
+        let dir = tempdir().unwrap();
+        let ce_dir = dir.path().join(".code-explorer");
+        std::fs::create_dir_all(&ce_dir).unwrap();
+        std::fs::write(
+            ce_dir.join("project.toml"),
+            "[project]\nname = \"test\"\n\n[embeddings]\ndrift_detection_enabled = false\n",
+        )
+        .unwrap();
+        let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
+        let ctx = ToolContext {
+            agent,
+            lsp: Arc::new(LspManager::new()),
+        };
         let result = CheckDrift.call(json!({}), &ctx).await.unwrap();
         assert_eq!(result["status"], "disabled");
         assert!(result["hint"]

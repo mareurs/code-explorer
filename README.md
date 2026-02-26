@@ -26,7 +26,7 @@ Plus file operations (7 tools), AST analysis (2 tools), workflow (3 tools), conf
 **Recent additions:**
 - **Library Search** — navigate third-party dependency source code via LSP-inferred discovery, symbol navigation, and semantic search. Libraries auto-register when `goto_definition` returns paths outside the project root.
 - **Incremental Index Rebuilding** — smart change detection for the embedding index. Uses git diff → mtime → SHA-256 fallback chain to skip unchanged files, with staleness warnings when the index falls behind HEAD.
-- **Semantic Drift Detection** *(opt-in)* — detects *how much* code changed in meaning after re-indexing, not just that bytes changed. Useful for filtering doc staleness and understanding the scope of a refactor. Enable with `drift_detection_enabled = true` in `[embeddings]`.
+- **Semantic Drift Detection** — detects *how much* code changed in meaning after re-indexing, not just that bytes changed. Useful for filtering doc staleness and understanding the scope of a refactor. Opt out with `drift_detection_enabled = false` in `[embeddings]`.
 
 ## Platform Support
 

@@ -150,7 +150,7 @@ run unless `force` is set.
 }
 ```
 
-When `drift_detection_enabled = true` is set in `[embeddings]` and files had
+When drift detection is enabled (on by default) and files had
 meaningful semantic changes, a `drift_summary` field is included with the
 top-5 most-drifted files:
 
@@ -243,15 +243,15 @@ lives.
 Answers the question "which files changed *meaningfully* in code semantics, not
 just in bytes?" after running `index_project`.
 
-**Requires:** `drift_detection_enabled = true` in `.code-explorer/project.toml`:
+**Opt out** by setting `drift_detection_enabled = false` in `.code-explorer/project.toml`:
 
 ```toml
 [embeddings]
-drift_detection_enabled = true
+drift_detection_enabled = false
 ```
 
-If drift detection is disabled (the default), `check_drift` returns
-`{"status": "disabled", "hint": "..."}` with the TOML snippet to enable it.
+If drift detection is opted out, `check_drift` returns
+`{"status": "disabled", "hint": "..."}` with the TOML snippet to re-enable it.
 
 **Parameters:**
 

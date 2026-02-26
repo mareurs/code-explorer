@@ -62,7 +62,7 @@ within a specific library (see [Library Navigation](#library-navigation)).
 | `semantic_search` | Search code by natural language description or code snippet |
 | `index_project` | Build or incrementally update the embedding index |
 | `index_status` | Show index stats: file count, chunk count, model, last update |
-| `check_drift` | Query semantic drift scores from the last index build — which files changed *meaningfully* (requires `drift_detection_enabled = true`) |
+| `check_drift` | Query semantic drift scores from the last index build — which files changed *meaningfully* (opt out with `drift_detection_enabled = false`) |
 
 ---
 

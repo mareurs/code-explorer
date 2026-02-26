@@ -73,7 +73,7 @@ Embedded semantic search with zero external services.
 - `schema.rs` — `CodeChunk` and `SearchResult` data types
 - `chunker.rs` — Language-aware recursive text splitter tracking 1-indexed line numbers. Handles overlap via character-count estimation.
 - `index.rs` — SQLite schema (`files`, `chunks`, `chunk_embeddings`, `meta`, `drift_report`), CRUD operations, pure-Rust cosine similarity search, `build_index()` for incremental project indexing. Change detection fallback chain: git diff → mtime → SHA-256.
-- `drift.rs` — `compute_file_drift()`: content-hash-first chunk matching, greedy cosine pairing on remainder. Produces per-file `avg_drift` + `max_drift` scores. Opt-in via `drift_detection_enabled` config.
+- `drift.rs` — `compute_file_drift()`: content-hash-first chunk matching, greedy cosine pairing on remainder. Produces per-file `avg_drift` + `max_drift` scores. Opt-out via `drift_detection_enabled = false` config.
 - `remote.rs` — `RemoteEmbedder` supporting OpenAI, Ollama, and custom API endpoints
 - `mod.rs` — `Embedder` trait, `create_embedder()` factory, `embed_one()` helper
 

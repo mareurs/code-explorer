@@ -47,7 +47,7 @@ pub struct EmbeddingsSection {
     pub chunk_size: usize,
     #[serde(default = "default_chunk_overlap")]
     pub chunk_overlap: usize,
-    /// Enable semantic drift detection during index builds (default: false).
+    /// Enable semantic drift detection during index builds (default: true).
     ///
     /// When enabled, `index_project` compares old and new chunk embeddings to
     /// score how much each file's *meaning* changed (not just its bytes). Results
@@ -56,12 +56,12 @@ pub struct EmbeddingsSection {
     /// Experimental — reads all old embeddings before deletion, adding memory and
     /// DB overhead proportional to the number of changed files.
     ///
-    /// Enable in `.code-explorer/project.toml`:
+    /// Opt out in `.code-explorer/project.toml`:
     /// ```toml
     /// [embeddings]
-    /// drift_detection_enabled = true
+    /// drift_detection_enabled = false
     /// ```
-    #[serde(default)]
+    #[serde(default = "default_drift_detection_enabled")]
     pub drift_detection_enabled: bool,
 }
 
@@ -146,13 +146,17 @@ impl SecuritySection {
     }
 }
 
+fn default_drift_detection_enabled() -> bool {
+    true
+}
+
 impl Default for EmbeddingsSection {
     fn default() -> Self {
         Self {
             model: default_embed_model(),
             chunk_size: default_chunk_size(),
             chunk_overlap: default_chunk_overlap(),
-            drift_detection_enabled: false,
+            drift_detection_enabled: default_drift_detection_enabled(),
         }
     }
 }

@@ -69,7 +69,7 @@ Follow the hint to refine your query.
 - `semantic_search(query, [limit], [scope])` — find code by natural language description
 - `search_for_pattern(pattern, [max_results])` — regex search across the project
 - `find_file(pattern, [max_results])` — find files by glob pattern
-- `check_drift([threshold], [path])` — query semantic drift scores from last index build *(requires `drift_detection_enabled = true` in `[embeddings]`)*
+- `check_drift([threshold], [path])` — query semantic drift scores from last index build *(opt out with `drift_detection_enabled = false` in `[embeddings]`)*
 
 ### Editing
 - `replace_symbol_body(name_path, file, new_body)` — replace a function/method body

@@ -85,7 +85,7 @@ meaning using embeddings, not keywords.
   change detection via git diff → mtime → SHA-256 fallback)
 - `index_status` — check index coverage and staleness
 - `check_drift` — after re-indexing, see which files changed meaningfully in
-  *semantics* vs. trivially in bytes. Requires `drift_detection_enabled = true`
+  *semantics* vs. trivially in bytes. Opt out with `drift_detection_enabled = false`
   in `[embeddings]`.
 
 The embedding backend is configurable: OpenAI, Ollama, or any compatible
