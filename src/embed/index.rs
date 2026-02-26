@@ -4,11 +4,17 @@
 //! zero external services, embedded in the project directory.
 //!
 //! Schema:
-//!   files(path TEXT, hash TEXT)            — tracks indexed file hashes
-//!   chunks(id, file_path, language,         — code chunks
-//!          content, start_line, end_line,
-//!          file_hash)
-//!   chunk_embeddings(rowid, embedding)      — sqlite-vec virtual table
+//!   files(path TEXT, hash TEXT, mtime INTEGER) — tracks indexed file hashes + mtime
+//!   chunks(id, file_path, language, content,   — code chunks
+//!          start_line, end_line, file_hash,
+//!          source)
+//!   chunk_embeddings(rowid, embedding)         — sqlite-vec virtual table
+//!   meta(key TEXT, value TEXT)                  — stores embed_model, last_indexed_commit
+//!
+//! Change detection fallback chain:
+//!   1. git diff last_indexed_commit..HEAD (tracked files)
+//!   2. mtime comparison (untracked files or git unavailable)
+//!   3. SHA-256 hash (final arbiter)
 //!
 //! TODO: Load the sqlite-vec extension at connection time:
 //!   conn.load_extension_enable()?;
@@ -46,7 +52,8 @@ pub fn open_db(project_root: &Path) -> Result<Connection> {
 
         CREATE TABLE IF NOT EXISTS files (
             path  TEXT PRIMARY KEY,
-            hash  TEXT NOT NULL
+            hash  TEXT NOT NULL,
+            mtime INTEGER
         );
 
         CREATE TABLE IF NOT EXISTS chunks (
@@ -75,6 +82,12 @@ pub fn open_db(project_root: &Path) -> Result<Connection> {
         ",
     )?;
 
+    // Migrate: add mtime column if missing (safe no-op if already present)
+    let has_mtime: bool = conn.prepare("SELECT mtime FROM files LIMIT 0").is_ok();
+    if !has_mtime {
+        conn.execute_batch("ALTER TABLE files ADD COLUMN mtime INTEGER")?;
+    }
+
     Ok(conn)
 }
 
@@ -83,6 +96,16 @@ pub fn hash_file(path: &Path) -> Result<String> {
     let bytes = std::fs::read(path)?;
     let digest = Sha256::digest(&bytes);
     Ok(hex::encode(digest))
+}
+
+/// Get file modification time as Unix epoch seconds.
+pub fn file_mtime(path: &Path) -> Result<i64> {
+    let meta = std::fs::metadata(path)?;
+    let modified = meta.modified()?;
+    let duration = modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    Ok(duration.as_secs() as i64)
 }
 
 /// Insert a chunk and its embedding into the database.
@@ -128,6 +151,25 @@ pub fn delete_file_chunks(conn: &Connection, file_path: &str) -> Result<()> {
     Ok(())
 }
 
+/// Remove index entries for files that no longer exist on disk.
+/// Returns the number of purged files.
+pub fn purge_missing_files(conn: &Connection, project_root: &Path) -> Result<usize> {
+    let mut stmt = conn.prepare("SELECT path FROM files")?;
+    let paths: Vec<String> = stmt
+        .query_map([], |row| row.get(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+
+    let mut purged = 0;
+    for path in &paths {
+        let full = project_root.join(path);
+        if !full.exists() {
+            delete_file_chunks(conn, path)?;
+            purged += 1;
+        }
+    }
+    Ok(purged)
+}
+
 /// Get the stored hash for a file (for incremental indexing).
 pub fn get_file_hash(conn: &Connection, file_path: &str) -> Result<Option<String>> {
     let mut stmt = conn.prepare("SELECT hash FROM files WHERE path = ?1")?;
@@ -136,13 +178,27 @@ pub fn get_file_hash(conn: &Connection, file_path: &str) -> Result<Option<String
 }
 
 /// Update or insert the file hash record.
-pub fn upsert_file_hash(conn: &Connection, file_path: &str, hash: &str) -> Result<()> {
+pub fn upsert_file_hash(
+    conn: &Connection,
+    file_path: &str,
+    hash: &str,
+    mtime: Option<i64>,
+) -> Result<()> {
     conn.execute(
-        "INSERT INTO files (path, hash) VALUES (?1, ?2)
-         ON CONFLICT(path) DO UPDATE SET hash = excluded.hash",
-        params![file_path, hash],
+        "INSERT INTO files (path, hash, mtime) VALUES (?1, ?2, ?3)
+         ON CONFLICT(path) DO UPDATE SET hash = excluded.hash, mtime = excluded.mtime",
+        params![file_path, hash, mtime],
     )?;
     Ok(())
+}
+
+pub fn get_file_mtime(conn: &Connection, file_path: &str) -> Result<Option<i64>> {
+    let mut stmt = conn.prepare("SELECT mtime FROM files WHERE path = ?1")?;
+    let mut rows = stmt.query(params![file_path])?;
+    match rows.next()? {
+        Some(row) => Ok(row.get(0)?),
+        None => Ok(None),
+    }
 }
 
 /// Naive cosine similarity search (pure Rust fallback, no sqlite-vec).
@@ -268,14 +324,179 @@ fn cosine_sim(a: &[f32], b: &[f32], a_norm: f32) -> f32 {
     (dot / (a_norm * b_norm)).clamp(0.0, 1.0)
 }
 
+/// Result of change detection: which files need re-indexing and which were deleted.
+#[derive(Debug)]
+pub struct ChangeSet {
+    /// Relative paths of files that need re-indexing (new or modified).
+    pub changed: Vec<String>,
+    /// Relative paths of files that were deleted and purged from the index.
+    pub deleted: Vec<String>,
+}
+
+/// Detect which files changed since the last index, using the fallback chain:
+/// 1. Git diff from last_indexed_commit to HEAD (tracked files)
+/// 2. Mtime comparison (untracked or when git diff unavailable)
+/// 3. SHA-256 hash as final arbiter
+///
+/// If `force` is true, returns all indexable files as changed.
+pub fn find_changed_files(
+    conn: &Connection,
+    project_root: &Path,
+    force: bool,
+) -> Result<ChangeSet> {
+    use crate::ast::detect_language;
+
+    let config = crate::config::ProjectConfig::load_or_default(project_root)?;
+    let ignored = config.ignored_paths.patterns.clone();
+
+    // Walk all eligible files
+    let walker = ignore::WalkBuilder::new(project_root)
+        .hidden(true)
+        .git_ignore(true)
+        .filter_entry(move |entry| {
+            let name = entry.file_name().to_string_lossy();
+            !ignored.iter().any(|p| p.as_str() == name.as_ref())
+        })
+        .build();
+
+    let mut all_files: Vec<String> = Vec::new();
+    for entry in walker.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        if detect_language(path).is_none() {
+            continue;
+        }
+        let rel = path
+            .strip_prefix(project_root)?
+            .to_string_lossy()
+            .replace('\\', "/");
+        all_files.push(rel);
+    }
+
+    if force {
+        return Ok(ChangeSet {
+            changed: all_files,
+            deleted: Vec::new(),
+        });
+    }
+
+    // Try git-diff approach first
+    let git_changed = try_git_diff_detection(conn, project_root);
+
+    let mut changed = Vec::new();
+    let mut deleted = Vec::new();
+
+    if let Some(git_result) = git_changed {
+        // Git told us which tracked files changed
+        let git_changed_set: std::collections::HashSet<&str> =
+            git_result.changed.iter().map(|s| s.as_str()).collect();
+        let git_deleted_set: std::collections::HashSet<&str> =
+            git_result.deleted.iter().map(|s| s.as_str()).collect();
+
+        // Purge deleted files
+        for path in &git_result.deleted {
+            delete_file_chunks(conn, path)?;
+            deleted.push(path.clone());
+        }
+
+        for rel in &all_files {
+            if git_changed_set.contains(rel.as_str()) {
+                // Git says changed -> trust it
+                changed.push(rel.clone());
+            } else if git_deleted_set.contains(rel.as_str()) {
+                continue;
+            } else {
+                // Not in git diff -> check if it's untracked/new via mtime
+                if is_file_changed_mtime_hash(conn, project_root, rel)? {
+                    changed.push(rel.clone());
+                }
+            }
+        }
+    } else {
+        // No git diff available -> fall back to mtime + hash for everything
+        for rel in &all_files {
+            if is_file_changed_mtime_hash(conn, project_root, rel)? {
+                changed.push(rel.clone());
+            }
+        }
+    }
+
+    // Purge files in DB but not on disk (deleted untracked files)
+    let purged = purge_missing_files(conn, project_root)?;
+    if purged > 0 {
+        tracing::debug!("Purged {} missing files from index", purged);
+    }
+
+    Ok(ChangeSet { changed, deleted })
+}
+
+struct GitDiffResult {
+    changed: Vec<String>,
+    deleted: Vec<String>,
+}
+
+/// Try to use git diff for change detection. Returns None if unavailable.
+fn try_git_diff_detection(conn: &Connection, project_root: &Path) -> Option<GitDiffResult> {
+    let last_commit = get_last_indexed_commit(conn).ok()??;
+    let repo = crate::git::open_repo(project_root).ok()?;
+    let head = repo.head().ok()?.peel_to_commit().ok()?;
+    let head_sha = head.id().to_string();
+
+    if last_commit == head_sha {
+        return Some(GitDiffResult {
+            changed: Vec::new(),
+            deleted: Vec::new(),
+        });
+    }
+
+    let entries = crate::git::diff_tree_to_tree(&repo, &last_commit, &head_sha).ok()?;
+
+    let mut changed = Vec::new();
+    let mut deleted = Vec::new();
+    for entry in entries {
+        match entry.status {
+            crate::git::DiffStatus::Added | crate::git::DiffStatus::Modified => {
+                changed.push(entry.path);
+            }
+            crate::git::DiffStatus::Deleted => {
+                deleted.push(entry.path);
+            }
+            crate::git::DiffStatus::Renamed { ref old_path } => {
+                deleted.push(old_path.clone());
+                changed.push(entry.path);
+            }
+        }
+    }
+    Some(GitDiffResult { changed, deleted })
+}
+
+fn is_file_changed_mtime_hash(conn: &Connection, project_root: &Path, rel: &str) -> Result<bool> {
+    let full_path = project_root.join(rel);
+    let current_mtime = file_mtime(&full_path)?;
+    let stored_mtime = get_file_mtime(conn, rel)?;
+
+    // Fast path: if mtime matches stored value, assume unchanged (cheap check).
+    // Mtime is the pre-filter; SHA-256 is only used when mtime differs.
+    if Some(current_mtime) == stored_mtime {
+        return Ok(false);
+    }
+
+    // Mtime differs or no stored mtime → hash to confirm actual content change
+    let current_hash = hash_file(&full_path)?;
+    let stored_hash = get_file_hash(conn, rel)?;
+
+    Ok(stored_hash.as_deref() != Some(current_hash.as_str()))
+}
+
 /// Build or incrementally update the embedding index for a project.
 ///
 /// Three-phase pipeline for maximum throughput:
-///   1. Walk + hash + chunk  (sequential, CPU-bound)
+///   1. Change detection + chunk  (git diff → mtime → hash fallback)
 ///   2. Embed concurrently   (up to 4 in-flight HTTP requests at once)
 ///   3. DB writes in a single transaction  (eliminates per-chunk commit overhead)
-pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
-    use crate::ast::detect_language;
+pub async fn build_index(project_root: &Path, force: bool) -> Result<IndexReport> {
     use crate::config::ProjectConfig;
     use crate::embed::{create_embedder, Embedding};
     use std::sync::Arc;
@@ -290,59 +511,34 @@ pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
     let embedder: Arc<dyn crate::embed::Embedder> =
         Arc::from(create_embedder(&config.embeddings.model).await?);
 
-    // ── Phase 1: Walk, hash, chunk ────────────────────────────────────────────
+    // ── Phase 1: Detect changed files ─────────────────────────────────────────
+    let change_set = find_changed_files(&conn, project_root, force)?;
+
     struct FileWork {
         rel: String,
         hash: String,
+        mtime: i64,
         lang: String,
         chunks: Vec<super::chunker::RawChunk>,
     }
 
-    let ignored = config.ignored_paths.patterns.clone();
-    let walker = ignore::WalkBuilder::new(project_root)
-        .hidden(true)
-        .git_ignore(true)
-        .filter_entry(move |entry| {
-            let name = entry.file_name().to_string_lossy();
-            !ignored.iter().any(|p| p.as_str() == name.as_ref())
-        })
-        .build();
-
     let mut works: Vec<FileWork> = Vec::new();
-    let mut skipped = 0usize;
 
-    for entry in walker.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let Some(lang) = detect_language(path) else {
+    for rel in &change_set.changed {
+        let path = project_root.join(rel);
+        let Some(lang) = crate::ast::detect_language(&path) else {
             continue;
         };
+        let hash = hash_file(&path)?;
 
-        let rel = path
-            .strip_prefix(project_root)?
-            .to_string_lossy()
-            .replace('\\', "/");
-        let hash = hash_file(path)?;
-
-        if !force {
-            if let Some(stored) = get_file_hash(&conn, &rel)? {
-                if stored == hash {
-                    skipped += 1;
-                    continue;
-                }
-            }
-        }
-
-        let source = match std::fs::read_to_string(path) {
+        let source = match std::fs::read_to_string(&path) {
             Ok(s) => s,
             Err(_) => continue,
         };
         let chunks = super::ast_chunker::split_file(
             &source,
             lang,
-            path,
+            &path,
             config.embeddings.chunk_size,
             config.embeddings.chunk_overlap,
         );
@@ -351,8 +547,9 @@ pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
         }
 
         works.push(FileWork {
-            rel,
+            rel: rel.clone(),
             hash,
+            mtime: file_mtime(&path).unwrap_or(0),
             lang: lang.to_string(),
             chunks,
         });
@@ -362,6 +559,7 @@ pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
     struct FileResult {
         rel: String,
         hash: String,
+        mtime: i64,
         lang: String,
         chunks: Vec<super::chunker::RawChunk>,
         embeddings: Vec<Embedding>,
@@ -382,6 +580,7 @@ pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
             Ok(FileResult {
                 rel: work.rel,
                 hash: work.hash,
+                mtime: work.mtime,
                 lang: work.lang,
                 chunks: work.chunks,
                 embeddings,
@@ -412,17 +611,35 @@ pub async fn build_index(project_root: &Path, force: bool) -> Result<()> {
             };
             insert_chunk(&conn, &chunk, emb)?;
         }
-        upsert_file_hash(&conn, &result.rel, &result.hash)?;
+        upsert_file_hash(&conn, &result.rel, &result.hash, Some(result.mtime))?;
         tracing::debug!("indexed {} ({} chunks)", result.rel, result.chunks.len());
     }
     set_meta(&conn, "embed_model", &config.embeddings.model)?;
+
+    // Update last indexed commit
+    if let Ok(repo) = crate::git::open_repo(project_root) {
+        if let Ok(head) = repo.head() {
+            if let Ok(commit) = head.peel_to_commit() {
+                set_last_indexed_commit(&conn, &commit.id().to_string())?;
+            }
+        }
+    }
+
     conn.execute_batch("COMMIT")?;
     tracing::info!(
-        "Index complete: {} files indexed, {} unchanged",
+        "Index complete: {} files indexed, {} deleted",
         indexed,
-        skipped
+        change_set.deleted.len()
     );
-    Ok(())
+    Ok(IndexReport {
+        indexed,
+        deleted: change_set.deleted.len(),
+        skipped_msg: if force {
+            "force rebuild".to_string()
+        } else {
+            format!("{} deleted", change_set.deleted.len())
+        },
+    })
 }
 
 /// Build or incrementally update the embedding index for a library.
@@ -571,7 +788,7 @@ pub async fn build_library_index(
             };
             insert_chunk(&conn, &chunk, emb)?;
         }
-        upsert_file_hash(&conn, &result.rel, &result.hash)?;
+        upsert_file_hash(&conn, &result.rel, &result.hash, None)?;
         tracing::debug!("indexed {} ({} chunks)", result.rel, result.chunks.len());
     }
     set_meta(&conn, "embed_model", &config.embeddings.model)?;
@@ -583,6 +800,13 @@ pub async fn build_library_index(
         source
     );
     Ok(())
+}
+
+#[derive(Debug)]
+pub struct IndexReport {
+    pub indexed: usize,
+    pub deleted: usize,
+    pub skipped_msg: String,
 }
 
 /// Statistics about the embedding index.
@@ -682,6 +906,92 @@ pub fn set_meta(conn: &Connection, key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+/// Get the SHA of the last commit that was fully indexed.
+pub fn get_last_indexed_commit(conn: &Connection) -> Result<Option<String>> {
+    get_meta(conn, "last_indexed_commit")
+}
+
+/// Record the SHA of the last commit that was fully indexed.
+pub fn set_last_indexed_commit(conn: &Connection, sha: &str) -> Result<()> {
+    set_meta(conn, "last_indexed_commit", sha)
+}
+
+#[derive(Debug)]
+pub struct Staleness {
+    pub stale: bool,
+    pub behind_commits: usize,
+}
+
+/// Check if the index is behind HEAD.
+/// Returns Ok with stale=false if up to date, stale=true with commit count if behind.
+/// If no git repo or HEAD doesn't exist, returns stale=true with behind_commits=0.
+pub fn check_index_staleness(conn: &Connection, project_root: &Path) -> Result<Staleness> {
+    let repo = match crate::git::open_repo(project_root) {
+        Ok(r) => r,
+        Err(_) => {
+            return Ok(Staleness {
+                stale: true,
+                behind_commits: 0,
+            })
+        }
+    };
+    let head_oid = match repo.head() {
+        Ok(h) => match h.peel_to_commit() {
+            Ok(c) => c.id().to_string(),
+            Err(_) => {
+                return Ok(Staleness {
+                    stale: true,
+                    behind_commits: 0,
+                })
+            }
+        },
+        Err(_) => {
+            return Ok(Staleness {
+                stale: true,
+                behind_commits: 0,
+            })
+        }
+    };
+
+    let last_indexed = get_last_indexed_commit(conn)?;
+    match last_indexed {
+        None => Ok(Staleness {
+            stale: true,
+            behind_commits: 0,
+        }),
+        Some(ref stored) if stored == &head_oid => Ok(Staleness {
+            stale: false,
+            behind_commits: 0,
+        }),
+        Some(ref stored) => {
+            let behind = count_commits_between(&repo, stored, &head_oid);
+            Ok(Staleness {
+                stale: true,
+                behind_commits: behind,
+            })
+        }
+    }
+}
+
+fn count_commits_between(repo: &git2::Repository, from: &str, to: &str) -> usize {
+    let Ok(to_oid) = git2::Oid::from_str(to) else {
+        return 0;
+    };
+    let Ok(from_oid) = git2::Oid::from_str(from) else {
+        return 0;
+    };
+    let Ok(mut revwalk) = repo.revwalk() else {
+        return 0;
+    };
+    if revwalk.push(to_oid).is_err() {
+        return 0;
+    }
+    if revwalk.hide(from_oid).is_err() {
+        return 0;
+    }
+    revwalk.count()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -758,7 +1068,7 @@ mod tests {
     #[test]
     fn file_hash_upsert_and_get() {
         let (_dir, conn) = open_test_db();
-        upsert_file_hash(&conn, "src/lib.rs", "aabbcc").unwrap();
+        upsert_file_hash(&conn, "src/lib.rs", "aabbcc", None).unwrap();
         assert_eq!(
             get_file_hash(&conn, "src/lib.rs").unwrap(),
             Some("aabbcc".to_string())
@@ -768,8 +1078,8 @@ mod tests {
     #[test]
     fn file_hash_upsert_updates_on_conflict() {
         let (_dir, conn) = open_test_db();
-        upsert_file_hash(&conn, "src/lib.rs", "hash1").unwrap();
-        upsert_file_hash(&conn, "src/lib.rs", "hash2").unwrap();
+        upsert_file_hash(&conn, "src/lib.rs", "hash1", None).unwrap();
+        upsert_file_hash(&conn, "src/lib.rs", "hash2", None).unwrap();
         assert_eq!(
             get_file_hash(&conn, "src/lib.rs").unwrap(),
             Some("hash2".to_string())
@@ -786,7 +1096,7 @@ mod tests {
     fn delete_file_chunks_removes_chunks_and_hash() {
         let (_dir, conn) = open_test_db();
         insert_chunk(&conn, &dummy_chunk("del.rs", "fn x() {}"), &[0.5]).unwrap();
-        upsert_file_hash(&conn, "del.rs", "abc").unwrap();
+        upsert_file_hash(&conn, "del.rs", "abc", None).unwrap();
 
         delete_file_chunks(&conn, "del.rs").unwrap();
 
@@ -1052,6 +1362,44 @@ mod tests {
     }
 
     #[test]
+    fn upsert_file_hash_stores_mtime() {
+        let (_dir, conn) = open_test_db();
+        upsert_file_hash(&conn, "a.rs", "abc123", Some(1700000000)).unwrap();
+        let mtime: Option<i64> = conn
+            .query_row("SELECT mtime FROM files WHERE path = 'a.rs'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(mtime, Some(1700000000));
+    }
+
+    #[test]
+    fn upsert_file_hash_updates_mtime() {
+        let (_dir, conn) = open_test_db();
+        upsert_file_hash(&conn, "a.rs", "abc", Some(1000)).unwrap();
+        upsert_file_hash(&conn, "a.rs", "def", Some(2000)).unwrap();
+        let mtime: Option<i64> = conn
+            .query_row("SELECT mtime FROM files WHERE path = 'a.rs'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(mtime, Some(2000));
+    }
+
+    #[test]
+    fn get_file_mtime_returns_stored_value() {
+        let (_dir, conn) = open_test_db();
+        upsert_file_hash(&conn, "a.rs", "abc", Some(1700000000)).unwrap();
+        assert_eq!(get_file_mtime(&conn, "a.rs").unwrap(), Some(1700000000));
+    }
+
+    #[test]
+    fn get_file_mtime_returns_none_for_missing() {
+        let (_dir, conn) = open_test_db();
+        assert_eq!(get_file_mtime(&conn, "missing.rs").unwrap(), None);
+    }
+
+    #[test]
     fn index_stats_by_source_groups() {
         let (_dir, conn) = open_test_db();
         insert_chunk(&conn, &dummy_chunk("a.rs", "fn a() {}"), &[0.1]).unwrap();
@@ -1073,5 +1421,197 @@ mod tests {
         let serde = by_source.get("lib:serde").unwrap();
         assert_eq!(serde.file_count, 1);
         assert_eq!(serde.chunk_count, 1);
+    }
+
+    #[test]
+    fn last_indexed_commit_roundtrip() {
+        let (_dir, conn) = open_test_db();
+        assert_eq!(get_last_indexed_commit(&conn).unwrap(), None);
+        set_last_indexed_commit(&conn, "abc123def456").unwrap();
+        assert_eq!(
+            get_last_indexed_commit(&conn).unwrap(),
+            Some("abc123def456".to_string())
+        );
+    }
+
+    #[test]
+    fn last_indexed_commit_updates() {
+        let (_dir, conn) = open_test_db();
+        set_last_indexed_commit(&conn, "aaa").unwrap();
+        set_last_indexed_commit(&conn, "bbb").unwrap();
+        assert_eq!(
+            get_last_indexed_commit(&conn).unwrap(),
+            Some("bbb".to_string())
+        );
+    }
+
+    #[test]
+    fn file_mtime_returns_epoch_seconds() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("test.rs");
+        std::fs::write(&file, b"fn main() {}").unwrap();
+        let mtime = file_mtime(&file).unwrap();
+        // Should be a reasonable epoch timestamp (after 2020)
+        assert!(mtime > 1_577_836_800); // 2020-01-01
+        assert!(mtime < 2_000_000_000); // ~2033
+    }
+
+    #[test]
+    fn purge_missing_files_removes_deleted() {
+        let dir = tempdir().unwrap();
+        let conn = open_db(dir.path()).unwrap();
+
+        // Insert entries for two files, but only create one on disk
+        let existing = dir.path().join("exists.rs");
+        std::fs::write(&existing, "fn a() {}").unwrap();
+        insert_chunk(&conn, &dummy_chunk("exists.rs", "fn a() {}"), &[0.5]).unwrap();
+        upsert_file_hash(&conn, "exists.rs", "aaa", Some(1000)).unwrap();
+        insert_chunk(&conn, &dummy_chunk("gone.rs", "fn b() {}"), &[0.5]).unwrap();
+        upsert_file_hash(&conn, "gone.rs", "bbb", Some(1000)).unwrap();
+
+        let purged = purge_missing_files(&conn, dir.path()).unwrap();
+        assert_eq!(purged, 1);
+
+        // gone.rs should be removed from files table
+        assert_eq!(get_file_hash(&conn, "gone.rs").unwrap(), None);
+        // exists.rs should remain
+        assert!(get_file_hash(&conn, "exists.rs").unwrap().is_some());
+    }
+
+    #[test]
+    fn purge_missing_files_returns_zero_when_all_exist() {
+        let dir = tempdir().unwrap();
+        let conn = open_db(dir.path()).unwrap();
+        let file = dir.path().join("a.rs");
+        std::fs::write(&file, "fn a() {}").unwrap();
+        upsert_file_hash(&conn, "a.rs", "aaa", Some(1000)).unwrap();
+        let purged = purge_missing_files(&conn, dir.path()).unwrap();
+        assert_eq!(purged, 0);
+    }
+
+    #[test]
+    fn staleness_no_commit_stored_is_stale() {
+        let dir = tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        let mut config = repo.config().unwrap();
+        config.set_str("user.name", "Test").unwrap();
+        config.set_str("user.email", "test@test.com").unwrap();
+        // Create an initial commit
+        let mut index = repo.index().unwrap();
+        let tree_oid = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_oid).unwrap();
+        let sig = repo.signature().unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .unwrap();
+
+        let conn = open_db(dir.path()).unwrap();
+        let staleness = check_index_staleness(&conn, dir.path()).unwrap();
+        assert!(staleness.stale);
+    }
+
+    #[test]
+    fn staleness_matching_commit_is_fresh() {
+        let dir = tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        let mut config = repo.config().unwrap();
+        config.set_str("user.name", "Test").unwrap();
+        config.set_str("user.email", "test@test.com").unwrap();
+        let mut index = repo.index().unwrap();
+        let tree_oid = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_oid).unwrap();
+        let sig = repo.signature().unwrap();
+        let oid = repo
+            .commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .unwrap();
+
+        let conn = open_db(dir.path()).unwrap();
+        set_last_indexed_commit(&conn, &oid.to_string()).unwrap();
+        let staleness = check_index_staleness(&conn, dir.path()).unwrap();
+        assert!(!staleness.stale);
+        assert_eq!(staleness.behind_commits, 0);
+    }
+
+    #[test]
+    fn find_changed_files_detects_new_file() {
+        let dir = tempdir().unwrap();
+        let conn = open_db(dir.path()).unwrap();
+
+        // Create a file that's not in the index
+        let file = dir.path().join("new.rs");
+        std::fs::write(&file, "fn new() {}").unwrap();
+
+        let candidates = find_changed_files(&conn, dir.path(), false).unwrap();
+        assert_eq!(candidates.changed.len(), 1);
+        assert_eq!(candidates.changed[0], "new.rs");
+    }
+
+    #[test]
+    fn find_changed_files_skips_unchanged_mtime() {
+        let dir = tempdir().unwrap();
+        let conn = open_db(dir.path()).unwrap();
+
+        // Create a file and index it with matching mtime + hash
+        let file = dir.path().join("same.rs");
+        std::fs::write(&file, "fn same() {}").unwrap();
+        let mtime = file_mtime(&file).unwrap();
+        let hash = hash_file(&file).unwrap();
+        upsert_file_hash(&conn, "same.rs", &hash, Some(mtime)).unwrap();
+
+        let candidates = find_changed_files(&conn, dir.path(), false).unwrap();
+        assert!(candidates.changed.is_empty());
+    }
+
+    #[test]
+    fn find_changed_files_mtime_match_skips_hash_check() {
+        let dir = tempdir().unwrap();
+        let conn = open_db(dir.path()).unwrap();
+
+        let file = dir.path().join("mod.rs");
+        std::fs::write(&file, "fn a() {}").unwrap();
+        let mtime = file_mtime(&file).unwrap();
+        // Store a different hash but matching mtime — mtime pre-filter should
+        // short-circuit and treat the file as unchanged (by design: mtime is
+        // the cheap gate, hash is only checked when mtime differs)
+        upsert_file_hash(&conn, "mod.rs", "oldhash", Some(mtime)).unwrap();
+
+        let candidates = find_changed_files(&conn, dir.path(), false).unwrap();
+        assert!(
+            candidates.changed.is_empty(),
+            "mtime match should skip hash check"
+        );
+    }
+
+    #[test]
+    fn find_changed_files_detects_mtime_change() {
+        let dir = tempdir().unwrap();
+        let conn = open_db(dir.path()).unwrap();
+
+        let file = dir.path().join("mod.rs");
+        std::fs::write(&file, "fn a() {}").unwrap();
+        let hash = hash_file(&file).unwrap();
+        // Store correct hash but stale mtime — mtime differs so hash is checked,
+        // hash matches so file should NOT be reported as changed
+        upsert_file_hash(&conn, "mod.rs", &hash, Some(0)).unwrap();
+
+        let candidates = find_changed_files(&conn, dir.path(), false).unwrap();
+        assert!(
+            candidates.changed.is_empty(),
+            "hash match should prevent re-index even if mtime differs"
+        );
+    }
+
+    #[test]
+    fn find_changed_files_force_returns_all() {
+        let dir = tempdir().unwrap();
+        let conn = open_db(dir.path()).unwrap();
+
+        let file = dir.path().join("a.rs");
+        std::fs::write(&file, "fn a() {}").unwrap();
+        let mtime = file_mtime(&file).unwrap();
+        let hash = hash_file(&file).unwrap();
+        upsert_file_hash(&conn, "a.rs", &hash, Some(mtime)).unwrap();
+
+        let candidates = find_changed_files(&conn, dir.path(), true).unwrap();
+        assert_eq!(candidates.changed.len(), 1); // force includes even unchanged
     }
 }

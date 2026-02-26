@@ -115,6 +115,14 @@ impl Tool for SemanticSearch {
         if let Some(ov) = overflow {
             result["overflow"] = OutputGuard::overflow_json(&ov);
         }
+        // Check index freshness
+        if let Ok(staleness) = crate::embed::index::check_index_staleness(&conn, &root) {
+            if staleness.stale {
+                result["stale"] = json!(true);
+                result["behind_commits"] = json!(staleness.behind_commits);
+                result["hint"] = json!("Index is behind HEAD. Run index_project to update.");
+            }
+        }
         Ok(result)
     }
 }
@@ -140,15 +148,18 @@ impl Tool for IndexProject {
         let force = input["force"].as_bool().unwrap_or(false);
         let root = ctx.agent.require_project_root().await?;
 
-        crate::embed::index::build_index(&root, force).await?;
+        let report = crate::embed::index::build_index(&root, force).await?;
 
         let conn = crate::embed::index::open_db(&root)?;
         let stats = crate::embed::index::index_stats(&conn)?;
 
         Ok(json!({
             "status": "ok",
-            "files_indexed": stats.file_count,
-            "chunks": stats.chunk_count,
+            "files_indexed": report.indexed,
+            "files_deleted": report.deleted,
+            "detail": report.skipped_msg,
+            "total_files": stats.file_count,
+            "total_chunks": stats.chunk_count,
         }))
     }
 }
@@ -196,7 +207,8 @@ impl Tool for IndexStatus {
             })
             .collect();
 
-        Ok(json!({
+        // Build base response
+        let mut result = json!({
             "indexed": true,
             "configured_model": model,
             "indexed_with_model": stats.model,
@@ -205,7 +217,20 @@ impl Tool for IndexStatus {
             "embedding_count": stats.embedding_count,
             "db_path": db_path.display().to_string(),
             "by_source": by_source_json,
-        }))
+        });
+
+        // Add staleness info
+        if let Ok(staleness) = crate::embed::index::check_index_staleness(&conn, &root) {
+            result["stale"] = json!(staleness.stale);
+            if staleness.stale {
+                result["behind_commits"] = json!(staleness.behind_commits);
+            }
+            if let Ok(Some(commit)) = crate::embed::index::get_last_indexed_commit(&conn) {
+                result["last_indexed_commit"] = json!(commit);
+            }
+        }
+
+        Ok(result)
     }
 }
 
@@ -254,7 +279,7 @@ mod tests {
             source: "project".to_string(),
         };
         index::insert_chunk(&conn, &chunk, &[0.1, 0.2, 0.3]).unwrap();
-        index::upsert_file_hash(&conn, "test.rs", "abc").unwrap();
+        index::upsert_file_hash(&conn, "test.rs", "abc", None).unwrap();
         drop(conn);
 
         let result = IndexStatus.call(json!({}), &ctx).await.unwrap();
@@ -342,7 +367,7 @@ mod tests {
             source: "project".to_string(),
         };
         index::insert_chunk(&conn, &chunk, &[0.1, 0.2, 0.3]).unwrap();
-        index::upsert_file_hash(&conn, "test.rs", "abc").unwrap();
+        index::upsert_file_hash(&conn, "test.rs", "abc", None).unwrap();
         drop(conn);
 
         let result = IndexStatus.call(json!({}), &ctx).await.unwrap();
@@ -355,5 +380,53 @@ mod tests {
             result["by_source"]["project"].is_object(),
             "should have project source entry"
         );
+    }
+
+    #[tokio::test]
+    async fn semantic_search_staleness_detection() {
+        let (dir, _ctx) = project_ctx().await;
+
+        // Init git repo with a commit
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        let mut config = repo.config().unwrap();
+        config.set_str("user.name", "Test").unwrap();
+        config.set_str("user.email", "test@test.com").unwrap();
+        let mut git_index = repo.index().unwrap();
+        let tree_oid = git_index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_oid).unwrap();
+        let sig = repo.signature().unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .unwrap();
+
+        // Create DB without last_indexed_commit → should be stale
+        let conn = crate::embed::index::open_db(dir.path()).unwrap();
+        let staleness = crate::embed::index::check_index_staleness(&conn, dir.path()).unwrap();
+        assert!(staleness.stale);
+    }
+
+    #[tokio::test]
+    async fn index_status_shows_staleness() {
+        let (dir, ctx) = project_ctx().await;
+
+        // Init git repo with a commit
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        let mut config = repo.config().unwrap();
+        config.set_str("user.name", "Test").unwrap();
+        config.set_str("user.email", "test@test.com").unwrap();
+        let mut git_index = repo.index().unwrap();
+        let tree_oid = git_index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_oid).unwrap();
+        let sig = repo.signature().unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .unwrap();
+
+        // Create DB without last_indexed_commit
+        let conn = crate::embed::index::open_db(dir.path()).unwrap();
+        crate::embed::index::upsert_file_hash(&conn, "a.rs", "abc", None).unwrap();
+        drop(conn);
+
+        let result = IndexStatus.call(json!({}), &ctx).await.unwrap();
+        assert_eq!(result["indexed"], true);
+        assert_eq!(result["stale"], true);
     }
 }
