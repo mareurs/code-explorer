@@ -34,11 +34,21 @@ struct EmbedData {
 }
 
 impl RemoteEmbedder {
+    /// Build a reqwest client with a per-request timeout so that a hung
+    /// embedding server (e.g. Ollama during GPU discovery failure) doesn't
+    /// block `index_project` forever.
+    fn http_client() -> Client {
+        Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("failed to build HTTP client")
+    }
+
     pub fn openai(model: &str) -> Result<Self> {
         let api_key = std::env::var("OPENAI_API_KEY")
             .map_err(|_| anyhow::anyhow!("OPENAI_API_KEY env var not set"))?;
         Ok(Self {
-            client: Client::new(),
+            client: Self::http_client(),
             endpoint: "https://api.openai.com/v1/embeddings".into(),
             model: model.to_string(),
             api_key: Some(api_key),
@@ -48,7 +58,7 @@ impl RemoteEmbedder {
     pub fn ollama(model: &str) -> Result<Self> {
         let host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".into());
         Ok(Self {
-            client: Client::new(),
+            client: Self::http_client(),
             endpoint: format!("{}/v1/embeddings", host.trim_end_matches('/')),
             model: model.to_string(),
             api_key: None,
@@ -58,7 +68,7 @@ impl RemoteEmbedder {
     pub fn custom(base_url: &str, model: &str) -> Result<Self> {
         let endpoint = format!("{}/v1/embeddings", base_url.trim_end_matches('/'));
         Ok(Self {
-            client: Client::new(),
+            client: Self::http_client(),
             endpoint,
             model: model.to_string(),
             api_key: std::env::var("EMBED_API_KEY").ok(),

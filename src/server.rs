@@ -170,7 +170,36 @@ impl ServerHandler for CodeExplorerServer {
             agent: self.agent.clone(),
             lsp: self.lsp.clone(),
         };
-        match tool.call(input, &ctx).await {
+
+        // Indexing tools run embedding loops that can legitimately take minutes;
+        // skip the per-call timeout for them.
+        let is_long_running = matches!(req.name.as_ref(), "index_project" | "index_library");
+
+        let timeout_secs = if is_long_running {
+            None
+        } else {
+            self.agent
+                .with_project(|p| Ok(p.config.project.tool_timeout_secs))
+                .await
+                .ok()
+        };
+
+        let result = if let Some(secs) = timeout_secs {
+            tokio::time::timeout(std::time::Duration::from_secs(secs), tool.call(input, &ctx))
+                .await
+                .unwrap_or_else(|_| {
+                    Err(anyhow::anyhow!(
+                        "Tool '{}' timed out after {}s. \
+                     Increase tool_timeout_secs in .code-explorer/project.toml if needed.",
+                        req.name,
+                        secs
+                    ))
+                })
+        } else {
+            tool.call(input, &ctx).await
+        };
+
+        match result {
             Ok(output) => {
                 let text =
                     serde_json::to_string_pretty(&output).unwrap_or_else(|_| output.to_string());
