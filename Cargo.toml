@@ -90,6 +90,14 @@ local-embed = ["dep:fastembed"]
 # Local embedding via candle (HuggingFace Rust ML — adds significant compile time)
 # candle-embed = ["dep:candle-core", "dep:candle-transformers", "dep:candle-nn", "dep:hf-hub", "dep:tokenizers"]
 
+# E2E tests — require real LSP servers installed
+e2e = ["e2e-rust", "e2e-python", "e2e-typescript", "e2e-kotlin", "e2e-java"]
+e2e-rust = []       # needs: rust-analyzer
+e2e-python = []     # needs: pyright-langserver
+e2e-typescript = [] # needs: typescript-language-server
+e2e-kotlin = []     # needs: kotlin-lsp
+e2e-java = []       # needs: jdtls
+
 [profile.release]
 opt-level = 3
 lto = "thin"

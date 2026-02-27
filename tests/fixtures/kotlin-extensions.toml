@@ -1,0 +1,93 @@
+[sealed_class_hierarchy]
+description = "Sealed class with all subclasses discoverable"
+tool = "get_symbols_overview"
+path = "src/main/kotlin/library/extensions/Results.kt"
+contains_symbols = ["SearchResult", "Found", "NotFound", "Error"]
+
+[companion_object]
+description = "Companion object with factory methods"
+tool = "find_symbol"
+file = "src/main/kotlin/library/models/Book.kt"
+symbol = "Companion"
+contains_symbols = ["create", "fromJson"]
+
+[extension_function]
+description = "Extension function is discoverable"
+tool = "get_symbols_overview"
+path = "src/main/kotlin/library/services/Catalog.kt"
+contains_symbols = ["toSearchText"]
+
+[suspend_function]
+description = "Suspend function is discoverable"
+tool = "get_symbols_overview"
+path = "src/main/kotlin/library/services/Catalog.kt"
+contains_symbols = ["searchAsync"]
+
+[object_declaration]
+description = "Object declaration (singleton) is discoverable"
+tool = "get_symbols_overview"
+path = "src/main/kotlin/library/extensions/Results.kt"
+contains_symbols = ["BookRegistry", "register", "lookup"]
+
+[inline_value_class]
+description = "Inline/value class is discoverable"
+tool = "get_symbols_overview"
+path = "src/main/kotlin/library/extensions/Advanced.kt"
+contains_symbols = ["ISBN"]
+
+[delegated_property]
+description = "Class with delegated property"
+tool = "get_symbols_overview"
+path = "src/main/kotlin/library/extensions/Advanced.kt"
+contains_symbols = ["LazyBook", "formattedTitle"]
+
+[data_class_methods]
+description = "Data class is discoverable with its methods"
+tool = "find_symbol"
+file = "src/main/kotlin/library/models/Book.kt"
+symbol = "Book"
+body_contains = ["title", "isbn", "genre"]
+
+# --- Reference / call-site tests ---
+
+[refs_data_class_across_files]
+description = "Find references to Book data class used across multiple Kotlin files"
+tool = "find_referencing_symbols"
+path = "src/main/kotlin/library/models/Book.kt"
+symbol = "Book"
+expected_refs_contain = ["Catalog.kt", "Results.kt", "Advanced.kt"]
+
+[refs_interface_as_bound]
+description = "Find references to Searchable interface used as generic bound <T : Searchable>"
+tool = "find_referencing_symbols"
+path = "src/main/kotlin/library/interfaces/Searchable.kt"
+symbol = "Searchable"
+expected_refs_contain = ["Catalog.kt"]
+
+[refs_enum_class_usage]
+description = "Find references to Genre enum class used as data class property type"
+tool = "find_referencing_symbols"
+path = "src/main/kotlin/library/models/Genre.kt"
+symbol = "Genre"
+expected_refs_contain = ["Book.kt"]
+
+[refs_interface_method_call]
+description = "Find references to Searchable.searchText called through generic dispatch"
+tool = "find_referencing_symbols"
+path = "src/main/kotlin/library/interfaces/Searchable.kt"
+symbol = "Searchable/searchText"
+expected_refs_contain = ["Catalog.kt"]
+
+[refs_sealed_class_subtypes]
+description = "Find references to sealed SearchResult class via subclass declarations"
+tool = "find_referencing_symbols"
+path = "src/main/kotlin/library/extensions/Results.kt"
+symbol = "SearchResult"
+expected_refs_contain = ["Results.kt"]
+
+[refs_object_singleton_method]
+description = "Find references to BookRegistry singleton object and its method usage"
+tool = "find_referencing_symbols"
+path = "src/main/kotlin/library/extensions/Results.kt"
+symbol = "BookRegistry"
+expected_refs_contain = ["Results.kt"]

@@ -1,0 +1,256 @@
+# Core expectations: every language must pass all of these.
+# Each section is a test case run by the harness.
+
+[class_with_methods]
+description = "A class/struct with methods is discoverable via get_symbols_overview"
+tool = "get_symbols_overview"
+
+  [class_with_methods.rust]
+  path = "src/models/book.rs"
+  contains_symbols = ["Book", "new", "title", "isbn", "is_available", "genre"]
+
+  [class_with_methods.python]
+  path = "library/models/book.py"
+  contains_symbols = ["Book", "is_available"]
+
+  [class_with_methods.typescript]
+  path = "src/models/book.ts"
+  contains_symbols = ["Book", "title", "isbn", "isAvailable", "genre"]
+
+  [class_with_methods.kotlin]
+  path = "src/main/kotlin/library/models/Book.kt"
+  contains_symbols = ["Book", "isAvailable"]
+
+  [class_with_methods.java]
+  path = "src/main/java/library/models/Book.java"
+  contains_symbols = ["Book", "isAvailable"]
+
+
+[find_method_body]
+description = "find_symbol with include_body returns method source"
+tool = "find_symbol"
+
+  [find_method_body.rust]
+  file = "src/models/book.rs"
+  symbol = "is_available"
+  body_contains = ["copies_available", "> 0"]
+
+  [find_method_body.python]
+  file = "library/models/book.py"
+  symbol = "is_available"
+  body_contains = ["copies_available", "> 0"]
+
+  [find_method_body.typescript]
+  file = "src/models/book.ts"
+  symbol = "isAvailable"
+  body_contains = ["_copiesAvailable", "> 0"]
+
+  [find_method_body.kotlin]
+  file = "src/main/kotlin/library/models/Book.kt"
+  symbol = "isAvailable"
+  body_contains = ["copiesAvailable", "> 0"]
+
+  [find_method_body.java]
+  file = "src/main/java/library/models/Book.java"
+  symbol = "isAvailable"
+  body_contains = ["copiesAvailable", "> 0"]
+
+
+[enum_variants]
+description = "Enum variants are discoverable as children"
+tool = "get_symbols_overview"
+
+  [enum_variants.rust]
+  path = "src/models/genre.rs"
+  contains_symbols = ["Genre", "Fiction", "NonFiction", "Science", "History", "Biography"]
+
+  [enum_variants.python]
+  path = "library/models/genre.py"
+  contains_symbols = ["Genre", "FICTION", "NON_FICTION", "SCIENCE", "HISTORY", "BIOGRAPHY"]
+
+  [enum_variants.typescript]
+  path = "src/models/genre.ts"
+  contains_symbols = ["Genre", "Fiction", "NonFiction", "Science", "History", "Biography"]
+
+  [enum_variants.kotlin]
+  path = "src/main/kotlin/library/models/Genre.kt"
+  contains_symbols = ["Genre", "FICTION", "NON_FICTION", "SCIENCE", "HISTORY", "BIOGRAPHY"]
+
+  [enum_variants.java]
+  path = "src/main/java/library/models/Genre.java"
+  contains_symbols = ["Genre", "FICTION", "NON_FICTION", "SCIENCE", "HISTORY", "BIOGRAPHY"]
+
+
+[interface_definition]
+description = "Interface/trait is discoverable with its methods"
+tool = "get_symbols_overview"
+
+  [interface_definition.rust]
+  path = "src/traits/searchable.rs"
+  contains_symbols = ["Searchable", "search_text", "relevance"]
+
+  [interface_definition.python]
+  path = "library/interfaces/searchable.py"
+  contains_symbols = ["Searchable", "search_text", "relevance"]
+
+  [interface_definition.typescript]
+  path = "src/interfaces/searchable.ts"
+  contains_symbols = ["Searchable", "searchText"]
+
+  [interface_definition.kotlin]
+  path = "src/main/kotlin/library/interfaces/Searchable.kt"
+  contains_symbols = ["Searchable", "searchText", "relevance"]
+
+  [interface_definition.java]
+  path = "src/main/java/library/interfaces/Searchable.java"
+  contains_symbols = ["Searchable", "searchText", "relevance"]
+
+
+[generic_class]
+description = "Generic/parameterized class is discoverable"
+tool = "get_symbols_overview"
+
+  [generic_class.rust]
+  path = "src/services/catalog.rs"
+  contains_symbols = ["Catalog", "new", "add", "search", "stats"]
+
+  [generic_class.python]
+  path = "library/services/catalog.py"
+  contains_symbols = ["Catalog", "add", "search", "stats"]
+
+  [generic_class.typescript]
+  path = "src/services/catalog.ts"
+  contains_symbols = ["Catalog", "add", "search", "stats"]
+
+  [generic_class.kotlin]
+  path = "src/main/kotlin/library/services/Catalog.kt"
+  contains_symbols = ["Catalog", "add", "search", "stats"]
+
+  [generic_class.java]
+  path = "src/main/java/library/services/Catalog.java"
+  contains_symbols = ["Catalog", "add", "search", "stats"]
+
+
+[nested_type]
+description = "Nested type (inner class/struct) is discoverable"
+tool = "get_symbols_overview"
+
+  [nested_type.rust]
+  path = "src/services/catalog.rs"
+  contains_symbols = ["CatalogStats"]
+
+  [nested_type.python]
+  path = "library/services/catalog.py"
+  contains_symbols = ["Stats"]
+
+  [nested_type.typescript]
+  path = "src/services/catalog.ts"
+  contains_symbols = ["CatalogStats"]
+
+  [nested_type.kotlin]
+  path = "src/main/kotlin/library/services/Catalog.kt"
+  contains_symbols = ["CatalogStats"]
+
+  [nested_type.java]
+  path = "src/main/java/library/services/Catalog.java"
+  contains_symbols = ["CatalogStats"]
+
+
+[free_function]
+description = "Top-level / free functions are discoverable"
+tool = "get_symbols_overview"
+
+  [free_function.rust]
+  path = "src/services/catalog.rs"
+  contains_symbols = ["create_default_catalog"]
+
+  [free_function.python]
+  path = "library/services/catalog.py"
+  contains_symbols = ["create_default_catalog"]
+
+  [free_function.typescript]
+  path = "src/services/catalog.ts"
+  contains_symbols = ["createDefaultCatalog"]
+
+  [free_function.kotlin]
+  path = "src/main/kotlin/library/services/Catalog.kt"
+  contains_symbols = ["createDefaultCatalog"]
+
+  [free_function.java]
+  path = "src/main/java/library/services/Catalog.java"
+  contains_symbols = ["createDefault"]
+
+
+[constants]
+description = "Constants/statics are discoverable"
+tool = "get_symbols_overview"
+
+  [constants.rust]
+  path = "src/models/book.rs"
+  contains_symbols = ["MAX_RESULTS"]
+
+  [constants.python]
+  path = "library/models/book.py"
+  contains_symbols = ["MAX_RESULTS"]
+
+  [constants.typescript]
+  path = "src/models/book.ts"
+  contains_symbols = ["MAX_RESULTS"]
+
+  [constants.kotlin]
+  path = "src/main/kotlin/library/models/Book.kt"
+  contains_symbols = ["MAX_RESULTS"]
+
+  [constants.java]
+  path = "src/main/java/library/models/Book.java"
+  contains_symbols = ["MAX_RESULTS"]
+
+
+[list_functions_signatures]
+description = "list_functions returns function signatures"
+tool = "list_functions"
+
+  [list_functions_signatures.rust]
+  path = "src/services/catalog.rs"
+  contains_functions = ["new", "add", "search", "stats", "create_default_catalog"]
+
+  [list_functions_signatures.python]
+  path = "library/services/catalog.py"
+  contains_functions = ["add", "search", "stats", "create_default_catalog"]
+
+  [list_functions_signatures.typescript]
+  path = "src/services/catalog.ts"
+  contains_functions = ["add", "search", "stats", "createDefaultCatalog"]
+
+  [list_functions_signatures.kotlin]
+  path = "src/main/kotlin/library/services/Catalog.kt"
+  contains_functions = ["add", "search", "stats", "createDefaultCatalog"]
+
+  [list_functions_signatures.java]
+  path = "src/main/java/library/services/Catalog.java"
+  contains_functions = ["add", "search", "stats", "createDefault"]
+
+
+[search_pattern]
+description = "search_for_pattern finds text across files"
+tool = "search_for_pattern"
+
+  [search_pattern.rust]
+  pattern = "Searchable"
+  expected_files = ["searchable.rs", "catalog.rs"]
+
+  [search_pattern.python]
+  pattern = "Searchable"
+  expected_files = ["searchable.py", "catalog.py"]
+
+  [search_pattern.typescript]
+  pattern = "Searchable"
+  expected_files = ["searchable.ts", "catalog.ts"]
+
+  [search_pattern.kotlin]
+  pattern = "Searchable"
+  expected_files = ["Searchable.kt", "Catalog.kt"]
+
+  [search_pattern.java]
+  pattern = "Searchable"
+  expected_files = ["Searchable.java", "Catalog.java"]

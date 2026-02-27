@@ -1,0 +1,92 @@
+[dataclass_discovery]
+description = "Dataclass is discoverable as a class"
+tool = "get_symbols_overview"
+path = "library/models/book.py"
+contains_symbols = ["Book"]
+
+[property_decorator]
+description = "@property is discoverable as a method/attribute"
+tool = "get_symbols_overview"
+path = "library/models/book.py"
+contains_symbols = ["is_available"]
+
+[dunder_methods]
+description = "Dunder methods are discoverable"
+tool = "get_symbols_overview"
+path = "library/models/book.py"
+contains_symbols = ["__repr__", "__eq__", "__hash__"]
+
+[protocol_class]
+description = "Protocol class is discoverable"
+tool = "get_symbols_overview"
+path = "library/interfaces/searchable.py"
+contains_symbols = ["HasISBN"]
+
+[multiple_inheritance]
+description = "Class with multiple inheritance is discoverable"
+tool = "get_symbols_overview"
+path = "library/extensions/advanced.py"
+contains_symbols = ["AudioBook", "Playable"]
+
+[nested_function]
+description = "Nested function inside a function"
+tool = "find_symbol"
+file = "library/extensions/advanced.py"
+symbol = "rank_results"
+body_contains = ["_score"]
+
+[type_alias]
+description = "Type alias is discoverable"
+tool = "get_symbols_overview"
+path = "library/extensions/advanced.py"
+contains_symbols = ["BookList"]
+
+[args_kwargs]
+description = "Function with *args and **kwargs"
+tool = "get_symbols_overview"
+path = "library/extensions/advanced.py"
+contains_symbols = ["search_books"]
+
+# --- Reference / call-site tests ---
+
+[refs_class_across_package]
+description = "Find references to Book class used across multiple package modules"
+tool = "find_referencing_symbols"
+path = "library/models/book.py"
+symbol = "Book"
+expected_refs_contain = ["advanced.py", "__init__.py"]
+
+[refs_abc_as_typevar_bound]
+description = "Find references to Searchable ABC used as TypeVar bound in Generic[T]"
+tool = "find_referencing_symbols"
+path = "library/interfaces/searchable.py"
+symbol = "Searchable"
+expected_refs_contain = ["catalog.py"]
+
+[refs_enum_in_dataclass]
+description = "Find references to Genre enum used as dataclass field type"
+tool = "find_referencing_symbols"
+path = "library/models/genre.py"
+symbol = "Genre"
+expected_refs_contain = ["book.py"]
+
+[refs_property_call_site]
+description = "Find references to Book.is_available property access in nested function"
+tool = "find_referencing_symbols"
+path = "library/models/book.py"
+symbol = "Book/is_available"
+expected_refs_contain = ["advanced.py"]
+
+[refs_abstract_method_override]
+description = "Find references to Searchable.search_text including call site in Catalog"
+tool = "find_referencing_symbols"
+path = "library/interfaces/searchable.py"
+symbol = "Searchable/search_text"
+expected_refs_contain = ["catalog.py"]
+
+[refs_reexported_class]
+description = "Find references to Catalog class including re-export in __init__.py"
+tool = "find_referencing_symbols"
+path = "library/services/catalog.py"
+symbol = "Catalog"
+expected_refs_contain = ["__init__"]

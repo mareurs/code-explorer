@@ -1,0 +1,94 @@
+[sealed_interface]
+description = "Sealed interface with permitted subclasses"
+tool = "get_symbols_overview"
+path = "src/main/java/library/extensions/Results.java"
+contains_symbols = ["SearchResult", "Found", "NotFound", "Error"]
+
+[record_type]
+description = "Record type is discoverable"
+tool = "get_symbols_overview"
+path = "src/main/java/library/models/Book.java"
+contains_symbols = ["Book"]
+
+[default_interface_method]
+description = "Default method in interface has body"
+tool = "find_symbol"
+file = "src/main/java/library/interfaces/Searchable.java"
+symbol = "relevance"
+body_contains = ["0.0"]
+
+[annotation_definition]
+description = "Custom annotation is discoverable"
+tool = "get_symbols_overview"
+path = "src/main/java/library/extensions/Advanced.java"
+contains_symbols = ["Indexed"]
+
+[anonymous_class_method]
+description = "Method that returns anonymous class"
+tool = "find_symbol"
+file = "src/main/java/library/extensions/Advanced.java"
+symbol = "createAnonymousSearchable"
+body_contains = ["new Searchable"]
+
+[wildcard_generics]
+description = "Method with wildcard generics"
+tool = "get_symbols_overview"
+path = "src/main/java/library/extensions/Advanced.java"
+contains_symbols = ["processAll"]
+
+[static_nested_class]
+description = "Static nested class is discoverable"
+tool = "get_symbols_overview"
+path = "src/main/java/library/extensions/Advanced.java"
+contains_symbols = ["BatchResult", "ProcessingContext"]
+
+[enum_method]
+description = "Enum with methods"
+tool = "find_symbol"
+file = "src/main/java/library/models/Genre.java"
+symbol = "label"
+body_contains = ["name()"]
+
+# --- Reference / call-site tests ---
+
+[refs_record_across_files]
+description = "Find references to Book record used across multiple Java files"
+tool = "find_referencing_symbols"
+path = "src/main/java/library/models/Book.java"
+symbol = "Book"
+expected_refs_contain = ["Catalog.java", "Results.java", "Advanced.java"]
+
+[refs_interface_as_bound]
+description = "Find references to Searchable interface used as generic bound <T extends Searchable>"
+tool = "find_referencing_symbols"
+path = "src/main/java/library/interfaces/Searchable.java"
+symbol = "Searchable"
+expected_refs_contain = ["Catalog.java", "Advanced.java"]
+
+[refs_enum_in_record]
+description = "Find references to Genre enum used as record component type"
+tool = "find_referencing_symbols"
+path = "src/main/java/library/models/Genre.java"
+symbol = "Genre"
+expected_refs_contain = ["Book.java"]
+
+[refs_default_method_call]
+description = "Find references to Searchable.searchText called via generic dispatch in stream filter"
+tool = "find_referencing_symbols"
+path = "src/main/java/library/interfaces/Searchable.java"
+symbol = "Searchable/searchText()"
+expected_refs_contain = ["Catalog.java"]
+
+[refs_sealed_implementors]
+description = "Find references to sealed SearchResult interface via implementing records"
+tool = "find_referencing_symbols"
+path = "src/main/java/library/extensions/Results.java"
+symbol = "SearchResult"
+expected_refs_contain = ["Results.java"]
+
+[refs_annotation_usage]
+description = "Find references to @Indexed custom annotation used on method"
+tool = "find_referencing_symbols"
+path = "src/main/java/library/extensions/Advanced.java"
+symbol = "Indexed"
+expected_refs_contain = ["Advanced.java"]

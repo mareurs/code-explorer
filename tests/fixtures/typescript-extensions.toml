@@ -1,0 +1,91 @@
+[union_type]
+description = "Union type alias is discoverable"
+tool = "get_symbols_overview"
+path = "src/interfaces/types.ts"
+contains_symbols = ["SearchResult", "FoundResult", "NotFoundResult", "ErrorResult"]
+
+[type_guard]
+description = "Type guard function is discoverable"
+tool = "get_symbols_overview"
+path = "src/interfaces/types.ts"
+contains_symbols = ["isFound"]
+
+[mapped_type]
+description = "Mapped type alias is discoverable"
+tool = "get_symbols_overview"
+path = "src/interfaces/types.ts"
+contains_symbols = ["ReadonlyBook"]
+
+[overloaded_function]
+description = "Overloaded function is discoverable"
+tool = "get_symbols_overview"
+path = "src/extensions/advanced.ts"
+contains_symbols = ["findBook"]
+
+[decorator_class]
+description = "Decorated class is discoverable"
+tool = "get_symbols_overview"
+path = "src/extensions/advanced.ts"
+contains_symbols = ["BookService", "process"]
+
+[namespace_merging]
+description = "Merged namespace/interface is discoverable"
+tool = "get_symbols_overview"
+path = "src/extensions/advanced.ts"
+contains_symbols = ["BookMetadata", "create"]
+
+[default_export]
+description = "Default export class is discoverable"
+tool = "get_symbols_overview"
+path = "src/extensions/advanced.ts"
+contains_symbols = ["DefaultCatalog"]
+
+[index_signature]
+description = "Interface with index signature is discoverable"
+tool = "get_symbols_overview"
+path = "src/interfaces/types.ts"
+contains_symbols = ["BookIndex"]
+
+# --- Reference / call-site tests ---
+
+[refs_class_across_files]
+description = "Find references to Book class used in type compositions and function params"
+tool = "find_referencing_symbols"
+path = "src/models/book.ts"
+symbol = "Book"
+expected_refs_contain = ["types.ts", "advanced.ts"]
+
+[refs_interface_as_constraint]
+description = "Find references to Searchable interface used as generic constraint <T extends Searchable>"
+tool = "find_referencing_symbols"
+path = "src/interfaces/searchable.ts"
+symbol = "Searchable"
+expected_refs_contain = ["catalog.ts"]
+
+[refs_enum_import]
+description = "Find references to Genre enum imported and used in Book class"
+tool = "find_referencing_symbols"
+path = "src/models/genre.ts"
+symbol = "Genre"
+expected_refs_contain = ["book.ts"]
+
+[refs_interface_method_call]
+description = "Find references to Searchable.searchText called via generic dispatch in Catalog"
+tool = "find_referencing_symbols"
+path = "src/interfaces/searchable.ts"
+symbol = "Searchable/searchText"
+expected_refs_contain = ["catalog.ts"]
+
+[refs_union_type_member]
+description = "Find references to SearchResult union type used in type guard parameter"
+tool = "find_referencing_symbols"
+path = "src/interfaces/types.ts"
+symbol = "SearchResult"
+expected_refs_contain = ["types.ts"]
+
+[refs_type_guard_target]
+description = "Find references to FoundResult narrowed via 'result is FoundResult' type predicate"
+tool = "find_referencing_symbols"
+path = "src/interfaces/types.ts"
+symbol = "FoundResult"
+expected_refs_contain = ["types.ts"]

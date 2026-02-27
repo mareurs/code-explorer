@@ -1,0 +1,81 @@
+[enum_struct_variants]
+description = "Enum with struct and tuple variants"
+tool = "get_symbols_overview"
+path = "src/extensions/results.rs"
+contains_symbols = ["SearchResult", "Found", "NotFound", "Error"]
+
+[trait_default_method_body]
+description = "Trait default method has readable body"
+tool = "find_symbol"
+file = "src/traits/searchable.rs"
+symbol = "relevance"
+body_contains = ["0.0"]
+
+[derive_macro_struct]
+description = "Struct with derive macros is discoverable"
+tool = "get_symbols_overview"
+path = "src/extensions/advanced.rs"
+contains_symbols = ["BookRef"]
+
+[lifetime_function]
+description = "Function with lifetime annotations is discoverable"
+tool = "find_symbol"
+file = "src/extensions/advanced.rs"
+symbol = "borrow_title"
+body_contains = ["book.title()"]
+
+[impl_trait_return]
+description = "Function with impl Trait return is discoverable"
+tool = "get_symbols_overview"
+path = "src/extensions/advanced.rs"
+contains_symbols = ["available_titles"]
+
+[iterator_associated_type]
+description = "Iterator impl with associated type"
+tool = "get_symbols_overview"
+path = "src/extensions/results.rs"
+contains_symbols = ["BookIterator"]
+
+# --- Reference / call-site tests ---
+
+[refs_type_across_files]
+description = "Find references to Book struct used across multiple crate modules"
+tool = "find_referencing_symbols"
+path = "src/models/book.rs"
+symbol = "Book"
+expected_refs_contain = ["catalog.rs", "results.rs", "advanced.rs"]
+
+[refs_trait_as_generic_bound]
+description = "Find references to Searchable trait used as <T: Searchable> generic bound"
+tool = "find_referencing_symbols"
+path = "src/traits/searchable.rs"
+symbol = "Searchable"
+expected_refs_contain = ["catalog.rs"]
+
+[refs_enum_as_field_type]
+description = "Find references to Genre enum used as struct field type in Book"
+tool = "find_referencing_symbols"
+path = "src/models/genre.rs"
+symbol = "Genre"
+expected_refs_contain = ["book.rs"]
+
+[refs_method_call_sites]
+description = "Find call sites of Book::title() method across files"
+tool = "find_referencing_symbols"
+path = "src/models/book.rs"
+symbol = "impl Book/title"
+expected_refs_contain = ["advanced.rs"]
+
+[refs_trait_method_dispatch]
+description = "Find references to Searchable::search_text called via generic dispatch in Catalog"
+tool = "find_referencing_symbols"
+path = "src/traits/searchable.rs"
+symbol = "Searchable/search_text"
+expected_refs_contain = ["catalog.rs"]
+
+[refs_method_in_closure]
+description = "Find references to Book::is_available called inside closures and trait impls"
+tool = "find_referencing_symbols"
+path = "src/models/book.rs"
+symbol = "impl Book/is_available"
+expected_refs_contain = ["searchable.rs", "advanced.rs"]
