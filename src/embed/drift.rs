@@ -182,7 +182,8 @@ fn snippet(content: &str) -> String {
     if content.len() <= SNIPPET_MAX_LEN {
         content.to_string()
     } else {
-        format!("{}...", &content[..SNIPPET_MAX_LEN])
+        let truncated: String = content.chars().take(SNIPPET_MAX_LEN).collect();
+        format!("{}...", truncated)
     }
 }
 
