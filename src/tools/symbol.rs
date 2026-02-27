@@ -1156,7 +1156,7 @@ impl Tool for RenameSymbol {
         "rename_symbol"
     }
     fn description(&self) -> &str {
-        "Rename a symbol across the entire codebase using LSP."
+        "Rename a symbol across the entire codebase using LSP. After renaming, sweeps for remaining textual occurrences (comments, docs, strings) that LSP missed and reports them."
     }
     fn input_schema(&self) -> Value {
         json!({
@@ -1197,6 +1197,7 @@ impl Tool for RenameSymbol {
         let rename_security = ctx.agent.security_config().await;
         let mut files_changed = 0;
         let mut total_edits = 0;
+        let mut lsp_files: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
 
         if let Some(changes) = &edit.changes {
             for (uri, edits) in changes {
@@ -1212,6 +1213,7 @@ impl Tool for RenameSymbol {
                 let content = std::fs::read_to_string(&path)?;
                 let new_content = apply_text_edits(&content, edits);
                 std::fs::write(&path, new_content)?;
+                lsp_files.insert(path.clone());
                 files_changed += 1;
                 total_edits += edits.len();
             }
@@ -1243,6 +1245,7 @@ impl Tool for RenameSymbol {
                             .collect();
                         let new_content = apply_text_edits(&content, &plain_edits);
                         std::fs::write(&path, new_content)?;
+                        lsp_files.insert(path.clone());
                         files_changed += 1;
                         total_edits += text_edit.edits.len();
                     }
@@ -1272,19 +1275,64 @@ impl Tool for RenameSymbol {
                         .collect();
                     let new_content = apply_text_edits(&content, &plain_edits);
                     std::fs::write(&path, new_content)?;
+                    lsp_files.insert(path.clone());
                     files_changed += 1;
                     total_edits += text_edit.edits.len();
                 }
             }
         }
 
-        Ok(json!({
+        // Phase 2: text sweep for remaining textual occurrences
+        let old_name_str = name_path.rsplit('/').next().unwrap_or(name_path);
+        let (textual, sweep_skipped, sweep_skip_reason) = if old_name_str.len() < 4 {
+            (
+                vec![],
+                true,
+                Some(format!(
+                    "name too short ({} chars, minimum 4)",
+                    old_name_str.len()
+                )),
+            )
+        } else {
+            match text_sweep(&rename_root, old_name_str, &lsp_files, 20, 2) {
+                Ok(matches) => (matches, false, None::<String>),
+                Err(e) => {
+                    tracing::warn!("text sweep after rename failed: {e}");
+                    (vec![], false, Some(format!("sweep error: {e}")))
+                }
+            }
+        };
+
+        let textual_total: usize = textual.iter().map(|m| m.occurrence_count).sum();
+        let textual_shown = textual.len();
+        let textual_json: Vec<Value> = textual
+            .into_iter()
+            .map(|m| {
+                json!({
+                    "file": m.file,
+                    "lines": m.lines,
+                    "previews": m.previews,
+                    "occurrence_count": m.occurrence_count,
+                    "kind": m.kind,
+                })
+            })
+            .collect();
+
+        let mut result = json!({
             "status": "ok",
-            "old_name": name_path.rsplit('/').next().unwrap_or(name_path),
+            "old_name": old_name_str,
             "new_name": new_name,
             "files_changed": files_changed,
             "total_edits": total_edits,
-        }))
+            "textual_matches": textual_json,
+            "textual_match_count": textual_total,
+            "textual_matches_shown": textual_shown,
+            "sweep_skipped": sweep_skipped,
+        });
+        if let Some(reason) = sweep_skip_reason {
+            result["sweep_skip_reason"] = json!(reason);
+        }
+        Ok(result)
     }
 }
 
