@@ -12,6 +12,8 @@ pub mod memory;
 pub mod output;
 pub mod semantic;
 pub mod symbol;
+pub mod usage;
+pub use usage::GetUsageStats;
 pub mod workflow;
 
 use std::sync::Arc;
