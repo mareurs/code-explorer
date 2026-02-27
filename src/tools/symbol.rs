@@ -177,8 +177,8 @@ fn symbol_to_json(
         "name_path": sym.name_path,
         "kind": format!("{:?}", sym.kind),
         "file": sym.file.display().to_string(),
-        "start_line": sym.start_line,
-        "end_line": sym.end_line,
+        "start_line": sym.start_line + 1,
+        "end_line": sym.end_line + 1,
         "source": source,
     });
 

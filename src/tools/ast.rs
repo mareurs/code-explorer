@@ -75,8 +75,8 @@ fn collect_functions(symbols: &[crate::lsp::symbols::SymbolInfo], out: &mut Vec<
                     "name": sym.name,
                     "name_path": sym.name_path,
                     "kind": sym.kind,
-                    "start_line": sym.start_line,
-                    "end_line": sym.end_line,
+                    "start_line": sym.start_line + 1,
+                    "end_line": sym.end_line + 1,
                     "source": "project",
                 }));
             }
@@ -124,8 +124,8 @@ impl Tool for ExtractDocstrings {
                 json!({
                     "symbol_name": d.symbol_name,
                     "content": d.content,
-                    "start_line": d.start_line,
-                    "end_line": d.end_line,
+                    "start_line": d.start_line + 1,
+                    "end_line": d.end_line + 1,
                 })
             })
             .collect();
@@ -186,6 +186,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn list_functions_line_numbers_are_1_indexed() {
+        // Verify start_line/end_line are 1-indexed in output so they can be
+        // passed directly to edit_lines (which is also 1-indexed).
+        let source = "fn hello() {}\nfn world() {}\n";
+        let (dir, ctx) = project_ctx_with_file("test.rs", source).await;
+        let result = ListFunctions
+            .call(json!({ "path": "test.rs" }), &ctx)
+            .await
+            .unwrap();
+        let functions = result["functions"].as_array().unwrap();
+        let hello = functions
+            .iter()
+            .find(|f| f["name"] == "hello")
+            .expect("should find hello");
+        // "fn hello() {}" is on line 1 (1-indexed), not line 0
+        assert_eq!(
+            hello["start_line"].as_u64().unwrap(),
+            1,
+            "start_line must be 1-indexed (line 1, not 0): {:?}",
+            hello
+        );
+        drop(dir);
+    }
+
+    #[tokio::test]
     async fn list_functions_python() {
         let source = "def greet():\n    pass\n\nclass Dog:\n    def speak(self):\n        pass\n";
         let (dir, ctx) = project_ctx_with_file("test.py", source).await;
@@ -230,6 +255,25 @@ mod tests {
         let first = &result["docstrings"][0];
         assert_eq!(first["symbol_name"].as_str(), Some("hello"));
         assert!(first["content"].as_str().unwrap().contains("greeting"));
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn extract_docstrings_line_numbers_are_1_indexed() {
+        // "/// A greeting." is line 1, so start_line must be 1, not 0.
+        let source = "/// A greeting.\nfn hello() {}\n";
+        let (dir, ctx) = project_ctx_with_file("test.rs", source).await;
+        let result = ExtractDocstrings
+            .call(json!({ "path": "test.rs" }), &ctx)
+            .await
+            .unwrap();
+        let first = &result["docstrings"][0];
+        assert_eq!(
+            first["start_line"].as_u64().unwrap(),
+            1,
+            "start_line must be 1-indexed: {:?}",
+            first
+        );
         drop(dir);
     }
 

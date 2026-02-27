@@ -1636,9 +1636,19 @@ mod tests {
             .unwrap();
 
         let matches = result["matches"].as_array().unwrap();
-        assert_eq!(matches.len(), 2, "should match both const async arrow functions");
-        assert!(matches[0]["content"].as_str().unwrap().contains("const foo"));
-        assert!(matches[1]["content"].as_str().unwrap().contains("const bar"));
+        assert_eq!(
+            matches.len(),
+            2,
+            "should match both const async arrow functions"
+        );
+        assert!(matches[0]["content"]
+            .as_str()
+            .unwrap()
+            .contains("const foo"));
+        assert!(matches[1]["content"]
+            .as_str()
+            .unwrap()
+            .contains("const bar"));
         assert_eq!(result["total"], 2);
     }
 
@@ -1715,7 +1725,11 @@ mod tests {
 
         // `.` matches `_` in `fn_main_alt` AND ` ` in `fn main()` — both lines match
         let matches = result["matches"].as_array().unwrap();
-        assert_eq!(matches.len(), 2, "dot should match any char including space and underscore");
+        assert_eq!(
+            matches.len(),
+            2,
+            "dot should match any char including space and underscore"
+        );
     }
 
     #[tokio::test]
@@ -1735,7 +1749,11 @@ mod tests {
             .unwrap();
 
         let matches = result["matches"].as_array().unwrap();
-        assert_eq!(matches.len(), 2, "should find matches across multiple files");
+        assert_eq!(
+            matches.len(),
+            2,
+            "should find matches across multiple files"
+        );
         let files: Vec<&str> = matches
             .iter()
             .map(|m| m["file"].as_str().unwrap())
@@ -1763,8 +1781,11 @@ mod tests {
             .unwrap();
 
         let matches = result["matches"].as_array().unwrap();
-        assert_eq!(matches.len(), 1, "search should be case-sensitive by default");
+        assert_eq!(
+            matches.len(),
+            1,
+            "search should be case-sensitive by default"
+        );
         assert!(matches[0]["content"].as_str().unwrap().starts_with("async"));
     }
-
 }
