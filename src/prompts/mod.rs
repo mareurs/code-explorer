@@ -42,6 +42,12 @@ pub fn build_server_instructions(project_status: Option<&ProjectStatus>) -> Stri
                 "- **Semantic index:** Not built — run `index_project` to enable `semantic_search`\n",
             );
         }
+
+        if let Some(prompt) = &status.system_prompt {
+            instructions.push_str("\n\n## Custom Instructions\n\n");
+            instructions.push_str(prompt);
+            instructions.push('\n');
+        }
     }
 
     instructions
@@ -55,6 +61,7 @@ pub struct ProjectStatus {
     pub languages: Vec<String>,
     pub memories: Vec<String>,
     pub has_index: bool,
+    pub system_prompt: Option<String>,
 }
 
 /// Onboarding prompt template — instructs Claude what to explore and what memories to create.
@@ -156,6 +163,7 @@ mod tests {
             languages: vec!["rust".into(), "python".into()],
             memories: vec!["architecture".into(), "conventions".into()],
             has_index: true,
+            system_prompt: None,
         };
         let result = build_server_instructions(Some(&status));
         assert!(result.contains("## Project Status"));
@@ -173,6 +181,7 @@ mod tests {
             languages: vec![],
             memories: vec![],
             has_index: false,
+            system_prompt: None,
         };
         let result = build_server_instructions(Some(&status));
         assert!(result.contains("run `onboarding`"));
@@ -233,5 +242,38 @@ mod tests {
         assert!(result.contains("src/main.rs"));
         assert!(result.contains("Detected languages"));
         assert!(result.contains("CLAUDE.md (loaded every session"));
+    }
+
+    #[test]
+    fn build_with_system_prompt_appends_custom_section() {
+        let status = ProjectStatus {
+            name: "my-project".into(),
+            path: "/tmp/my-project".into(),
+            languages: vec![],
+            memories: vec![],
+            has_index: false,
+            system_prompt: Some("Always use pytest.".into()),
+        };
+        let result = build_server_instructions(Some(&status));
+        assert!(result.contains("## Custom Instructions"));
+        assert!(result.contains("Always use pytest."));
+        // Custom instructions should come after project status
+        let status_pos = result.find("## Project Status").unwrap();
+        let custom_pos = result.find("## Custom Instructions").unwrap();
+        assert!(custom_pos > status_pos);
+    }
+
+    #[test]
+    fn build_without_system_prompt_has_no_custom_section() {
+        let status = ProjectStatus {
+            name: "my-project".into(),
+            path: "/tmp/my-project".into(),
+            languages: vec![],
+            memories: vec![],
+            has_index: false,
+            system_prompt: None,
+        };
+        let result = build_server_instructions(Some(&status));
+        assert!(!result.contains("## Custom Instructions"));
     }
 }

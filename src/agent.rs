@@ -116,6 +116,7 @@ impl Agent {
             languages: project.config.project.languages.clone(),
             memories,
             has_index,
+            system_prompt: project.config.project.system_prompt.clone(),
         })
     }
 

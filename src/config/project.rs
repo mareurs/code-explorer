@@ -24,6 +24,8 @@ pub struct ProjectSection {
     pub encoding: String,
     #[serde(default = "default_timeout")]
     pub tool_timeout_secs: u64,
+    #[serde(default)]
+    pub system_prompt: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -216,6 +218,7 @@ impl ProjectConfig {
                 languages: vec![],
                 encoding: default_encoding(),
                 tool_timeout_secs: default_timeout(),
+                system_prompt: None,
             },
             embeddings: EmbeddingsSection::default(),
             ignored_paths: IgnoredPathsSection::default(),
@@ -281,5 +284,22 @@ mod tests {
         assert!(cfg.security.git_enabled);
         assert!(cfg.security.indexing_enabled);
         assert!(!cfg.security.shell_enabled);
+    }
+
+    #[test]
+    fn system_prompt_defaults_to_none() {
+        let toml = "[project]\nname = \"test\"";
+        let cfg: ProjectConfig = toml::from_str(toml).unwrap();
+        assert!(cfg.project.system_prompt.is_none());
+    }
+
+    #[test]
+    fn system_prompt_parses_from_toml() {
+        let toml = "[project]\nname = \"test\"\nsystem_prompt = \"Use pytest for testing.\"";
+        let cfg: ProjectConfig = toml::from_str(toml).unwrap();
+        assert_eq!(
+            cfg.project.system_prompt.as_deref(),
+            Some("Use pytest for testing.")
+        );
     }
 }

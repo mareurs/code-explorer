@@ -233,6 +233,7 @@ impl Tool for Onboarding {
                     name,
                     languages: langs,
                     encoding: "utf-8".into(),
+                    system_prompt: None,
                     tool_timeout_secs: 60,
                 },
                 embeddings: Default::default(),
