@@ -274,8 +274,8 @@ Offline symbol extraction as LSP fallback.
 - [x] Wire `list_functions` tool → tree-sitter symbol extraction
 - [x] Wire `extract_docstrings` tool → tree-sitter comment/docstring nodes
 - [x] Tests: tool-level tests with temp files (Rust, Python, unsupported)
-- [ ] Implement fallback logic in symbol tools: try LSP → fall back to tree-sitter
-- [ ] Update `get_symbols_overview` to use tree-sitter when LSP unavailable
+- [x] Implement fallback logic in symbol tools: try LSP → fall back to tree-sitter
+- [x] Update `get_symbols_overview` to use tree-sitter when LSP unavailable
 
 **Files:** `src/tools/ast.rs`, `src/ast/parser.rs`
 **Acceptance:** AST tools work offline; fallback deferred to Phase 5
@@ -302,10 +302,10 @@ Independent sprints — can be done in any order.
 ### Sprint 5.2 — Production Vector Search + Local Embeddings
 
 **Tasks:**
-- [ ] sqlite-vec extension loading: `conn.load_extension("sqlite_vec")`
-- [ ] Replace naive cosine with `vec_distance_cosine()` SQL query
-- [ ] Optional: local embedding via `candle`/`ort` + `jina-embeddings-v2-base-code`
-- [ ] Benchmark: pure Rust cosine vs sqlite-vec on 10K+ chunks
+- [x] sqlite-vec extension loading: `conn.load_extension("sqlite_vec")`
+- [x] Replace naive cosine with `vec_distance_cosine()` SQL query
+- [x] Optional: local embedding via `candle`/`ort` + `jina-embeddings-v2-base-code`
+- [x] Benchmark: pure Rust cosine vs sqlite-vec on 10K+ chunks
 
 **Files:** `src/embed/index.rs`, `Cargo.toml`, optionally new `src/embed/local.rs`
 **Acceptance:** vector search performance suitable for large projects
@@ -317,8 +317,8 @@ Independent sprints — can be done in any order.
 - [x] Multi-tool workflow tests: read → search → replace, AST analysis, memory roundtrip, git, onboarding
 - [x] `cargo build --release` optimization (strip, LTO via `[profile.release]`)
 - [x] Library target (`src/lib.rs`) for integration test imports
-- [ ] README.md with install/usage instructions
-- [ ] Binary packaging (optional: cargo-dist or manual)
+- [x] README.md with install/usage instructions
+- [x] Binary packaging (optional: cargo-dist or manual)
 
 **Files:** `tests/integration.rs`, `src/lib.rs`, `Cargo.toml`
 **Acceptance:** release binary works, 5 integration tests covering all tool categories
