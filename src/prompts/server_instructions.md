@@ -10,6 +10,8 @@ git blame, semantic search (embeddings), and project memory.
 - `find_symbol(pattern)` — locate by name substring. Also accepts `name_path` (e.g. 'MyStruct/my_method').
 - `list_symbols(path)` — symbol tree for file/dir/glob
 - `find_references(name_path, path)` — find all usages
+- `goto_definition(path, line)` — jump to a symbol's definition via LSP. Auto-discovers libraries.
+- `hover(path, line)` — get type info and documentation for a symbol at a position via LSP.
 - `list_functions(path)` — quick signatures (tree-sitter, no LSP)
 
 ### You know the concept → semantic search first
@@ -40,4 +42,4 @@ Overflow produces: `{ "overflow": { "shown": N, "total": M, "hint": "..." } }` �
 3. **Semantic search for "how does X work?"** Then drill into results with symbol tools.
 4. **Exploring mode first.** Only `detail_level: "full"` after you know what you need.
 5. **Respect overflow hints.** Narrow your query, don't repeat it.
-6. **Prefer symbol edits** (`replace_symbol`, `insert_before_symbol`) over `edit_lines` for code files.
+6. **Prefer symbol edits** (`replace_symbol`, `insert_code`) over `edit_lines` for code files.

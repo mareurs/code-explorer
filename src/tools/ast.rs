@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 
 pub struct ListFunctions;
-pub struct ExtractDocstrings;
+pub struct ListDocs;
 
 /// Resolve input path (relative to project root if not absolute).
 async fn resolve_path(input: &Value, ctx: &ToolContext) -> anyhow::Result<PathBuf> {
@@ -26,7 +26,7 @@ impl Tool for ListFunctions {
     }
     fn description(&self) -> &str {
         "List all function/method signatures in a file using tree-sitter. \
-         Works offline without a language server. Supports Rust, Python, TypeScript, Go."
+         Works offline without a language server. Supports Rust, Python, TypeScript, Go, Java, Kotlin."
     }
     fn input_schema(&self) -> Value {
         json!({
@@ -88,14 +88,14 @@ fn collect_functions(symbols: &[crate::lsp::symbols::SymbolInfo], out: &mut Vec<
 }
 
 #[async_trait::async_trait]
-impl Tool for ExtractDocstrings {
+impl Tool for ListDocs {
     fn name(&self) -> &str {
         "list_docs"
     }
     fn description(&self) -> &str {
         "Extract all docstrings and top-level comments from a file using tree-sitter. \
          Returns doc comments with their associated symbol names. \
-         Supports Rust (///), Python (triple-quoted), TypeScript (JSDoc), Go (//)."
+         Supports Rust (///), Python (triple-quoted), TypeScript (JSDoc), Go (//), Java, Kotlin."
     }
     fn input_schema(&self) -> Value {
         json!({
@@ -242,7 +242,7 @@ mod tests {
     async fn extract_docstrings_rust() {
         let source = "/// A greeting.\nfn hello() {}\n\n/// A point.\nstruct Point {}\n";
         let (dir, ctx) = project_ctx_with_file("test.rs", source).await;
-        let result = ExtractDocstrings
+        let result = ListDocs
             .call(json!({ "path": "test.rs" }), &ctx)
             .await
             .unwrap();
@@ -263,7 +263,7 @@ mod tests {
         // "/// A greeting." is line 1, so start_line must be 1, not 0.
         let source = "/// A greeting.\nfn hello() {}\n";
         let (dir, ctx) = project_ctx_with_file("test.rs", source).await;
-        let result = ExtractDocstrings
+        let result = ListDocs
             .call(json!({ "path": "test.rs" }), &ctx)
             .await
             .unwrap();
@@ -281,7 +281,7 @@ mod tests {
     async fn extract_docstrings_python() {
         let source = "def greet():\n    \"\"\"Say hello.\"\"\"\n    pass\n";
         let (dir, ctx) = project_ctx_with_file("test.py", source).await;
-        let result = ExtractDocstrings
+        let result = ListDocs
             .call(json!({ "path": "test.py" }), &ctx)
             .await
             .unwrap();

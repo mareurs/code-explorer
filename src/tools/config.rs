@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 
 pub struct ActivateProject;
-pub struct GetCurrentConfig;
+pub struct GetConfig;
 
 #[async_trait::async_trait]
 impl Tool for ActivateProject {
@@ -48,7 +48,7 @@ impl Tool for ActivateProject {
 }
 
 #[async_trait::async_trait]
-impl Tool for GetCurrentConfig {
+impl Tool for GetConfig {
     fn name(&self) -> &str {
         "get_config"
     }
@@ -92,7 +92,7 @@ mod tests {
         };
 
         // No project initially
-        assert!(GetCurrentConfig.call(json!({}), &ctx).await.is_err());
+        assert!(GetConfig.call(json!({}), &ctx).await.is_err());
 
         // Activate
         let result = ActivateProject
@@ -107,7 +107,7 @@ mod tests {
         assert_eq!(result["status"], "ok");
 
         // Now config works
-        let config = GetCurrentConfig.call(json!({}), &ctx).await.unwrap();
+        let config = GetConfig.call(json!({}), &ctx).await.unwrap();
         assert!(config["project_root"].as_str().unwrap().len() > 0);
         assert!(config["config"]["project"]["name"].is_string());
     }
@@ -152,7 +152,7 @@ mod tests {
             .await
             .unwrap();
 
-        let config = GetCurrentConfig.call(json!({}), &ctx).await.unwrap();
+        let config = GetConfig.call(json!({}), &ctx).await.unwrap();
         let root = config["project_root"].as_str().unwrap();
         assert!(root.contains(dir2.path().file_name().unwrap().to_str().unwrap()));
     }

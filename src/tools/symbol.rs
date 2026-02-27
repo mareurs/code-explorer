@@ -206,10 +206,14 @@ fn symbol_to_json(
 
 // ── get_symbols_overview ───────────────────────────────────────────────────
 
-pub struct GetSymbolsOverview;
+/// Directory/glob scans can produce huge output (each file has many symbols).
+/// Cap exploring-mode file count lower than the global OutputGuard default (200).
+const LIST_SYMBOLS_MAX_FILES: usize = 50;
+
+pub struct ListSymbols;
 
 #[async_trait::async_trait]
-impl Tool for GetSymbolsOverview {
+impl Tool for ListSymbols {
     fn name(&self) -> &str {
         "list_symbols"
     }
@@ -239,6 +243,8 @@ impl Tool for GetSymbolsOverview {
         // If the path contains glob metacharacters, expand and aggregate
         if is_glob(rel_path) {
             let files = resolve_glob(ctx, rel_path).await?;
+            let mut guard = guard;
+            guard.max_files = guard.max_files.min(LIST_SYMBOLS_MAX_FILES);
             let (files, file_overflow) =
                 guard.cap_files(files, "Narrow with a more specific glob or file path");
             let root = ctx.agent.require_project_root().await?;
@@ -311,6 +317,8 @@ impl Tool for GetSymbolsOverview {
                 dir_files.push(entry.path().to_path_buf());
             }
 
+            let mut guard = guard;
+            guard.max_files = guard.max_files.min(LIST_SYMBOLS_MAX_FILES);
             let (dir_files, file_overflow) =
                 guard.cap_files(dir_files, "Narrow with a more specific glob or file path");
             let include_body = guard.should_include_body();
@@ -436,7 +444,7 @@ impl Tool for FindSymbol {
             } else {
                 let full = root.join(rel);
                 if full.is_dir() {
-                    // Walk directory to find source files (same pattern as GetSymbolsOverview)
+                    // Walk directory to find source files (same pattern as ListSymbols)
                     let walker = ignore::WalkBuilder::new(&full)
                         .hidden(true)
                         .git_ignore(true)
@@ -597,8 +605,23 @@ impl Tool for FindSymbol {
             }
         }
 
-        let (matches, overflow) =
+        let (mut matches, overflow) =
             guard.cap_items(matches, "Restrict with a file path or glob pattern");
+
+        // When include_body is on and there are many results, strip bodies
+        // beyond a threshold to avoid blowing the context window.
+        const BODY_CAP: usize = 5;
+        if include_body && matches.len() > BODY_CAP {
+            for item in &mut matches[BODY_CAP..] {
+                if let Some(obj) = item.as_object_mut() {
+                    obj.remove("body");
+                    obj.insert(
+                        "body_omitted".to_string(),
+                        json!("use find_symbol with name_path for full body"),
+                    );
+                }
+            }
+        }
 
         let total = overflow.as_ref().map_or(matches.len(), |o| o.total);
         let mut result = json!({ "symbols": matches, "total": total });
@@ -611,10 +634,10 @@ impl Tool for FindSymbol {
 
 // ── find_referencing_symbols ───────────────────────────────────────────────
 
-pub struct FindReferencingSymbols;
+pub struct FindReferences;
 
 #[async_trait::async_trait]
-impl Tool for FindReferencingSymbols {
+impl Tool for FindReferences {
     fn name(&self) -> &str {
         "find_references"
     }
@@ -696,12 +719,213 @@ impl Tool for FindReferencingSymbols {
     }
 }
 
-// ── replace_symbol_body ────────────────────────────────────────────────────
-
-pub struct ReplaceSymbolBody;
+pub struct GotoDefinition;
 
 #[async_trait::async_trait]
-impl Tool for ReplaceSymbolBody {
+impl Tool for GotoDefinition {
+    fn name(&self) -> &str {
+        "goto_definition"
+    }
+    fn description(&self) -> &str {
+        "Jump to the definition of a symbol at a given line. \
+         Resolves types via LSP — handles method calls, trait impls, and cross-crate navigation. \
+         Auto-discovers library dependencies when definitions are outside the project."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "required": ["path", "line"],
+            "properties": {
+                "path": { "type": "string", "description": "File path (relative or absolute)" },
+                "line": { "type": "integer", "description": "1-indexed line number to jump from" },
+                "identifier": { "type": "string", "description": "Optional identifier on the line to target (disambiguates when multiple symbols on same line)" }
+            }
+        })
+    }
+    async fn call(&self, input: Value, ctx: &ToolContext) -> anyhow::Result<Value> {
+        let rel_path = get_path_param(&input, true)?.unwrap();
+        let line_1 = input["line"]
+            .as_u64()
+            .ok_or_else(|| anyhow!("missing 'line'"))? as u32;
+        if line_1 == 0 {
+            anyhow::bail!("'line' must be >= 1 (1-indexed)");
+        }
+        let line_0 = line_1 - 1;
+        let identifier = input["identifier"].as_str();
+
+        let full_path = resolve_read_path(ctx, rel_path).await?;
+        let (client, lang) = get_lsp_client(ctx, &full_path).await?;
+
+        // Determine column: find identifier on the line, or use first non-whitespace
+        let source = std::fs::read_to_string(&full_path)?;
+        let source_line = source.lines().nth(line_0 as usize).ok_or_else(|| {
+            RecoverableError::with_hint(
+                format!(
+                    "line {} is beyond end of file ({})",
+                    line_1,
+                    full_path.display()
+                ),
+                "Check the line number — use list_symbols or search_pattern to find correct lines",
+            )
+        })?;
+
+        let col = if let Some(ident) = identifier {
+            source_line.find(ident).ok_or_else(|| {
+                RecoverableError::with_hint(
+                    format!("identifier '{}' not found on line {}", ident, line_1),
+                    "Check the identifier spelling, or omit it to use the first symbol on the line",
+                )
+            })? as u32
+        } else {
+            source_line
+                .chars()
+                .take_while(|c| c.is_whitespace())
+                .count() as u32
+        };
+
+        let definitions = client
+            .goto_definition(&full_path, line_0, col, &lang)
+            .await?;
+
+        if definitions.is_empty() {
+            return Err(RecoverableError::with_hint(
+                format!("no definition found at {}:{}", full_path.display(), line_1),
+                "The LSP couldn't resolve a definition at this position. \
+                 Try specifying an 'identifier' parameter, or use find_symbol to search by name instead",
+            )
+            .into());
+        }
+
+        let root = ctx.agent.require_project_root().await?;
+        let mut results = Vec::new();
+        for loc in &definitions {
+            let def_path = uri_to_path(loc.uri.as_str());
+            let (file_display, source_tag) = if let Some(ref p) = def_path {
+                let tag = tag_external_path(p, &root, &ctx.agent).await;
+                let display = p
+                    .strip_prefix(&root)
+                    .map(|r| r.display().to_string())
+                    .unwrap_or_else(|_| p.display().to_string());
+                (display, tag)
+            } else {
+                (loc.uri.as_str().to_string(), "external".to_string())
+            };
+
+            // Read the definition line for context
+            let context = def_path
+                .as_ref()
+                .and_then(|p| std::fs::read_to_string(p).ok())
+                .and_then(|src| {
+                    src.lines()
+                        .nth(loc.range.start.line as usize)
+                        .map(|l| l.to_string())
+                })
+                .unwrap_or_default();
+
+            results.push(json!({
+                "file": file_display,
+                "line": loc.range.start.line + 1,
+                "end_line": loc.range.end.line + 1,
+                "context": context.trim(),
+                "source": source_tag,
+            }));
+        }
+
+        Ok(json!({
+            "definitions": results,
+            "from": format!("{}:{}", full_path.file_name().unwrap_or_default().to_string_lossy(), line_1),
+        }))
+    }
+}
+
+pub struct Hover;
+
+#[async_trait::async_trait]
+
+impl Tool for Hover {
+    fn name(&self) -> &str {
+        "hover"
+    }
+    fn description(&self) -> &str {
+        "Get type info and documentation for a symbol at a given position. \
+         Returns the type signature, inferred types, and doc comments. \
+         Complements find_symbol (name lookup) and goto_definition (navigation)."
+    }
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "required": ["path", "line"],
+            "properties": {
+                "path": { "type": "string", "description": "File path (relative or absolute)" },
+                "line": { "type": "integer", "description": "1-indexed line number" },
+                "identifier": { "type": "string", "description": "Optional identifier on the line to target (disambiguates when multiple symbols on same line)" }
+            }
+        })
+    }
+    async fn call(&self, input: Value, ctx: &ToolContext) -> anyhow::Result<Value> {
+        let rel_path = get_path_param(&input, true)?.unwrap();
+        let line_1 = input["line"]
+            .as_u64()
+            .ok_or_else(|| anyhow!("missing 'line'"))? as u32;
+        if line_1 == 0 {
+            anyhow::bail!("'line' must be >= 1 (1-indexed)");
+        }
+        let line_0 = line_1 - 1;
+        let identifier = input["identifier"].as_str();
+
+        let full_path = resolve_read_path(ctx, rel_path).await?;
+        let (client, lang) = get_lsp_client(ctx, &full_path).await?;
+
+        // Determine column: find identifier on the line, or use first non-whitespace
+        let source = std::fs::read_to_string(&full_path)?;
+        let source_line = source.lines().nth(line_0 as usize).ok_or_else(|| {
+            RecoverableError::with_hint(
+                format!(
+                    "line {} is beyond end of file ({})",
+                    line_1,
+                    full_path.display()
+                ),
+                "Check the line number — use list_symbols or search_pattern to find correct lines",
+            )
+        })?;
+
+        let col = if let Some(ident) = identifier {
+            source_line.find(ident).ok_or_else(|| {
+                RecoverableError::with_hint(
+                    format!("identifier '{}' not found on line {}", ident, line_1),
+                    "Check the identifier spelling, or omit it to use the first symbol on the line",
+                )
+            })? as u32
+        } else {
+            source_line
+                .chars()
+                .take_while(|c| c.is_whitespace())
+                .count() as u32
+        };
+
+        let hover_text = client.hover(&full_path, line_0, col, &lang).await?;
+
+        match hover_text {
+            Some(text) => Ok(json!({
+                "content": text,
+                "location": format!("{}:{}", full_path.file_name().unwrap_or_default().to_string_lossy(), line_1),
+            })),
+            None => Err(RecoverableError::with_hint(
+                format!("no hover info at {}:{}", full_path.display(), line_1),
+                "The LSP has no type/doc info at this position. \
+                 Try specifying an 'identifier' parameter, or use find_symbol for name-based lookup",
+            )
+            .into()),
+        }
+    }
+}
+
+// ── replace_symbol_body ────────────────────────────────────────────────────
+
+pub struct ReplaceSymbol;
+
+#[async_trait::async_trait]
+impl Tool for ReplaceSymbol {
     fn name(&self) -> &str {
         "replace_symbol"
     }
@@ -751,26 +975,31 @@ impl Tool for ReplaceSymbolBody {
     }
 }
 
-// ── insert_before_symbol / insert_after_symbol ─────────────────────────────
+// ── insert_code (before/after a symbol) ────────────────────────────────────
 
-pub struct InsertBeforeSymbol;
+pub struct InsertCode;
 
 #[async_trait::async_trait]
-impl Tool for InsertBeforeSymbol {
+impl Tool for InsertCode {
     fn name(&self) -> &str {
-        "insert_before_symbol"
+        "insert_code"
     }
     fn description(&self) -> &str {
-        "Insert code immediately before a named symbol."
+        "Insert code immediately before or after a named symbol."
     }
     fn input_schema(&self) -> Value {
         json!({
             "type": "object",
             "required": ["name_path", "path", "code"],
             "properties": {
-                "name_path": { "type": "string" },
-                "path": { "type": "string" },
-                "code": { "type": "string" }
+                "name_path": { "type": "string", "description": "Symbol name path (e.g. 'MyStruct/my_method')" },
+                "path": { "type": "string", "description": "File path (relative or absolute)" },
+                "code": { "type": "string", "description": "Code to insert (may contain newlines)" },
+                "position": {
+                    "type": "string",
+                    "enum": ["before", "after"],
+                    "description": "Insert before or after the symbol (default: after)"
+                }
             }
         })
     }
@@ -782,6 +1011,7 @@ impl Tool for InsertBeforeSymbol {
         let code = input["code"]
             .as_str()
             .ok_or_else(|| anyhow!("missing 'code'"))?;
+        let position = input["position"].as_str().unwrap_or("after");
 
         let full_path = resolve_write_path(ctx, rel_path).await?;
         let (client, lang) = get_lsp_client(ctx, &full_path).await?;
@@ -792,7 +1022,10 @@ impl Tool for InsertBeforeSymbol {
 
         let content = std::fs::read_to_string(&full_path)?;
         let lines: Vec<&str> = content.lines().collect();
-        let insert_at = sym.start_line as usize;
+        let insert_at = match position {
+            "before" => sym.start_line as usize,
+            _ => (sym.end_line as usize + 1).min(lines.len()),
+        };
 
         let mut new_lines = Vec::new();
         new_lines.extend_from_slice(&lines[..insert_at]);
@@ -800,62 +1033,9 @@ impl Tool for InsertBeforeSymbol {
         new_lines.extend_from_slice(&lines[insert_at..]);
 
         write_lines(&full_path, &new_lines, content.ends_with('\n'))?;
-        Ok(json!({ "status": "ok", "inserted_at_line": insert_at + 1 }))
+        Ok(json!({ "status": "ok", "inserted_at_line": insert_at + 1, "position": position }))
     }
 }
-
-pub struct InsertAfterSymbol;
-
-#[async_trait::async_trait]
-impl Tool for InsertAfterSymbol {
-    fn name(&self) -> &str {
-        "insert_after_symbol"
-    }
-    fn description(&self) -> &str {
-        "Insert code immediately after a named symbol."
-    }
-    fn input_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "required": ["name_path", "path", "code"],
-            "properties": {
-                "name_path": { "type": "string" },
-                "path": { "type": "string" },
-                "code": { "type": "string" }
-            }
-        })
-    }
-    async fn call(&self, input: Value, ctx: &ToolContext) -> anyhow::Result<Value> {
-        let name_path = input["name_path"]
-            .as_str()
-            .ok_or_else(|| anyhow!("missing 'name_path'"))?;
-        let rel_path = get_path_param(&input, true)?.unwrap();
-        let code = input["code"]
-            .as_str()
-            .ok_or_else(|| anyhow!("missing 'code'"))?;
-
-        let full_path = resolve_write_path(ctx, rel_path).await?;
-        let (client, lang) = get_lsp_client(ctx, &full_path).await?;
-
-        let symbols = client.document_symbols(&full_path, &lang).await?;
-        let sym = find_symbol_by_name_path(&symbols, name_path)
-            .ok_or_else(|| anyhow!("symbol not found: {}", name_path))?;
-
-        let content = std::fs::read_to_string(&full_path)?;
-        let lines: Vec<&str> = content.lines().collect();
-        let insert_at = (sym.end_line as usize + 1).min(lines.len());
-
-        let mut new_lines = Vec::new();
-        new_lines.extend_from_slice(&lines[..insert_at]);
-        new_lines.push(code);
-        new_lines.extend_from_slice(&lines[insert_at..]);
-
-        write_lines(&full_path, &new_lines, content.ends_with('\n'))?;
-        Ok(json!({ "status": "ok", "inserted_at_line": insert_at + 1 }))
-    }
-}
-
-// ── rename_symbol ──────────────────────────────────────────────────────────
 
 pub struct RenameSymbol;
 
@@ -1209,7 +1389,7 @@ impl Point {
             return;
         };
 
-        let result = GetSymbolsOverview
+        let result = ListSymbols
             .call(
                 json!({
                     "path": "src/main.rs",
@@ -1310,7 +1490,7 @@ impl Point {
             lsp: lsp(),
         };
         // Should error because no project, but NOT because of unknown param
-        let err = GetSymbolsOverview
+        let err = ListSymbols
             .call(json!({ "path": "x", "detail_level": "full" }), &ctx)
             .await
             .unwrap_err();
@@ -1328,7 +1508,7 @@ impl Point {
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         let ctx = ToolContext { agent, lsp: lsp() };
 
-        let err = GetSymbolsOverview
+        let err = ListSymbols
             .call(json!({ "path": "nonexistent/file.py" }), &ctx)
             .await
             .unwrap_err();
@@ -1348,7 +1528,7 @@ impl Point {
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         let ctx = ToolContext { agent, lsp: lsp() };
 
-        let err = GetSymbolsOverview
+        let err = ListSymbols
             .call(json!({ "path": "missing.rs" }), &ctx)
             .await
             .unwrap_err();
@@ -1370,7 +1550,7 @@ impl Point {
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         let ctx = ToolContext { agent, lsp: lsp() };
 
-        let err = GetSymbolsOverview
+        let err = ListSymbols
             .call(json!({ "path": "src/**/*.nonexistent" }), &ctx)
             .await
             .unwrap_err();
@@ -1389,15 +1569,12 @@ impl Point {
             agent: Agent::new(None).await.unwrap(),
             lsp: lsp(),
         };
-        assert!(GetSymbolsOverview
-            .call(json!({"path": "x"}), &ctx)
-            .await
-            .is_err());
+        assert!(ListSymbols.call(json!({"path": "x"}), &ctx).await.is_err());
         assert!(FindSymbol
             .call(json!({"pattern": "x"}), &ctx)
             .await
             .is_err());
-        assert!(FindReferencingSymbols
+        assert!(FindReferences
             .call(json!({"name_path": "x", "path": "y"}), &ctx)
             .await
             .is_err());
@@ -1497,7 +1674,7 @@ impl Point {
         let ctx = ToolContext { agent, lsp: lsp() };
 
         // Project-wide (no path) — should find both root and nested files
-        let result = GetSymbolsOverview.call(json!({}), &ctx).await.unwrap();
+        let result = ListSymbols.call(json!({}), &ctx).await.unwrap();
 
         let files = result["files"].as_array().unwrap();
         let file_names: Vec<&str> = files.iter().map(|f| f["file"].as_str().unwrap()).collect();
@@ -1535,7 +1712,7 @@ impl Point {
         let ctx = ToolContext { agent, lsp: lsp() };
 
         // Target "src" specifically — should be shallow (depth 1)
-        let result = GetSymbolsOverview
+        let result = ListSymbols
             .call(json!({ "path": "src" }), &ctx)
             .await
             .unwrap();
@@ -1676,7 +1853,7 @@ fn main() {
                 tokio::time::sleep(std::time::Duration::from_millis(500 * attempt)).await;
             }
 
-            let result = FindReferencingSymbols
+            let result = FindReferences
                 .call(
                     json!({
                         "name_path": "add",
@@ -1749,14 +1926,14 @@ fn main() {
 
     #[tokio::test]
     async fn get_symbols_overview_schema_includes_scope() {
-        let tool = GetSymbolsOverview;
+        let tool = ListSymbols;
         let schema = tool.input_schema();
         assert!(schema["properties"]["scope"].is_object());
     }
 
     #[tokio::test]
     async fn find_referencing_symbols_schema_includes_scope() {
-        let tool = FindReferencingSymbols;
+        let tool = FindReferences;
         let schema = tool.input_schema();
         assert!(schema["properties"]["scope"].is_object());
     }

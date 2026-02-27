@@ -129,7 +129,7 @@ fn is_denied(resolved: &Path, denied: &[PathBuf]) -> bool {
 }
 
 /// Best-effort canonicalization: use `fs::canonicalize` when the path exists,
-/// otherwise return the path as-is (e.g. for `CreateTextFile` targets that
+/// otherwise return the path as-is (e.g. for `CreateFile` targets that
 /// don't exist yet).
 fn best_effort_canonicalize(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
@@ -253,19 +253,14 @@ pub fn check_tool_access(tool_name: &str, config: &PathSecurityConfig) -> Result
                 );
             }
         }
-        "create_file"
-        | "edit_lines"
-        | "replace_symbol"
-        | "insert_before_symbol"
-        | "insert_after_symbol"
-        | "rename_symbol" => {
+        "create_file" | "edit_lines" | "replace_symbol" | "insert_code" | "rename_symbol" => {
             if !config.file_write_enabled {
                 bail!(
                     "File write tools are disabled. Set security.file_write_enabled = true in .code-explorer/project.toml to enable."
                 );
             }
         }
-        "git_blame" | "git_log" | "git_diff" => {
+        "git_blame" => {
             if !config.git_enabled {
                 bail!(
                     "Git tools are disabled. Set security.git_enabled = true in .code-explorer/project.toml to enable."
@@ -571,8 +566,7 @@ mod tests {
             "create_file",
             "edit_lines",
             "replace_symbol",
-            "insert_before_symbol",
-            "insert_after_symbol",
+            "insert_code",
             "rename_symbol",
         ] {
             assert!(
@@ -587,7 +581,7 @@ mod tests {
     fn git_disabled_blocks_git_tools() {
         let mut config = PathSecurityConfig::default();
         config.git_enabled = false;
-        for tool in &["git_blame", "git_log", "git_diff"] {
+        for tool in &["git_blame"] {
             assert!(
                 check_tool_access(tool, &config).is_err(),
                 "{} should be blocked",

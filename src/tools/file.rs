@@ -17,7 +17,8 @@ impl Tool for ReadFile {
     }
 
     fn description(&self) -> &str {
-        "Read the contents of a file. Optionally restrict to a line range."
+        "Read the contents of a file. Optionally restrict to a line range. \
+         Rejects source code files — use symbol tools for .rs, .py, .ts, etc."
     }
 
     fn input_schema(&self) -> Value {
@@ -216,10 +217,10 @@ impl Tool for ListDir {
 
 // ── search_for_pattern ───────────────────────────────────────────────────────
 
-pub struct SearchForPattern;
+pub struct SearchPattern;
 
 #[async_trait::async_trait]
-impl Tool for SearchForPattern {
+impl Tool for SearchPattern {
     fn name(&self) -> &str {
         "search_pattern"
     }
@@ -298,10 +299,10 @@ impl Tool for SearchForPattern {
 
 // ── create_text_file ────────────────────────────────────────────────────────
 
-pub struct CreateTextFile;
+pub struct CreateFile;
 
 #[async_trait::async_trait]
-impl Tool for CreateTextFile {
+impl Tool for CreateFile {
     fn name(&self) -> &str {
         "create_file"
     }
@@ -743,7 +744,7 @@ mod tests {
         assert!(result.get("overflow").is_none());
     }
 
-    // ── SearchForPattern ──────────────────────────────────────────────────────
+    // ── SearchPattern ─────────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn search_finds_matching_line() {
@@ -751,7 +752,7 @@ mod tests {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("code.rs"), "fn main() {}\nlet x = 42;\n").unwrap();
 
-        let result = SearchForPattern
+        let result = SearchPattern
             .call(
                 json!({ "pattern": "fn main", "path": dir.path().to_str().unwrap() }),
                 &ctx,
@@ -771,7 +772,7 @@ mod tests {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("code.rs"), "fn main() {}").unwrap();
 
-        let result = SearchForPattern
+        let result = SearchPattern
             .call(
                 json!({ "pattern": "xyz_not_present", "path": dir.path().to_str().unwrap() }),
                 &ctx,
@@ -792,7 +793,7 @@ mod tests {
             .join("\n");
         std::fs::write(dir.path().join("data.txt"), &content).unwrap();
 
-        let result = SearchForPattern
+        let result = SearchPattern
             .call(
                 json!({
                     "pattern": "match_",
@@ -810,7 +811,7 @@ mod tests {
     #[tokio::test]
     async fn search_invalid_regex_errors() {
         let (dir, ctx) = project_ctx().await;
-        let err = SearchForPattern
+        let err = SearchPattern
             .call(
                 json!({ "pattern": "[invalid", "path": dir.path().to_str().unwrap() }),
                 &ctx,
@@ -826,18 +827,18 @@ mod tests {
     #[tokio::test]
     async fn search_missing_pattern_errors() {
         let ctx = test_ctx().await;
-        let result = SearchForPattern.call(json!({}), &ctx).await;
+        let result = SearchPattern.call(json!({}), &ctx).await;
         assert!(result.is_err());
     }
 
-    // ── CreateTextFile ───────────────────────────────────────────────────────
+    // ── CreateFile ────────────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn create_text_file_writes_content() {
         let (dir, ctx) = project_ctx().await;
         let file = dir.path().join("new.txt");
 
-        let result = CreateTextFile
+        let result = CreateFile
             .call(
                 json!({
                     "path": file.to_str().unwrap(),
@@ -858,7 +859,7 @@ mod tests {
         let (dir, ctx) = project_ctx().await;
         let file = dir.path().join("a").join("b").join("deep.txt");
 
-        CreateTextFile
+        CreateFile
             .call(
                 json!({
                     "path": file.to_str().unwrap(),
@@ -875,10 +876,10 @@ mod tests {
     #[tokio::test]
     async fn create_text_file_missing_params_errors() {
         let ctx = test_ctx().await;
-        assert!(CreateTextFile.call(json!({}), &ctx).await.is_err());
+        assert!(CreateFile.call(json!({}), &ctx).await.is_err());
         let outside = std::env::temp_dir().join("nonexistent_xplat_test");
         let outside_str = outside.to_str().unwrap();
-        assert!(CreateTextFile
+        assert!(CreateFile
             .call(json!({ "path": outside_str }), &ctx)
             .await
             .is_err());
@@ -1047,7 +1048,7 @@ mod tests {
         std::fs::create_dir_all(&wt_dir).unwrap();
         std::fs::write(wt_dir.join("lib.rs"), "fn hello() {}").unwrap();
 
-        let result = SearchForPattern
+        let result = SearchPattern
             .call(
                 json!({ "pattern": "fn hello", "path": dir.path().to_str().unwrap() }),
                 &ctx,
@@ -1134,9 +1135,7 @@ mod tests {
     async fn create_text_file_missing_params_detailed_errors() {
         let ctx = test_ctx().await;
         // Missing path
-        let result = CreateTextFile
-            .call(json!({ "content": "hello" }), &ctx)
-            .await;
+        let result = CreateFile.call(json!({ "content": "hello" }), &ctx).await;
         assert!(
             result.is_err(),
             "create_text_file without path should error"
@@ -1145,9 +1144,7 @@ mod tests {
         // Missing content
         let outside = std::env::temp_dir().join("nonexistent_xplat_test.txt");
         let outside_str = outside.to_str().unwrap();
-        let result = CreateTextFile
-            .call(json!({ "path": outside_str }), &ctx)
-            .await;
+        let result = CreateFile.call(json!({ "path": outside_str }), &ctx).await;
         assert!(
             result.is_err(),
             "create_text_file without content should error"
@@ -1157,7 +1154,7 @@ mod tests {
     #[tokio::test]
     async fn search_for_pattern_missing_pattern_errors() {
         let ctx = test_ctx().await;
-        let result = SearchForPattern.call(json!({}), &ctx).await;
+        let result = SearchPattern.call(json!({}), &ctx).await;
         assert!(
             result.is_err(),
             "search_for_pattern without pattern should error"
@@ -1174,7 +1171,7 @@ mod tests {
     #[tokio::test]
     async fn search_for_pattern_invalid_regex_errors() {
         let (dir, ctx) = project_ctx().await;
-        let err = SearchForPattern
+        let err = SearchPattern
             .call(
                 json!({ "pattern": "[invalid(", "path": dir.path().to_str().unwrap() }),
                 &ctx,
@@ -1233,7 +1230,7 @@ mod tests {
             .join("\n");
         std::fs::write(dir.path().join("many.txt"), &content).unwrap();
 
-        let result = SearchForPattern
+        let result = SearchPattern
             .call(
                 json!({
                     "pattern": "match_",
@@ -1260,7 +1257,7 @@ mod tests {
         .unwrap();
 
         // Pass a file path, not a directory
-        let result = SearchForPattern
+        let result = SearchPattern
             .call(
                 json!({
                     "pattern": "notification|push",
@@ -1295,7 +1292,7 @@ mod tests {
         let (_dir, ctx) = project_ctx().await;
         let outside = tempdir().unwrap();
         let target = outside.path().join("evil.rs");
-        let result = CreateTextFile
+        let result = CreateFile
             .call(
                 json!({
                     "path": target.to_str().unwrap(),
@@ -1310,7 +1307,7 @@ mod tests {
     #[tokio::test]
     async fn create_file_within_project_works() {
         let (dir, ctx) = project_ctx().await;
-        let result = CreateTextFile
+        let result = CreateFile
             .call(
                 json!({
                     "path": dir.path().join("new_file.txt").to_str().unwrap(),
@@ -1331,7 +1328,7 @@ mod tests {
         let ctx = test_ctx().await;
         let outside = std::env::temp_dir().join("nonexistent_xplat_test.txt");
         let outside_str = outside.to_str().unwrap();
-        let result = CreateTextFile
+        let result = CreateFile
             .call(json!({ "path": outside_str, "content": "hi" }), &ctx)
             .await;
         assert!(result.is_err(), "write without active project should error");
@@ -1347,7 +1344,7 @@ mod tests {
 
         // Build a regex that exceeds the 1MB compiled NFA size limit
         let huge_pattern = format!("({})", "a?".repeat(100_000));
-        let err = SearchForPattern
+        let err = SearchPattern
             .call(
                 json!({
                     "pattern": huge_pattern,
@@ -1627,7 +1624,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = SearchForPattern
+        let result = SearchPattern
             .call(
                 json!({ "pattern": "const [a-zA-Z]+ = async", "path": dir.path().to_str().unwrap() }),
                 &ctx,
@@ -1664,7 +1661,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = SearchForPattern
+        let result = SearchPattern
             .call(
                 json!({ "pattern": r"if \(name === '", "path": dir.path().to_str().unwrap() }),
                 &ctx,
@@ -1689,7 +1686,7 @@ mod tests {
         )
         .unwrap();
 
-        let err = SearchForPattern
+        let err = SearchPattern
             .call(
                 json!({ "pattern": "if (name === '", "path": dir.path().to_str().unwrap() }),
                 &ctx,
@@ -1715,7 +1712,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = SearchForPattern
+        let result = SearchPattern
             .call(
                 json!({ "pattern": "fn.main", "path": dir.path().to_str().unwrap() }),
                 &ctx,
@@ -1740,7 +1737,7 @@ mod tests {
         std::fs::write(dir.path().join("b.rs"), "pub fn handler() {}\n").unwrap();
         std::fs::write(dir.path().join("c.rs"), "fn unrelated() {}\n").unwrap();
 
-        let result = SearchForPattern
+        let result = SearchPattern
             .call(
                 json!({ "pattern": "pub fn handler", "path": dir.path().to_str().unwrap() }),
                 &ctx,
@@ -1772,7 +1769,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = SearchForPattern
+        let result = SearchPattern
             .call(
                 json!({ "pattern": "async fn handler", "path": dir.path().to_str().unwrap() }),
                 &ctx,

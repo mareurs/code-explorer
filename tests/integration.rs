@@ -36,7 +36,7 @@ async fn project_with_files(files: &[(&str, &str)]) -> (tempfile::TempDir, ToolC
 
 #[tokio::test]
 async fn workflow_read_search_replace() {
-    use code_explorer::tools::file::{EditLines, ReadFile, SearchForPattern};
+    use code_explorer::tools::file::{EditLines, ReadFile, SearchPattern};
     let (dir, ctx) = project_with_files(&[
         (
             "src/main.txt",
@@ -50,7 +50,7 @@ async fn workflow_read_search_replace() {
     .await;
 
     // Step 1: Search for "Hello" across the project
-    let search_result = SearchForPattern
+    let search_result = SearchPattern
         .call(
             json!({ "pattern": "Hello", "path": dir.path().display().to_string() }),
             &ctx,
@@ -107,7 +107,7 @@ async fn workflow_read_search_replace() {
 
 #[tokio::test]
 async fn workflow_analyze_ast() {
-    use code_explorer::tools::ast::{ExtractDocstrings, ListFunctions};
+    use code_explorer::tools::ast::{ListDocs, ListFunctions};
 
     let (dir, ctx) = project_with_files(&[
         (
@@ -138,7 +138,7 @@ async fn workflow_analyze_ast() {
     assert!(func_names.contains(&"sub"));
 
     // Step 2: Extract docstrings
-    let doc_result = ExtractDocstrings
+    let doc_result = ListDocs
         .call(json!({ "path": "math.rs" }), &ctx)
         .await
         .unwrap();
@@ -154,7 +154,7 @@ async fn workflow_analyze_ast() {
         .unwrap();
     assert_eq!(py_list["total"], 1);
 
-    let py_docs = ExtractDocstrings
+    let py_docs = ListDocs
         .call(json!({ "path": "util.py" }), &ctx)
         .await
         .unwrap();
@@ -169,7 +169,7 @@ async fn workflow_analyze_ast() {
 
 #[tokio::test]
 async fn workflow_project_memory_config() {
-    use code_explorer::tools::config::{ActivateProject, GetCurrentConfig};
+    use code_explorer::tools::config::{ActivateProject, GetConfig};
     use code_explorer::tools::memory::{ListMemories, ReadMemory, WriteMemory};
 
     let (dir, ctx) = project_with_files(&[("src/main.rs", "fn main() {}\n")]).await;
@@ -182,7 +182,7 @@ async fn workflow_project_memory_config() {
     assert_eq!(activate_result["status"], "ok");
 
     // Step 2: Get config
-    let config = GetCurrentConfig.call(json!({}), &ctx).await.unwrap();
+    let config = GetConfig.call(json!({}), &ctx).await.unwrap();
     assert!(config["config"].is_object());
     assert!(config["project_root"].is_string());
 
@@ -224,7 +224,7 @@ async fn workflow_project_memory_config() {
 
 #[tokio::test]
 async fn workflow_git_blame() {
-    use code_explorer::tools::file::CreateTextFile;
+    use code_explorer::tools::file::CreateFile;
     use code_explorer::tools::git::GitBlame;
 
     let dir = tempdir().unwrap();
@@ -240,7 +240,7 @@ async fn workflow_git_blame() {
     };
 
     // Step 1: Create a file via tool
-    CreateTextFile
+    CreateFile
         .call(
             json!({
                 "path": dir.path().join("hello.rs").display().to_string(),
@@ -395,7 +395,7 @@ async fn workflow_ollama_index_and_search() {
 #[tokio::test]
 async fn workflow_onboarding_explore() {
     use code_explorer::tools::file::ListDir;
-    use code_explorer::tools::workflow::{CheckOnboardingPerformed, Onboarding};
+    use code_explorer::tools::workflow::Onboarding;
 
     let (dir, ctx) = project_with_files(&[
         ("src/main.rs", "fn main() {}\n"),
@@ -404,17 +404,15 @@ async fn workflow_onboarding_explore() {
     ])
     .await;
 
-    // Step 1: Check onboarding status
-    let check = CheckOnboardingPerformed
-        .call(json!({}), &ctx)
-        .await
-        .unwrap();
-    // .code-explorer dir exists but no project.toml or onboarding memory yet
-    assert!(check["has_config"].is_boolean());
-
-    // Step 2: Run onboarding
+    // Step 1: Run onboarding (first call does full discovery)
     let onboard = Onboarding.call(json!({}), &ctx).await.unwrap();
     assert!(onboard["languages"].is_array());
+
+    // Step 2: Calling again returns status (already onboarded)
+    let status = Onboarding.call(json!({}), &ctx).await.unwrap();
+    assert_eq!(status["onboarded"], true);
+
+    // Step 3: List directory
 
     // Step 3: List directory
     let list = ListDir

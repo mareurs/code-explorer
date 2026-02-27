@@ -603,6 +603,56 @@ impl LspClient {
         Ok(vec![])
     }
 
+    /// Send textDocument/hover and return the hover contents as a string.
+    pub async fn hover(
+        &self,
+        path: &Path,
+        line: u32,
+        col: u32,
+        language_id: &str,
+    ) -> Result<Option<String>> {
+        self.did_open(path, language_id).await?;
+        let uri = path_to_uri(path)?;
+        let params = lsp_types::HoverParams {
+            text_document_position_params: lsp_types::TextDocumentPositionParams {
+                text_document: lsp_types::TextDocumentIdentifier { uri },
+                position: lsp_types::Position {
+                    line,
+                    character: col,
+                },
+            },
+            work_done_progress_params: Default::default(),
+        };
+
+        let result = self
+            .request("textDocument/hover", serde_json::to_value(params)?)
+            .await?;
+
+        if result.is_null() {
+            return Ok(None);
+        }
+
+        let hover: lsp_types::Hover = serde_json::from_value(result)?;
+
+        let text = match hover.contents {
+            lsp_types::HoverContents::Scalar(ms) => match ms {
+                lsp_types::MarkedString::String(s) => s,
+                lsp_types::MarkedString::LanguageString(ls) => ls.value,
+            },
+            lsp_types::HoverContents::Array(arr) => arr
+                .into_iter()
+                .map(|ms| match ms {
+                    lsp_types::MarkedString::String(s) => s,
+                    lsp_types::MarkedString::LanguageString(ls) => ls.value,
+                })
+                .collect::<Vec<_>>()
+                .join("\n\n"),
+            lsp_types::HoverContents::Markup(mc) => mc.value,
+        };
+
+        Ok(Some(text))
+    }
+
     /// Request a rename across the workspace.
     pub async fn rename(
         &self,

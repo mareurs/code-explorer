@@ -5,8 +5,7 @@ use anyhow::anyhow;
 use serde_json::{json, Value};
 
 pub struct Onboarding;
-pub struct CheckOnboardingPerformed;
-pub struct ExecuteShellCommand;
+pub struct RunCommand;
 
 /// Context gathered from well-known project files during onboarding.
 #[derive(Debug, Default)]
@@ -142,13 +141,52 @@ impl Tool for Onboarding {
     fn description(&self) -> &str {
         "Perform initial project discovery: detect languages, read key files \
          (README, build config, CLAUDE.md), and return instructions for creating \
-         project memories. Requires an active project."
+         project memories. Requires an active project. Returns status if already \
+         onboarded (use force=true to re-scan)."
     }
     fn input_schema(&self) -> Value {
-        json!({ "type": "object", "properties": {} })
+        json!({
+            "type": "object",
+            "properties": {
+                "force": {
+                    "type": "boolean",
+                    "description": "Force full re-scan even if already onboarded (default: false)"
+                }
+            }
+        })
     }
-    async fn call(&self, _input: Value, ctx: &ToolContext) -> anyhow::Result<Value> {
+    async fn call(&self, input: Value, ctx: &ToolContext) -> anyhow::Result<Value> {
         let root = ctx.agent.require_project_root().await?;
+        let force = input["force"].as_bool().unwrap_or(false);
+
+        // If already onboarded and not forced, return status instead of re-scanning
+        if !force {
+            let status = ctx
+                .agent
+                .with_project(|p| {
+                    let has_config = p.root.join(".code-explorer").join("project.toml").exists();
+                    let memories = p.memory.list()?;
+                    let has_onboarding_memory = memories.iter().any(|m| m == "onboarding");
+                    Ok((has_config, has_onboarding_memory, memories))
+                })
+                .await?;
+            let (has_config, has_onboarding_memory, memories) = status;
+            if has_config && has_onboarding_memory {
+                let message = format!(
+                    "Onboarding already performed. Available memories: {}. \
+                     Use `read_memory(topic)` to read relevant ones as needed for your current task. \
+                     Do not read all memories at once — only read those relevant to what you're working on.",
+                    memories.join(", ")
+                );
+                return Ok(json!({
+                    "onboarded": true,
+                    "has_config": true,
+                    "has_onboarding_memory": true,
+                    "memories": memories,
+                    "message": message,
+                }));
+            }
+        }
 
         // Detect languages by walking files
         let mut languages = std::collections::BTreeSet::new();
@@ -258,52 +296,8 @@ impl Tool for Onboarding {
         }))
     }
 }
-
 #[async_trait::async_trait]
-impl Tool for CheckOnboardingPerformed {
-    fn name(&self) -> &str {
-        "is_onboarded"
-    }
-    fn description(&self) -> &str {
-        "Check whether project onboarding has been performed for the active project."
-    }
-    fn input_schema(&self) -> Value {
-        json!({ "type": "object", "properties": {} })
-    }
-    async fn call(&self, _input: Value, ctx: &ToolContext) -> anyhow::Result<Value> {
-        ctx.agent
-            .with_project(|p| {
-                let has_config = p.root.join(".code-explorer").join("project.toml").exists();
-                let memories = p.memory.list()?;
-                let has_onboarding_memory = memories.iter().any(|m| m == "onboarding");
-                let onboarded = has_config && has_onboarding_memory;
-
-                let message = if onboarded {
-                    format!(
-                        "Onboarding already performed. Available memories: {}. \
-                         Use `read_memory(topic)` to read relevant ones as needed for your current task. \
-                         Do not read all memories at once — only read those relevant to what you're working on.",
-                        memories.join(", ")
-                    )
-                } else {
-                    "Onboarding not performed yet. Call the `onboarding` tool to discover the project \
-                     and create memories that will help you work effectively.".to_string()
-                };
-
-                Ok(json!({
-                    "onboarded": onboarded,
-                    "has_config": has_config,
-                    "has_onboarding_memory": has_onboarding_memory,
-                    "memories": memories,
-                    "message": message,
-                }))
-            })
-            .await
-    }
-}
-
-#[async_trait::async_trait]
-impl Tool for ExecuteShellCommand {
+impl Tool for RunCommand {
     fn name(&self) -> &str {
         "run_command"
     }
@@ -475,30 +469,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn check_onboarding_before_and_after() {
+    async fn onboarding_returns_status_when_already_done() {
         let (dir, ctx) = project_ctx().await;
         let _ = std::fs::remove_file(dir.path().join(".code-explorer/project.toml"));
 
-        // Before onboarding
-        let result = CheckOnboardingPerformed
-            .call(json!({}), &ctx)
-            .await
-            .unwrap();
-        assert_eq!(result["onboarded"], false);
+        // First call does full onboarding
+        let result = Onboarding.call(json!({}), &ctx).await.unwrap();
+        assert!(result.get("languages").is_some()); // full onboarding result
 
-        // Run onboarding
-        Onboarding.call(json!({}), &ctx).await.unwrap();
-
-        // After onboarding
-        let result = CheckOnboardingPerformed
-            .call(json!({}), &ctx)
-            .await
-            .unwrap();
+        // Second call (no force) returns status instead
+        let result = Onboarding.call(json!({}), &ctx).await.unwrap();
         assert_eq!(result["onboarded"], true);
         assert_eq!(result["has_config"], true);
         assert_eq!(result["has_onboarding_memory"], true);
-    }
 
+        // Force re-scan
+        let result = Onboarding
+            .call(json!({ "force": true }), &ctx)
+            .await
+            .unwrap();
+        assert!(result.get("languages").is_some()); // full onboarding again
+    }
     #[tokio::test]
     async fn onboarding_returns_instruction_prompt() {
         let (_dir, ctx) = project_ctx().await;
@@ -519,27 +510,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn check_onboarding_returns_guidance_message() {
+    async fn onboarding_status_includes_memories_and_message() {
         let (_dir, ctx) = project_ctx().await;
 
-        // Before onboarding
-        let result = CheckOnboardingPerformed
-            .call(json!({}), &ctx)
-            .await
-            .unwrap();
-        assert!(result["message"]
-            .as_str()
-            .unwrap()
-            .contains("not performed yet"));
-
-        // Run onboarding
+        // Run onboarding first
         Onboarding.call(json!({}), &ctx).await.unwrap();
 
-        // After onboarding
-        let result = CheckOnboardingPerformed
-            .call(json!({}), &ctx)
-            .await
-            .unwrap();
+        // Status call returns guidance message and memories
+        let result = Onboarding.call(json!({}), &ctx).await.unwrap();
         let msg = result["message"].as_str().unwrap();
         assert!(msg.contains("already performed"));
         assert!(result["memories"].as_array().unwrap().len() > 0);
@@ -549,7 +527,7 @@ mod tests {
     #[tokio::test]
     async fn execute_shell_command_timeout_is_enforced() {
         let (_dir, ctx) = project_ctx().await;
-        let result = ExecuteShellCommand
+        let result = RunCommand
             .call(json!({ "command": "sleep 10", "timeout_secs": 1 }), &ctx)
             .await
             .unwrap();
@@ -563,7 +541,7 @@ mod tests {
     #[tokio::test]
     async fn execute_shell_command_fast_command_succeeds() {
         let (_dir, ctx) = project_ctx().await;
-        let result = ExecuteShellCommand
+        let result = RunCommand
             .call(json!({ "command": "echo hello", "timeout_secs": 5 }), &ctx)
             .await
             .unwrap();
@@ -576,7 +554,7 @@ mod tests {
     async fn execute_shell_command_output_truncated() {
         let (_dir, ctx) = project_ctx().await;
         // Generate output larger than default limit
-        let result = ExecuteShellCommand
+        let result = RunCommand
             .call(
                 json!({ "command": "seq 1 100000", "timeout_secs": 10 }),
                 &ctx,
@@ -596,7 +574,7 @@ mod tests {
     #[tokio::test]
     async fn execute_shell_command_small_output_not_truncated() {
         let (_dir, ctx) = project_ctx().await;
-        let result = ExecuteShellCommand
+        let result = RunCommand
             .call(json!({ "command": "echo hello", "timeout_secs": 5 }), &ctx)
             .await
             .unwrap();
@@ -607,7 +585,7 @@ mod tests {
     #[tokio::test]
     async fn execute_shell_command_warn_mode_includes_warning() {
         let (_dir, ctx) = project_ctx().await;
-        let result = ExecuteShellCommand
+        let result = RunCommand
             .call(json!({ "command": "echo test", "timeout_secs": 5 }), &ctx)
             .await
             .unwrap();
@@ -620,7 +598,7 @@ mod tests {
     #[tokio::test]
     async fn execute_shell_command_exit_code_preserved() {
         let (_dir, ctx) = project_ctx().await;
-        let result = ExecuteShellCommand
+        let result = RunCommand
             .call(json!({ "command": "exit 42", "timeout_secs": 5 }), &ctx)
             .await
             .unwrap();
@@ -631,7 +609,7 @@ mod tests {
     async fn execute_shell_command_echo_cross_platform() {
         let (_dir, ctx) = project_ctx().await;
         // "echo hello" works on both sh and cmd.exe
-        let result = ExecuteShellCommand
+        let result = RunCommand
             .call(json!({ "command": "echo hello", "timeout_secs": 5 }), &ctx)
             .await
             .unwrap();

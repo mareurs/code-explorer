@@ -6,7 +6,7 @@ Rust MCP server giving LLMs IDE-grade code intelligence — symbol-level navigat
 
 ```bash
 cargo build                        # Build
-cargo test                         # Run tests (432 passing)
+cargo test                         # Run tests (435 passing)
 cargo clippy -- -D warnings        # Lint
 cargo fmt                          # Format
 cargo run -- start --project .     # Run MCP server (stdio)
@@ -41,15 +41,15 @@ src/
 ├── prompts/         # LLM guidance: server_instructions.md, onboarding_prompt.md
 ├── tools/           # Tool implementations by category
 │   ├── output.rs    #   OutputGuard: progressive disclosure (exploring/focused)
-│   ├── file.rs      #   read_file, list_dir, search_for_pattern, find_file, etc.
-│   ├── workflow.rs  #   onboarding, check_onboarding, execute_shell_command
-│   ├── symbol.rs    #   7 LSP-backed tools (find_symbol, get_symbols_overview, etc.) + scope param
-│   ├── git.rs       #   blame, log, diff
-│   ├── semantic.rs  #   search, index_project, index_status, check_drift
+│   ├── file.rs      #   read_file, list_dir, search_pattern, create_file, find_file, edit_lines
+│   ├── workflow.rs  #   onboarding, run_command
+│   ├── symbol.rs    #   9 LSP-backed tools (find_symbol, list_symbols, goto_definition, hover, etc.)
+│   ├── git.rs       #   git_blame
+│   ├── semantic.rs  #   semantic_search, index_project, index_status (incl. drift)
 │   ├── library.rs   #   list_libraries, index_library
 │   ├── memory.rs    #   CRUD tools (write/read/list/delete)
-│   ├── ast.rs       #   list_functions, extract_docstrings
-│   └── config.rs    #   activate_project, get_current_config
+│   ├── ast.rs       #   list_functions, list_docs
+│   └── config.rs    #   activate_project, get_config
 └── util/            # fs helpers, text processing
 ```
 
@@ -69,13 +69,13 @@ full detail, paginated via offset/limit. Enforced via `OutputGuard`
 (`src/tools/output.rs`), a project-wide pattern not per-tool logic.
 
 **Tool Selection by Knowledge Level** — Know the name → LSP/AST tools
-(`find_symbol`, `get_symbols_overview`). Know the concept → semantic search
-first, then drill down. Know nothing → `list_dir` + `get_symbols_overview` at
-top level, then semantic search.
+(`find_symbol`, `list_symbols`, `goto_definition`, `hover`). Know the concept →
+semantic search first, then drill down. Know nothing → `list_dir` +
+`list_symbols` at top level, then semantic search.
 
 ## Key Patterns
 
-**Tool trait** (`src/tools/mod.rs`): Each tool is a struct implementing `name()`, `description()`, `input_schema()`, `async call(Value) -> Result<Value>`. All use `#[async_trait]`.
+**Tool trait** (`src/tools/mod.rs`): Each tool is a struct implementing `name()`, `description()`, `input_schema()`, `async call(Value, &ToolContext) -> Result<Value>`. 30 tools registered. All use `#[async_trait]`.
 
 **Tool↔MCP bridge** (`src/server.rs`): Tools registered as `Vec<Arc<dyn Tool>>`, dispatched dynamically in `call_tool`. Errors are routed through `route_tool_error`:
 - `RecoverableError` (`src/tools/mod.rs`) → `isError: false` with JSON `{"error":"…","hint":"…"}` — LLM sees the problem and a corrective hint, **sibling parallel calls are not aborted by Claude Code**.
@@ -100,10 +100,10 @@ This project has a companion Claude Code plugin at **`../claude-plugins/code-exp
 The `PreToolUse` hook will **block** any attempt to use the native `Read`, `Grep`, or `Glob` tools on source code files (`.rs`, `.ts`, `.py`, etc). You will see `PreToolUse:Read hook error` if you try.
 
 **You MUST use code-explorer's own MCP tools to read source code:**
-- `mcp__code-explorer__get_symbols_overview(path)` — see all symbols in a file/dir
+- `mcp__code-explorer__list_symbols(path)` — see all symbols in a file/dir
 - `mcp__code-explorer__find_symbol(name, include_body=true)` — read a function body
 - `mcp__code-explorer__list_functions(path)` — quick signatures
-- `mcp__code-explorer__search_for_pattern(pattern)` — regex search
+- `mcp__code-explorer__search_pattern(pattern)` — regex search
 - `mcp__code-explorer__semantic_search(query)` — concept-level search
 - `mcp__code-explorer__read_file(path)` — for non-source files (markdown, toml, json)
 

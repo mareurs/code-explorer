@@ -18,18 +18,18 @@ use serde_json::Value;
 
 use crate::agent::Agent;
 use crate::tools::{
-    ast::{ExtractDocstrings, ListFunctions},
-    config::{ActivateProject, GetCurrentConfig},
-    file::{CreateTextFile, EditLines, FindFile, ListDir, ReadFile, SearchForPattern},
+    ast::{ListDocs, ListFunctions},
+    config::{ActivateProject, GetConfig},
+    file::{CreateFile, EditLines, FindFile, ListDir, ReadFile, SearchPattern},
     git::GitBlame,
     library::{IndexLibrary, ListLibraries},
     memory::{DeleteMemory, ListMemories, ReadMemory, WriteMemory},
-    semantic::{CheckDrift, IndexProject, IndexStatus, SemanticSearch},
+    semantic::{IndexProject, IndexStatus, SemanticSearch},
     symbol::{
-        FindReferencingSymbols, FindSymbol, GetSymbolsOverview, InsertAfterSymbol,
-        InsertBeforeSymbol, RenameSymbol, ReplaceSymbolBody,
+        FindReferences, FindSymbol, GotoDefinition, Hover, InsertCode, ListSymbols, RenameSymbol,
+        ReplaceSymbol,
     },
-    workflow::{CheckOnboardingPerformed, ExecuteShellCommand, Onboarding},
+    workflow::{Onboarding, RunCommand},
     Tool, ToolContext,
 };
 
@@ -59,25 +59,25 @@ impl CodeExplorerServer {
             // File tools (fully implemented)
             Arc::new(ReadFile),
             Arc::new(ListDir),
-            Arc::new(SearchForPattern),
-            Arc::new(CreateTextFile),
+            Arc::new(SearchPattern),
+            Arc::new(CreateFile),
             Arc::new(FindFile),
             Arc::new(EditLines),
-            // Workflow tools (ExecuteShellCommand implemented; others stub)
-            Arc::new(ExecuteShellCommand),
+            // Workflow tools
+            Arc::new(RunCommand),
             Arc::new(Onboarding),
-            Arc::new(CheckOnboardingPerformed),
             // Symbol tools (stub — require LSP)
             Arc::new(FindSymbol),
-            Arc::new(FindReferencingSymbols),
-            Arc::new(GetSymbolsOverview),
-            Arc::new(ReplaceSymbolBody),
-            Arc::new(InsertBeforeSymbol),
-            Arc::new(InsertAfterSymbol),
+            Arc::new(FindReferences),
+            Arc::new(GotoDefinition),
+            Arc::new(Hover),
+            Arc::new(ListSymbols),
+            Arc::new(ReplaceSymbol),
+            Arc::new(InsertCode),
             Arc::new(RenameSymbol),
             // AST tools (stub — require tree-sitter wiring)
             Arc::new(ListFunctions),
-            Arc::new(ExtractDocstrings),
+            Arc::new(ListDocs),
             // Git tools
             Arc::new(GitBlame),
             // Memory tools (stub — require Agent project root)
@@ -89,10 +89,9 @@ impl CodeExplorerServer {
             Arc::new(SemanticSearch),
             Arc::new(IndexProject),
             Arc::new(IndexStatus),
-            Arc::new(CheckDrift),
             // Config tools (stub — require Agent wiring)
             Arc::new(ActivateProject),
-            Arc::new(GetCurrentConfig),
+            Arc::new(GetConfig),
             // Library tools
             Arc::new(ListLibraries),
             Arc::new(IndexLibrary),
@@ -417,14 +416,14 @@ mod tests {
             "edit_lines",
             "run_command",
             "onboarding",
-            "is_onboarded",
             "find_symbol",
             "find_references",
             "list_symbols",
             "replace_symbol",
-            "insert_before_symbol",
-            "insert_after_symbol",
+            "insert_code",
             "rename_symbol",
+            "goto_definition",
+            "hover",
             "list_functions",
             "list_docs",
             "git_blame",
@@ -435,7 +434,6 @@ mod tests {
             "semantic_search",
             "index_project",
             "index_status",
-            "check_drift",
             "activate_project",
             "get_config",
             "list_libraries",

@@ -2,8 +2,8 @@ use crate::e2e::expectations::{load_expectations, LangExpectation};
 use code_explorer::agent::Agent;
 use code_explorer::lsp::manager::LspManager;
 use code_explorer::tools::ast::ListFunctions;
-use code_explorer::tools::file::SearchForPattern;
-use code_explorer::tools::symbol::{FindReferencingSymbols, FindSymbol, GetSymbolsOverview};
+use code_explorer::tools::file::SearchPattern;
+use code_explorer::tools::symbol::{FindReferences, FindSymbol, ListSymbols};
 use code_explorer::tools::{Tool, ToolContext};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -146,7 +146,7 @@ async fn run_single(ctx: &ToolContext, exp: &LangExpectation, tool: &str) -> Res
 
 async fn run_symbols_overview(ctx: &ToolContext, exp: &LangExpectation) -> Result<(), String> {
     let path = exp.path.as_deref().ok_or("Missing 'path'")?;
-    let result = GetSymbolsOverview
+    let result = ListSymbols
         .call(json!({ "relative_path": path }), ctx)
         .await
         .map_err(|e| format!("Tool error: {e}"))?;
@@ -210,7 +210,7 @@ async fn run_find_references(ctx: &ToolContext, exp: &LangExpectation) -> Result
         if attempt > 0 {
             tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64)).await;
         }
-        match FindReferencingSymbols
+        match FindReferences
             .call(json!({ "name_path": symbol, "relative_path": file }), ctx)
             .await
         {
@@ -270,7 +270,7 @@ async fn run_list_functions(ctx: &ToolContext, exp: &LangExpectation) -> Result<
 
 async fn run_search_pattern(ctx: &ToolContext, exp: &LangExpectation) -> Result<(), String> {
     let pattern = exp.pattern.as_deref().ok_or("Missing 'pattern'")?;
-    let result = SearchForPattern
+    let result = SearchPattern
         .call(json!({ "pattern": pattern }), ctx)
         .await
         .map_err(|e| format!("Tool error: {e}"))?;
