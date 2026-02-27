@@ -85,17 +85,24 @@ impl LspManager {
             // Wait until the value changes from None to Some(bool).
             let _ = rx.wait_for(|v| v.is_some()).await;
             // Check the cache — starter should have inserted on success.
-            let clients = self.clients.lock().await;
-            if let Some(client) = clients.get(language) {
-                if client.is_alive() && client.workspace_root == workspace_root {
-                    return Ok(client.clone());
+            // IMPORTANT: scope the lock so it drops before any call to do_start,
+            // which also locks `self.clients`. Tokio Mutex is not reentrant —
+            // holding it while calling do_start would deadlock.
+            {
+                let clients = self.clients.lock().await;
+                if let Some(client) = clients.get(language) {
+                    if client.is_alive() && client.workspace_root == workspace_root {
+                        return Ok(client.clone());
+                    }
                 }
             }
             // Starter failed or client doesn't match — fall through to try ourselves.
             // Clean up the old barrier and register as a new starter.
             let (tx, rx) = tokio::sync::watch::channel(None);
-            let mut starting = self.starting.lock().await;
-            starting.insert(language.to_string(), rx);
+            {
+                let mut starting = self.starting.lock().await;
+                starting.insert(language.to_string(), rx);
+            }
             return self.do_start(language, workspace_root, tx).await;
         }
 
@@ -112,14 +119,23 @@ impl LspManager {
         tx: tokio::sync::watch::Sender<Option<bool>>,
     ) -> Result<Arc<LspClient>> {
         // Evict dead/stale client if present.
-        {
+        // Remove from map first and release the lock, THEN shut down.
+        // Calling shutdown().await while holding the clients lock would block
+        // all other get_or_start callers (any language) for up to 35 seconds.
+        let stale_client = {
             let mut clients = self.clients.lock().await;
             if let Some(client) = clients.get(language) {
                 if !client.is_alive() || client.workspace_root != workspace_root {
-                    let old = clients.remove(language).unwrap();
-                    let _ = old.shutdown().await;
+                    clients.remove(language)
+                } else {
+                    None
                 }
+            } else {
+                None
             }
+        };
+        if let Some(old) = stale_client {
+            let _ = old.shutdown().await;
         }
 
         let config = servers::default_config(language, workspace_root)
