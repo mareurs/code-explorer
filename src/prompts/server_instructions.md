@@ -1,6 +1,6 @@
 code-explorer MCP server: high-performance semantic code intelligence.
 Provides file operations, symbol navigation (LSP), AST analysis (tree-sitter),
-git history/blame, semantic search (embeddings), and project memory.
+git blame, semantic search (embeddings), and project memory.
 
 ## How to Choose the Right Tool
 
@@ -18,6 +18,10 @@ git history/blame, semantic search (embeddings), and project memory.
 
 ### Library code
 `find_symbol` auto-discovers libraries. Use `scope: "lib:<name>"` on symbol/search tools.
+
+### Other local repositories
+- **Quick peek** (few files): use absolute paths — `list_dir`, `read_file`, `list_functions`, `search_pattern` all work without switching projects
+- **Deep dive** (symbols, references, semantic search): `activate_project("/absolute/path")` first, explore, then switch back
 
 ## Output Modes
 
