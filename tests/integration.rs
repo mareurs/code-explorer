@@ -223,9 +223,9 @@ async fn workflow_project_memory_config() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn workflow_create_git_history() {
+async fn workflow_git_blame() {
     use code_explorer::tools::file::CreateTextFile;
-    use code_explorer::tools::git::{GitBlame, GitLog};
+    use code_explorer::tools::git::GitBlame;
 
     let dir = tempdir().unwrap();
 
@@ -271,15 +271,6 @@ async fn workflow_create_git_history() {
     let lines = blame_result["lines"].as_array().unwrap();
     assert!(!lines.is_empty(), "blame should return lines");
     assert_eq!(lines[0]["author"], "Test");
-
-    // Step 4: Log
-    let log_result = GitLog
-        .call(json!({ "path": "hello.rs" }), &ctx)
-        .await
-        .unwrap();
-    let commits = log_result["commits"].as_array().unwrap();
-    assert_eq!(commits.len(), 1);
-    assert_eq!(commits[0]["message"], "Initial commit");
 
     drop(dir);
 }

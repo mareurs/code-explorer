@@ -5,8 +5,6 @@ use serde_json::{json, Value};
 use std::path::Path;
 
 pub struct GitBlame;
-pub struct GitLog;
-pub struct GitDiff;
 
 #[async_trait::async_trait]
 impl Tool for GitBlame {
@@ -72,106 +70,6 @@ impl Tool for GitBlame {
             result["overflow"] = super::output::OutputGuard::overflow_json(&ov);
         }
         Ok(result)
-    }
-}
-
-#[async_trait::async_trait]
-impl Tool for GitLog {
-    fn name(&self) -> &str {
-        "git_log"
-    }
-    fn description(&self) -> &str {
-        "Show commit history for a file or the whole project."
-    }
-    fn input_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "path": { "type": "string", "description": "File path (omit for project-wide log)" },
-                "limit": { "type": "integer", "default": 20 }
-            }
-        })
-    }
-    async fn call(&self, input: Value, ctx: &ToolContext) -> anyhow::Result<Value> {
-        let root = ctx.agent.require_project_root().await?;
-        let limit = input["limit"].as_u64().unwrap_or(20) as usize;
-
-        let repo = crate::git::open_repo(&root)?;
-
-        if let Some(path_str) = input["path"].as_str() {
-            let security = ctx.agent.security_config().await;
-            crate::util::path_security::validate_read_path(path_str, Some(&root), &security)?;
-            let commits = crate::git::file_log(&repo, Path::new(path_str), limit)?;
-            Ok(json!({ "commits": commits, "file": path_str }))
-        } else {
-            // Project-wide log: walk HEAD without file filtering
-            let mut revwalk = repo.revwalk()?;
-            revwalk.push_head()?;
-            revwalk.set_sorting(git2::Sort::TIME)?;
-
-            let mut commits = vec![];
-            for oid in revwalk.take(limit) {
-                let oid = oid?;
-                let commit = repo.find_commit(oid)?;
-                commits.push(crate::git::CommitSummary {
-                    sha: format!("{:.8}", commit.id()),
-                    message: commit.summary().unwrap_or("<no message>").to_string(),
-                    author: commit.author().name().unwrap_or("unknown").to_string(),
-                    timestamp: commit.time().seconds(),
-                });
-            }
-            Ok(json!({ "commits": commits }))
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl Tool for GitDiff {
-    fn name(&self) -> &str {
-        "git_diff"
-    }
-    fn description(&self) -> &str {
-        "Show the diff of uncommitted changes, or against a specific commit."
-    }
-    fn input_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "path": { "type": "string", "description": "Restrict diff to this file (optional)" },
-                "commit": { "type": "string", "description": "Commit SHA to diff against (default: HEAD)" },
-                "detail_level": { "type": "string", "description": "Output detail: omit for compact with truncation (default), 'full' for complete diff" }
-            }
-        })
-    }
-    async fn call(&self, input: Value, ctx: &ToolContext) -> anyhow::Result<Value> {
-        let root = ctx.agent.require_project_root().await?;
-        let repo = crate::git::open_repo(&root)?;
-
-        let file_str = input["path"].as_str();
-        if let Some(path_str) = file_str {
-            let security = ctx.agent.security_config().await;
-            crate::util::path_security::validate_read_path(path_str, Some(&root), &security)?;
-        }
-        let commit = input["commit"].as_str();
-
-        let guard = super::output::OutputGuard::from_input(&input);
-        let diff_text = crate::git::diff_workdir(&repo, file_str.map(Path::new), commit)?;
-
-        if guard.mode == super::output::OutputMode::Exploring && diff_text.len() > 50_000 {
-            // Truncate at ~50KB, cutting at last newline to avoid mid-line breaks
-            let truncated = &diff_text[..50_000];
-            let cut = truncated.rfind('\n').unwrap_or(50_000);
-            Ok(json!({
-                "diff": &diff_text[..cut],
-                "overflow": {
-                    "shown_bytes": cut,
-                    "total_bytes": diff_text.len(),
-                    "hint": "Diff truncated. Use detail_level='full' for complete output, or restrict to a specific file with 'path'."
-                }
-            }))
-        } else {
-            Ok(json!({ "diff": diff_text }))
-        }
     }
 }
 
@@ -263,126 +161,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn log_returns_commits() {
-        let (_dir, ctx) = git_test_ctx().await;
-        let result = GitLog
-            .call(json!({ "path": "hello.rs" }), &ctx)
-            .await
-            .unwrap();
-        let commits = result["commits"].as_array().unwrap();
-        assert_eq!(commits.len(), 1);
-        assert_eq!(commits[0]["message"], "initial commit");
-    }
-
-    #[tokio::test]
-    async fn log_project_wide() {
-        let (_dir, ctx) = git_test_ctx().await;
-        let result = GitLog.call(json!({}), &ctx).await.unwrap();
-        let commits = result["commits"].as_array().unwrap();
-        assert_eq!(commits.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn diff_shows_uncommitted_changes() {
-        let (dir, ctx) = git_test_ctx().await;
-        // Modify the file without committing
-        std::fs::write(
-            dir.path().join("hello.rs"),
-            "fn main() {\n    println!(\"hi\");\n}\n",
-        )
-        .unwrap();
-
-        let result = GitDiff.call(json!({}), &ctx).await.unwrap();
-        let diff = result["diff"].as_str().unwrap();
-        assert!(diff.contains("+"), "diff should contain additions");
-    }
-
-    #[tokio::test]
-    async fn diff_empty_when_clean() {
-        let (_dir, ctx) = git_test_ctx().await;
-        let result = GitDiff.call(json!({}), &ctx).await.unwrap();
-        let diff = result["diff"].as_str().unwrap();
-        assert!(diff.is_empty(), "clean workdir should have empty diff");
-    }
-
-    #[tokio::test]
     async fn tools_error_without_project() {
         let ctx = ToolContext {
             agent: Agent::new(None).await.unwrap(),
             lsp: Arc::new(LspManager::new()),
         };
         assert!(GitBlame.call(json!({ "path": "x" }), &ctx).await.is_err());
-        assert!(GitLog.call(json!({}), &ctx).await.is_err());
-        assert!(GitDiff.call(json!({}), &ctx).await.is_err());
-    }
-
-    /// Helper: create a repo with two commits and return the test context.
-    async fn two_commit_ctx() -> (tempfile::TempDir, ToolContext) {
-        let dir = tempdir().unwrap();
-        let repo = git2::Repository::init(dir.path()).unwrap();
-        let sig = git2::Signature::now("Test", "test@test.com").unwrap();
-
-        let file_path = dir.path().join("hello.rs");
-        std::fs::write(&file_path, "fn v1() {}\n").unwrap();
-        let mut index = repo.index().unwrap();
-        index.add_path(Path::new("hello.rs")).unwrap();
-        index.write().unwrap();
-        let tree_id = index.write_tree().unwrap();
-        let tree = repo.find_tree(tree_id).unwrap();
-        let parent = repo
-            .commit(Some("HEAD"), &sig, &sig, "first commit", &tree, &[])
-            .unwrap();
-
-        std::fs::write(&file_path, "fn v1() {}\nfn v2() {}\n").unwrap();
-        index.add_path(Path::new("hello.rs")).unwrap();
-        index.write().unwrap();
-        let tree_id2 = index.write_tree().unwrap();
-        let tree2 = repo.find_tree(tree_id2).unwrap();
-        let parent_commit = repo.find_commit(parent).unwrap();
-        repo.commit(
-            Some("HEAD"),
-            &sig,
-            &sig,
-            "second commit",
-            &tree2,
-            &[&parent_commit],
-        )
-        .unwrap();
-
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
-        let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
-        (
-            dir,
-            ToolContext {
-                agent,
-                lsp: Arc::new(LspManager::new()),
-            },
-        )
-    }
-
-    #[tokio::test]
-    async fn diff_accepts_head_tilde_ref() {
-        let (_dir, ctx) = two_commit_ctx().await;
-        // HEAD~1 should resolve to the first commit; diff between first commit
-        // and working dir should show v2() as an addition.
-        let result = GitDiff
-            .call(json!({ "commit": "HEAD~1" }), &ctx)
-            .await
-            .expect("HEAD~1 should be a valid ref");
-        let diff = result["diff"].as_str().unwrap();
-        assert!(
-            diff.contains("v2"),
-            "diff against HEAD~1 should show v2 addition"
-        );
-    }
-
-    #[tokio::test]
-    async fn diff_rejects_invalid_ref() {
-        let (_dir, ctx) = two_commit_ctx().await;
-        let err = GitDiff
-            .call(json!({ "commit": "not-a-real-branch" }), &ctx)
-            .await
-            .unwrap_err();
-        assert!(err.to_string().contains("Invalid commit ref"));
     }
 }

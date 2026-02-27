@@ -21,7 +21,7 @@ use crate::tools::{
     ast::{ExtractDocstrings, ListFunctions},
     config::{ActivateProject, GetCurrentConfig},
     file::{CreateTextFile, EditLines, FindFile, ListDir, ReadFile, SearchForPattern},
-    git::{GitBlame, GitDiff, GitLog},
+    git::GitBlame,
     library::{IndexLibrary, ListLibraries},
     memory::{DeleteMemory, ListMemories, ReadMemory, WriteMemory},
     semantic::{CheckDrift, IndexProject, IndexStatus, SemanticSearch},
@@ -78,10 +78,8 @@ impl CodeExplorerServer {
             // AST tools (stub — require tree-sitter wiring)
             Arc::new(ListFunctions),
             Arc::new(ExtractDocstrings),
-            // Git tools (stub — require Agent project root)
+            // Git tools
             Arc::new(GitBlame),
-            Arc::new(GitLog),
-            Arc::new(GitDiff),
             // Memory tools (stub — require Agent project root)
             Arc::new(WriteMemory),
             Arc::new(ReadMemory),
@@ -430,8 +428,6 @@ mod tests {
             "list_functions",
             "list_docs",
             "git_blame",
-            "git_log",
-            "git_diff",
             "write_memory",
             "read_memory",
             "list_memories",
