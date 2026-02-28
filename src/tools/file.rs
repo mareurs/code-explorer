@@ -432,7 +432,8 @@ impl Tool for EditLines {
                 "path": { "type": "string", "description": "File path" },
                 "start_line": { "type": "integer", "description": "1-based line where edit begins" },
                 "delete_count": { "type": "integer", "description": "Lines to remove (0 = pure insertion)" },
-                "new_text": { "type": "string", "description": "Text to insert (may contain newlines). Omit for pure deletion." }
+                "new_text": { "type": "string", "description": "Text to insert (may contain newlines). Omit for pure deletion." },
+                "expected_content": { "type": "string", "description": "Safety guard: if provided, the content at start_line must match this string (whitespace-trimmed). If it does not match, the edit is aborted with an error showing the actual content found." }
             }
         })
     }
@@ -443,6 +444,7 @@ impl Tool for EditLines {
         let start_line = super::require_u64_param(&input, "start_line")? as usize;
         let delete_count = super::require_u64_param(&input, "delete_count")? as usize;
         let new_text = input["new_text"].as_str().unwrap_or("");
+        let expected_content = input["expected_content"].as_str();
 
         if start_line == 0 {
             return Err(super::RecoverableError::with_hint(
@@ -485,6 +487,22 @@ impl Tool for EditLines {
                 "Reduce delete_count or adjust start_line.",
             )
             .into());
+        }
+        // Safety guard: verify target line matches expected_content before editing
+        if let Some(expected) = expected_content {
+            let actual = lines.get(idx).copied().unwrap_or("");
+            if actual.trim() != expected.trim() {
+                return Err(super::RecoverableError::with_hint(
+                    format!(
+                        "line {} content mismatch — expected {:?}, found {:?}",
+                        start_line,
+                        expected.trim(),
+                        actual.trim()
+                    ),
+                    "Verify the line number with search_pattern before editing. Prefer replace_symbol for code.",
+                )
+                .into());
+            }
         }
 
         // Build new text lines
@@ -1540,6 +1558,67 @@ mod tests {
             .await;
 
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn edit_lines_expected_content_matches_succeeds() {
+        let (dir, ctx) = project_ctx().await;
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "alpha\nbeta\ngamma\n").unwrap();
+
+        let result = EditLines
+            .call(
+                json!({
+                    "path": file.to_str().unwrap(),
+                    "start_line": 2,
+                    "delete_count": 1,
+                    "new_text": "REPLACED",
+                    "expected_content": "beta"
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+        assert_eq!(result["status"], "ok");
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "alpha\nREPLACED\ngamma\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn edit_lines_expected_content_mismatch_errors() {
+        let (dir, ctx) = project_ctx().await;
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "alpha\nbeta\ngamma\n").unwrap();
+
+        let result = EditLines
+            .call(
+                json!({
+                    "path": file.to_str().unwrap(),
+                    "start_line": 2,
+                    "delete_count": 1,
+                    "new_text": "REPLACED",
+                    "expected_content": "wrong_line"
+                }),
+                &ctx,
+            )
+            .await;
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("content mismatch"),
+            "expected 'content mismatch' in: {err}"
+        );
+        assert!(
+            err.contains("wrong_line"),
+            "expected 'wrong_line' in: {err}"
+        );
+        assert!(err.contains("beta"), "expected 'beta' in: {err}");
+        // File must be untouched
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "alpha\nbeta\ngamma\n"
+        );
     }
 
     #[tokio::test]

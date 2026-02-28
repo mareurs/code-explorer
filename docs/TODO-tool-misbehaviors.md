@@ -106,4 +106,59 @@ broad and matched a partial occurrence the tool incorrectly reported as 0.
 
 **Fix ideas:**
 <options for fixing it in the tool or in its UX>
+
+---
+
+### BUG-003 — `replace_symbol` eats closing `}` of preceding method
+
+**Date:** 2026-02-28
+**Severity:** High — silently corrupts the file
+
+**What happened:**
+Called `replace_symbol` on `impl Tool for EditLines/input_schema`. The LSP's symbol range
+for `input_schema` apparently included the closing `    }` and blank line of the *preceding*
+`description` method. My replacement body started with `fn input_schema...` (without that
+`    }` prefix), so the description method lost its closing brace — making it span into
+`input_schema` and beyond in the compiler's view.
+
+**Root cause hypothesis:**
+The LSP (rust-analyzer) reports the symbol range for a method as including any leading
+whitespace or closing tokens from the prior method that appear before the `fn` keyword.
+When `replace_symbol` replaces that range with content that doesn't re-emit those tokens,
+they're silently deleted.
+
+**Reproduction hint:**
+Any `replace_symbol` on a method that is not the first in an impl block. The preceding
+method's closing `}` and the blank line separator are both at risk.
+
+**Fix ideas:**
+- Before any `replace_symbol`, verify the body starts where expected using `search_pattern`.
+- Use `edit_lines` with `expected_content` for surgical modifications instead of full-body replacement.
+- Inspect the raw LSP range returned for each symbol and warn when it includes content from preceding symbols.
+
+---
+
+### BUG-004 — `insert_code` inserts inside a function body instead of after it
+
+**Date:** 2026-02-28
+**Severity:** High — silently corrupts the file
+
+**What happened:**
+Called `insert_code(name_path="tests/edit_lines_missing_params_errors", position="after")`.
+The insertion was placed *inside* `edit_lines_delete_past_eof_errors` — inside its
+`json!({...})` body — rather than after `edit_lines_missing_params_errors`.
+
+**Root cause hypothesis:**
+The LSP symbol range for `edit_lines_missing_params_errors` apparently ends at a line that
+is *within* a neighboring (likely the next) function. `insert_code` uses the `end_line` of
+the symbol to determine the insertion point, but the `end_line` was stale or incorrect.
+Could also be a name-path resolution issue — the tool may have matched the wrong function.
+
+**Fix ideas:**
+- After `insert_code`, verify the insertion with `search_pattern` to confirm the new code
+  is in the expected location.
+- Consider using `edit_lines` for insertions when position must be precise.
+- Add a post-insertion check: if the line immediately after the insertion is not a blank line
+  or `#[...` or `}`, warn the caller.
+
 ```

@@ -15,6 +15,18 @@ cargo run -- index --project .     # Build embedding index
 
 **Always run `cargo fmt`, `cargo clippy`, and `cargo test` before completing any task.**
 
+## Tool Misbehavior Log — MANDATORY
+
+**`docs/TODO-tool-misbehaviors.md` is a living document. You MUST maintain it.**
+
+- **Before starting any task**, read it to know current tool limitations.
+- **While working**, watch for: wrong edits, corrupt output, silent failures, misleading errors from code-explorer's own MCP tools.
+- **When you notice anything unexpected**, add an entry to that file **before continuing** — even a one-liner. Capture: what you did, what you expected, what happened, and a probable cause.
+- Do not wait until you finish the task. Log it immediately while context is fresh.
+
+This applies to ALL unexpected tool behavior: `edit_lines`, `rename_symbol`, `replace_symbol`, `find_symbol`, `semantic_search`, etc.
+
+
 ## Git Workflow
 
 **This is a public repo.** Do not push incomplete or untested work.

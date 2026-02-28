@@ -192,7 +192,6 @@ mod tests {
         assert!(lines[0]["content"].as_str().unwrap().contains("fn main"));
     }
 
-
     #[tokio::test]
     async fn tools_error_without_project() {
         let ctx = ToolContext {

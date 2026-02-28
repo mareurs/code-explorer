@@ -1473,6 +1473,7 @@ impl Tool for RenameSymbol {
             "textual_match_count": textual_total,
             "textual_matches_shown": textual_shown,
             "sweep_skipped": sweep_skipped,
+            "verify_hint": "LSP rename may match occurrences inside string literals, comments, or macro arguments. Verify each changed file is still valid (e.g. cargo check / tsc --noEmit).",
         });
         if let Some(reason) = sweep_skip_reason {
             result["sweep_skip_reason"] = json!(reason);
@@ -3014,7 +3015,7 @@ fn main() {
     #[test]
     fn list_symbols_single_file_cap_unit() {
         // Unit test: simulate the cap logic on a Vec<Value> of 150 symbol entries.
-        use super::{OutputGuard, OutputMode};
+        use super::OutputGuard;
         let symbols: Vec<Value> = (0..150)
             .map(|i| json!({ "name": format!("sym{i}"), "start_line": i + 1 }))
             .collect();

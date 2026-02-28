@@ -35,12 +35,12 @@ git blame, semantic search (embeddings), and project memory.
 
 - `replace_symbol(name_path, path, new_body)` — replace entire symbol body (preferred for code)
 - `insert_code(name_path, path, code, position)` — insert before or after a named symbol
-- `edit_lines(path, start_line, delete_count, new_text)` — line-level splice for non-code files or when symbol tools don't fit
+- `edit_lines(path, start_line, delete_count, new_text, expected_content?)` — line-level splice for non-code files or when symbol tools don't fit. Pass `expected_content` to guard against wrong-line edits: if the content at `start_line` doesn't match, the edit is aborted with an error showing what was actually there.
 - `create_file(path, content)` — create or overwrite a file
 
 ### Refactor
 
-- `rename_symbol(name_path, path, new_name)` — rename across the entire codebase via LSP. Sweeps for remaining textual occurrences (comments, docs, strings) that LSP missed.
+- `rename_symbol(name_path, path, new_name)` — rename across the entire codebase via LSP. Sweeps for remaining textual occurrences (comments, docs, strings) that LSP missed. **Warning:** LSP rename may corrupt string literals or macro arguments that contain the old name — always verify changed files compile after use.
 
 ### Library code
 
