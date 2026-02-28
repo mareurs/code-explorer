@@ -198,6 +198,17 @@ impl LspManager {
             .map(|(lang, _)| lang.clone())
             .collect()
     }
+
+    /// Notify all active LSP clients that a file was modified on disk by a write tool.
+    /// Each client silently skips the file if it doesn't have it open.
+    pub async fn notify_file_changed(&self, path: &std::path::Path) {
+        let clients: Vec<_> = self.clients.lock().await.values().cloned().collect();
+        for client in clients {
+            if client.is_alive() {
+                let _ = client.did_change(path).await;
+            }
+        }
+    }
 }
 
 #[cfg(test)]

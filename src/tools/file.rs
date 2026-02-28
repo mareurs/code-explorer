@@ -334,6 +334,7 @@ impl Tool for CreateFile {
         let security = ctx.agent.security_config().await;
         let resolved = crate::util::path_security::validate_write_path(path, &root, &security)?;
         crate::util::fs::write_utf8(&resolved, content)?;
+        ctx.lsp.notify_file_changed(&resolved).await;
         Ok(
             json!({ "status": "ok", "path": resolved.display().to_string(), "bytes": content.len() }),
         )
@@ -526,6 +527,7 @@ impl Tool for EditLines {
             out.push('\n');
         }
         std::fs::write(&resolved, &out)?;
+        ctx.lsp.notify_file_changed(&resolved).await;
 
         Ok(json!({
             "status": "ok",

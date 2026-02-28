@@ -1114,6 +1114,7 @@ impl Tool for ReplaceSymbol {
         new_lines.extend_from_slice(&lines[end..]);
 
         write_lines(&full_path, &new_lines, content.ends_with('\n'))?;
+        ctx.lsp.notify_file_changed(&full_path).await;
         Ok(json!({ "status": "ok", "replaced_lines": format!("{}-{}", start + 1, end) }))
     }
 }
@@ -1177,6 +1178,7 @@ impl Tool for InsertCode {
         new_lines.extend_from_slice(&lines[insert_at..]);
 
         write_lines(&full_path, &new_lines, content.ends_with('\n'))?;
+        ctx.lsp.notify_file_changed(&full_path).await;
         Ok(json!({ "status": "ok", "inserted_at_line": insert_at + 1, "position": position }))
     }
 }

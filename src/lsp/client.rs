@@ -739,6 +739,29 @@ impl LspClient {
         )
         .await
     }
+
+    /// Notify the LSP server that a file it has open was modified on disk by an external tool.
+    /// No-op if the file is not currently open in this server.
+    pub async fn did_change(&self, path: &Path) -> Result<()> {
+        if !self.open_files.lock().unwrap().contains(path) {
+            return Ok(());
+        }
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("Failed to read file for didChange: {:?}", path))?;
+        let uri = path_to_uri(path)?;
+        self.notify(
+            "textDocument/didChange",
+            serde_json::to_value(lsp_types::DidChangeTextDocumentParams {
+                text_document: lsp_types::VersionedTextDocumentIdentifier { uri, version: 1 },
+                content_changes: vec![lsp_types::TextDocumentContentChangeEvent {
+                    range: None,
+                    range_length: None,
+                    text: content,
+                }],
+            })?,
+        )
+        .await
+    }
 }
 
 impl Drop for LspClient {
