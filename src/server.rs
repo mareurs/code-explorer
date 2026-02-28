@@ -232,6 +232,20 @@ fn route_tool_error(e: anyhow::Error) -> CallToolResult {
         }
         let text = serde_json::to_string_pretty(&body).unwrap_or_else(|_| body.to_string());
         CallToolResult::success(vec![Content::text(text)])
+    } else if e.to_string().contains("code -32800") {
+        // LSP RequestCancelled — treat as recoverable so sibling parallel tool calls are not aborted.
+        let body = serde_json::json!({
+            "error": e.to_string(),
+            "hint": "The LSP server cancelled this request (code -32800). Common causes:\n\
+                     (1) Another editor (e.g. VS Code) is running a language server for the same \
+                     project. kotlin-lsp v0.253 uses an on-disk MVStore index that only supports \
+                     one session at a time — the workspace database is locked. Close the other \
+                     editor session or upgrade kotlin-lsp to v261+ (which allows shared access).\n\
+                     (2) The server just started and is still running background indexing \
+                     (can take 1-5 minutes on first run). Wait and retry the call."
+        });
+        let text = serde_json::to_string_pretty(&body).unwrap_or_else(|_| body.to_string());
+        CallToolResult::success(vec![Content::text(text)])
     } else {
         CallToolResult::error(vec![Content::text(e.to_string())])
     }
@@ -622,6 +636,30 @@ mod tests {
     #[test]
     fn plain_anyhow_error_routes_to_is_error_true() {
         let err = anyhow::anyhow!("LSP crashed unexpectedly");
+        let result = route_tool_error(err);
+        assert_eq!(result.is_error, Some(true));
+    }
+
+    #[test]
+    fn lsp_request_cancelled_routes_to_recoverable_not_fatal() {
+        // Kotlin-lsp (and other IntelliJ-based servers) send code -32800 when
+        // they cancel a request due to concurrent load.  This must NOT produce
+        // isError:true, otherwise Claude Code aborts all sibling parallel calls.
+        let err = anyhow::anyhow!("LSP error (code -32800): cancelled");
+        let result = route_tool_error(err);
+        assert!(
+            result.is_error != Some(true),
+            "LSP RequestCancelled must not set isError:true"
+        );
+        let text = &result.content[0].as_text().unwrap().text;
+        let body: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert!(body.get("hint").is_some(), "must include retry hint");
+    }
+
+    #[test]
+    fn other_lsp_errors_still_route_to_is_error_true() {
+        // Only -32800 gets the recoverable treatment; other LSP errors are fatal.
+        let err = anyhow::anyhow!("LSP error (code -32603): internal error");
         let result = route_tool_error(err);
         assert_eq!(result.is_error, Some(true));
     }
