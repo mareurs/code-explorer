@@ -313,7 +313,7 @@ let path = input["path"]
 ```
 
 **Tool access control** — the server checks tool access before dispatching.
-Restricted tools (like `execute_shell_command`) are blocked at the server level,
+Restricted tools (like `run_command`) are blocked at the server level,
 not inside the tool itself.
 
 ### What not to do

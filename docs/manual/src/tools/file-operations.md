@@ -1,6 +1,6 @@
 # File Operations
 
-These four tools cover reading, listing, searching, and locating files. They are read-only — no file is modified. For writing and editing, see [Editing](./editing.md).
+These tools cover reading, listing, searching, and locating files. They are read-only — no file is modified. For writing and editing, see [Editing](./editing.md).
 
 All paths are relative to the active project root unless you supply an absolute path. Reads are subject to the project's security deny-list (e.g. SSH keys and credential files are blocked by default).
 
@@ -61,9 +61,9 @@ When you supply both `start_line` and `end_line`, the tool returns exactly those
 
 **Tips:**
 
-- Use `get_symbols_overview` or `find_symbol` to locate the line range of a function before calling `read_file` — this lets you fetch exactly what you need without reading the whole file.
+- Use `list_symbols` or `find_symbol` to locate the line range of a function before calling `read_file` — this lets you fetch exactly what you need without reading the whole file.
 - For large files, prefer reading in chunks with explicit `start_line`/`end_line` over reading the whole file.
-- If you want to search for a pattern rather than read, use `search_for_pattern` instead.
+- If you want to search for a pattern rather than read, use `search_pattern` instead.
 
 ---
 
@@ -122,7 +122,7 @@ Hidden files and paths matched by `.gitignore` are excluded automatically.
 
 ---
 
-## `search_for_pattern`
+## `search_pattern`
 
 **Purpose:** Search the codebase for a regex pattern. Returns matching lines with file path and line number.
 
@@ -170,7 +170,7 @@ The search walks the directory tree using the same `.gitignore`-aware walker as 
 
 - Use `path` to narrow the search when you already know which part of the codebase is relevant — this is significantly faster on large repos.
 - Increase `max_results` if you expect many matches and need to see them all.
-- When you know a symbol name, `find_symbol` is more precise than a regex search because it uses the LSP index. Use `search_for_pattern` when you are looking for text patterns, string literals, comments, or constructs that the LSP does not model as symbols.
+- When you know a symbol name, `find_symbol` is more precise than a regex search because it uses the LSP index. Use `search_pattern` when you are looking for text patterns, string literals, comments, or constructs that the LSP does not model as symbols.
 - To find files by name (not content), use `find_file`.
 
 ---
@@ -222,5 +222,5 @@ The glob is matched against the path relative to the search directory, so `**/*.
 **Tips:**
 
 - Prefer `find_file` over `list_dir` when you are looking for files by name — the glob match is more expressive than scanning a directory tree manually.
-- Use `search_for_pattern` when you need to find files by their contents rather than their names.
+- Use `search_pattern` when you need to find files by their contents rather than their names.
 - The `**` wildcard matches across directory boundaries. Use it for language-wide searches like `**/*.rs` or to locate files with a specific name anywhere in the tree: `**/Makefile`.

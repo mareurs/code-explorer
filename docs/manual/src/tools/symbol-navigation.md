@@ -1,6 +1,6 @@
 # Symbol Navigation
 
-These seven tools give you IDE-grade code navigation backed by the Language
+These eight tools give you IDE-grade code navigation backed by the Language
 Server Protocol. They understand code structure — symbols, definitions,
 references, types — not just bytes and lines.
 
@@ -11,11 +11,11 @@ All symbol navigation tools require an LSP server for the target language. If
 the LSP server is not running or is still indexing, some tools fall back to
 tree-sitter for basic results.
 
-**Scope parameter:** `find_symbol`, `get_symbols_overview`, `find_referencing_symbols`, and `list_functions` accept an optional `scope` string to search library code as well as project code. See [Library Navigation](library-navigation.md) for the full scope reference.
+**Scope parameter:** `find_symbol`, `list_symbols`, `find_references`, and `list_functions` accept an optional `scope` string to search library code as well as project code. See [Library Navigation](library-navigation.md) for the full scope reference.
 
 ---
 
-## `get_symbols_overview`
+## `list_symbols`
 
 **Purpose:** Return the symbol tree (functions, classes, methods, structs, etc.)
 for a file, directory, or glob pattern. Use this to orient yourself before
@@ -35,7 +35,7 @@ reading or editing.
 
 ```json
 {
-  "tool": "get_symbols_overview",
+  "tool": "list_symbols",
   "arguments": {
     "relative_path": "src/auth/middleware.rs"
   }
@@ -65,7 +65,7 @@ from `start_line` to `end_line`.
 
 ```json
 {
-  "tool": "get_symbols_overview",
+  "tool": "list_symbols",
   "arguments": {
     "relative_path": "src/handlers/"
   }
@@ -79,7 +79,7 @@ project root (`.`), walks the entire source tree recursively.
 
 ```json
 {
-  "tool": "get_symbols_overview",
+  "tool": "list_symbols",
   "arguments": {
     "relative_path": "src/**/*.py",
     "depth": 0
@@ -203,13 +203,13 @@ their source body.
   symbols, which is slower but scoped.
 - `name_path` in the result uses `/` as a separator for nested symbols, e.g.
   `AuthService/authenticate_user`. You need this value for
-  `find_referencing_symbols`, `replace_symbol_body`, and related editing tools.
+  `find_references`, `replace_symbol`, and related editing tools.
 - Use `include_body: true` in the same call to avoid a separate read step when
   you already know the symbol name.
 
 ---
 
-## `find_referencing_symbols`
+## `find_references`
 
 **Purpose:** Find all locations in the codebase that reference (call, use,
 import) a given symbol. This is the "find all usages" feature from your IDE.
@@ -228,7 +228,7 @@ import) a given symbol. This is the "find all usages" feature from your IDE.
 
 ```json
 {
-  "tool": "find_referencing_symbols",
+  "tool": "find_references",
   "arguments": {
     "name_path": "AuthService/authenticate_user",
     "relative_path": "src/auth/service.rs"
@@ -268,7 +268,7 @@ import) a given symbol. This is the "find all usages" feature from your IDE.
 
 ```json
 {
-  "tool": "find_referencing_symbols",
+  "tool": "find_references",
   "arguments": {
     "name_path": "Logger/log",
     "relative_path": "src/logging.rs",
@@ -283,7 +283,7 @@ import) a given symbol. This is the "find all usages" feature from your IDE.
 
 - Both `name_path` and `relative_path` are required. The LSP needs to locate
   the symbol's definition position before it can find references.
-- `name_path` must match the `name_path` value from `get_symbols_overview` or
+- `name_path` must match the `name_path` value from `list_symbols` or
   `find_symbol` output, not just the bare name. For a top-level function, the
   name_path is just the function name (e.g. `"validate_token"`). For a method,
   it is `"StructName/method_name"`.
@@ -294,7 +294,7 @@ import) a given symbol. This is the "find all usages" feature from your IDE.
 
 ---
 
-## `replace_symbol_body`
+## `replace_symbol`
 
 **Purpose:** Replace the entire body of a named symbol with new source code.
 The tool locates the symbol by name via LSP and replaces the lines from its
@@ -312,7 +312,7 @@ start to its end — no line numbers required.
 
 ```json
 {
-  "tool": "replace_symbol_body",
+  "tool": "replace_symbol",
   "arguments": {
     "name_path": "UserService/find_by_email",
     "relative_path": "src/services/user.rs",
@@ -334,7 +334,7 @@ start to its end — no line numbers required.
 
 ```json
 {
-  "tool": "replace_symbol_body",
+  "tool": "replace_symbol",
   "arguments": {
     "name_path": "TokenValidator/validate",
     "relative_path": "auth/validators.py",
@@ -350,133 +350,61 @@ start to its end — no line numbers required.
   within the span, and the closing brace.
 - Read the current body first with `find_symbol` + `include_body: true` before
   rewriting, to confirm you understand the existing signature and indentation.
-- Use `replace_symbol_body` for any change that touches a significant portion
+- Use `replace_symbol` for any change that touches a significant portion
   of the function. For small surgical changes (renaming a variable, changing
-  one line), `replace_content` with a literal pattern is less disruptive.
+  one line), `edit_lines` with a precise range is less disruptive.
 - This tool is robust to refactors above the target function. Line numbers
   change; symbol names generally do not.
 
 ---
 
-## `insert_before_symbol`
+## `insert_code`
 
-**Purpose:** Insert code immediately before a named symbol. The insertion point
-is the line where the symbol begins.
+**Purpose:** Insert code immediately before or after a named symbol. Addresses the insertion point by symbol name — no line numbers needed.
 
 **Parameters:**
 
 | Name | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
-| `name_path` | string | yes | — | Symbol identifier |
-| `relative_path` | string | yes | — | File containing the symbol |
-| `code` | string | yes | — | Source code to insert |
+| `name_path` | string | yes | — | Symbol name path (e.g. `'MyStruct/my_method'`) |
+| `path` | string | yes | — | File path (relative or absolute) |
+| `code` | string | yes | — | Code to insert (may contain newlines) |
+| `position` | string | no | `"after"` | `"before"` or `"after"` the symbol |
 
-**Example — add a new function before an existing one:**
+**Example — add a helper function after an existing one:**
 
 ```json
 {
-  "tool": "insert_before_symbol",
+  "tool": "insert_code",
   "arguments": {
-    "name_path": "authenticate_user",
-    "relative_path": "src/auth/service.rs",
-    "code": "/// Check whether the given token has not expired.\npub fn is_token_valid(token: &Token) -> bool {\n    token.expires_at > Utc::now()\n}\n"
+    "name_path": "validate_token",
+    "path": "src/auth/service.rs",
+    "code": "\npub fn revoke_token(token: &str) -> Result<()> {\n    TOKEN_STORE.remove(token);\n    Ok(())\n}\n",
+    "position": "after"
   }
 }
 ```
 
-**Output:**
+**Example — add a test before a function:**
 
 ```json
 {
-  "status": "ok",
-  "inserted_at_line": 44
-}
-```
-
-**Example — add an import before a TypeScript class:**
-
-```json
-{
-  "tool": "insert_before_symbol",
+  "tool": "insert_code",
   "arguments": {
-    "name_path": "AuthController",
-    "relative_path": "src/controllers/auth.ts",
-    "code": "import { RateLimiter } from '../middleware/rate-limiter';\n"
+    "name_path": "validate_token",
+    "path": "src/auth/service.rs",
+    "code": "#[test]\nfn test_validate_token_rejects_expired() {\n    // ...\n}\n",
+    "position": "before"
   }
 }
 ```
 
 **Tips:**
 
-- Use this to add a new function or class adjacent to a related existing one,
-  keeping the file organized by proximity.
-- For adding imports, inserting before the first class or function in a file
-  places the import in the right region.
-- The `code` string is inserted verbatim. Include a trailing newline to avoid
-  joining with the symbol that follows.
-- If you need to add something after the end of a symbol (e.g. a sibling
-  function), use `insert_after_symbol` instead.
-
----
-
-## `insert_after_symbol`
-
-**Purpose:** Insert code immediately after a named symbol — on the line
-following the symbol's closing delimiter.
-
-**Parameters:**
-
-| Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| `name_path` | string | yes | — | Symbol identifier |
-| `relative_path` | string | yes | — | File containing the symbol |
-| `code` | string | yes | — | Source code to insert |
-
-**Example — add a sibling method after an existing one:**
-
-```json
-{
-  "tool": "insert_after_symbol",
-  "arguments": {
-    "name_path": "UserService/find_by_email",
-    "relative_path": "src/services/user.rs",
-    "code": "\npub async fn find_by_id(&self, id: Uuid) -> Result<Option<User>> {\n    self.db\n        .query_opt(\"SELECT * FROM users WHERE id = $1\", &[&id])\n        .await\n        .map(|row| row.map(User::from_row))\n}\n"
-  }
-}
-```
-
-**Output:**
-
-```json
-{
-  "status": "ok",
-  "inserted_at_line": 68
-}
-```
-
-**Example — add a test after the function it tests:**
-
-```json
-{
-  "tool": "insert_after_symbol",
-  "arguments": {
-    "name_path": "parse_config",
-    "relative_path": "src/config.rs",
-    "code": "\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn test_parse_config_defaults() {\n        let cfg = parse_config(\"\").unwrap();\n        assert_eq!(cfg.timeout_ms, 5000);\n    }\n}\n"
-  }
-}
-```
-
-**Tips:**
-
-- A leading newline in `code` creates a blank line between the existing symbol
-  and the inserted code, which is standard style in most languages.
-- Prefer `insert_after_symbol` over `insert_before_symbol` when adding a
-  sibling method: the new method appears right after the related one, which
-  is the natural reading order.
-- Both insert tools are symbol-scoped. If you need to append to the end of a
-  file, use `create_text_file` (overwrite) or `replace_content` on a
-  unique anchor near the end.
+- Use `insert_code` when you want to add a new function, method, or block adjacent to an existing one without knowing its exact line numbers.
+- The symbol is located via LSP, so the insertion point is robust to edits above the target.
+- `position: "before"` inserts immediately above the symbol's first line; `"after"` inserts immediately below the symbol's last line.
+- The inserted code is not validated for syntax — make sure it compiles before committing.
 
 ---
 
@@ -546,7 +474,7 @@ operation. Every reference in every file is updated atomically.
 
 - `rename_symbol` is the safest way to rename. It uses the LSP workspace edit
   operation, which understands import paths, qualified names, and string-based
-  references that IDEs handle. A text substitution with `replace_content` will
+  references that IDEs handle. A text substitution with `search_pattern` + `edit_lines` will
   miss these cases.
 - The `relative_path` must point to the file that contains the definition, not
   a file that merely uses it.
@@ -558,4 +486,110 @@ operation. Every reference in every file is updated atomically.
 - LSP rename support varies by server. Most servers handle functions, methods,
   classes, variables, and fields. Some do not rename string literals or
   macro-generated identifiers. Check the result's `files_changed` count against
+
+
+---
+
+## `goto_definition`
+
+**Purpose:** Jump to the definition of a symbol at a given line. Resolves types via LSP — handles method calls, trait implementations, and cross-crate navigation. When the definition lives outside the project root, the library is auto-discovered and registered in `list_libraries`.
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `path` | string | yes | — | File path (relative or absolute) |
+| `line` | integer | yes | — | 1-indexed line number to jump from |
+| `identifier` | string | no | — | Optional identifier on the line to target (disambiguates when multiple symbols are on the same line) |
+
+**Example — jump to the definition of a symbol on line 42:**
+
+```json
+{
+  "tool": "goto_definition",
+  "arguments": {
+    "path": "src/tools/symbol.rs",
+    "line": 42
+  }
+}
+```
+
+**Output:**
+
+```json
+{
+  "definitions": [
+    {
+      "file": "src/lsp/symbols.rs",
+      "start_line": 12,
+      "end_line": 28
+    }
+  ]
+}
+```
+
+When the definition is in a library (outside the project root), the response includes a `library_registered` field:
+
+```json
+{
+  "definitions": [
+    {
+      "file": "/home/user/.cargo/registry/src/serde-1.0.196/src/lib.rs",
+      "start_line": 314,
+      "end_line": 320
+    }
+  ],
+  "library_registered": "serde"
+}
+```
+
+**Tips:**
+
+- Use `goto_definition` to quickly locate where a type, trait, or function is defined without searching by name.
+- When the definition is in an external library and `library_registered` appears, run `index_library` on that library to enable `semantic_search` across it.
+- Supply `identifier` when the line has multiple symbols (e.g. a method call chain) to pin the lookup to the one you care about.
+- The result is the definition site — if you want the symbol's type and documentation without navigating away, use `hover` instead.
+
+---
+
+## `hover`
+
+**Purpose:** Get type information and documentation for a symbol at a given position. Returns the type signature, inferred types, and doc comments without navigating away from the current file. Complements `find_symbol` (name lookup) and `goto_definition` (navigation).
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `path` | string | yes | — | File path (relative or absolute) |
+| `line` | integer | yes | — | 1-indexed line number |
+| `identifier` | string | no | — | Optional identifier on the line to target (disambiguates when multiple symbols are on the same line) |
+
+**Example — inspect the type of a variable:**
+
+```json
+{
+  "tool": "hover",
+  "arguments": {
+    "path": "src/tools/symbol.rs",
+    "line": 55
+  }
+}
+```
+
+**Output:**
+
+```json
+{
+  "content": "pub fn call(&self, input: Value, ctx: &ToolContext) -> Result<Value>\n\nExecute the tool with the given JSON input and return a JSON result."
+}
+```
+
+The `content` field contains the formatted hover text — typically a type signature followed by any doc comments the language server found.
+
+**Tips:**
+
+- Use `hover` when you want to understand a type without reading the full definition. It is faster than `goto_definition` + `read_file` for orientation tasks.
+- `hover` is especially useful for complex inferred types (closures, iterator chains) where the type is not written explicitly in the source.
+- If `content` is empty, the language server has no information for that position — try adjusting `line` by ±1 or supplying `identifier` to target a specific token.
+- Supply `identifier` on lines with multiple symbols (a method call, a generic type parameter, a trait bound) to pin the hover to the right one.
   your expectations.

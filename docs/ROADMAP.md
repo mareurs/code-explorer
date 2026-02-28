@@ -15,26 +15,31 @@ See the detailed implementation plan: [`plans/2026-02-25-v1-implementation-plan.
 
 ## What's Built
 
-- 30 tools across 8 categories (file, workflow, symbol, AST, git, semantic, memory, config)
-- LSP client with transport, lifecycle, document symbols, references, definition, rename
+- 31 tools across 10 categories (file, workflow, symbol, AST, git, semantic, memory, config, library, usage)
+- LSP client with transport, lifecycle, document symbols, references, definition, hover, rename
 - Tree-sitter symbol extraction + docstrings for Rust, Python, TypeScript, Go, Java, Kotlin
 - Embedding pipeline: chunker, SQLite index, remote + local embedders
-- Git integration: blame, log, diff via git2
+- Git integration: blame via git2
 - Persistent memory store with markdown-based topics
 - Progressive disclosure output (exploring/focused modes via OutputGuard)
 - MCP server over stdio (rmcp)
-- 232 tests (227 passing, 5 ignored)
+- Library search: navigate third-party dependency source via LSP-inferred discovery and semantic search
+- Usage recorder: per-tool call stats in `.code-explorer/usage.db`, surfaced via `get_usage_stats`
+- Dashboard: `code-explorer dashboard` web UI with tool stats charts and project health views
+- 487 tests passing
 
 ## What's Next
 
 - Additional tree-sitter grammars
 - Additional LSP server configurations
 - sqlite-vec integration for vector similarity (currently pure-Rust cosine)
+- HTTP/SSE transport for non-Claude Code agents
+- Companion Claude Code plugin: `code-explorer-routing` (live at [mareurs/claude-plugins](https://github.com/mareurs/claude-plugins))
 - Companion Claude Code plugin: `code-explorer-routing` (live at [mareurs/claude-plugins](https://github.com/mareurs/claude-plugins))
 
 ## Future Improvements
 
-### Library Search
+### Library Search — **Implemented**
 
 Search and navigate third-party library/dependency source code. Read-only access via LSP-inferred discovery, symbol navigation, and semantic search. See [`plans/2026-02-26-library-search-design.md`](plans/2026-02-26-library-search-design.md) for the full design.
 
@@ -43,7 +48,7 @@ Search and navigate third-party library/dependency source code. Read-only access
 | Level | Name | What it enables |
 |-------|------|-----------------|
 | A | Follow-through reads | Read files LSP points to outside project root |
-| B | Symbol navigation | `find_symbol` / `get_symbols_overview` on library code with `scope` parameter |
+| B | Symbol navigation | `find_symbol` / `list_symbols` on library code with `scope` parameter |
 | C | Semantic search | Explicit `index_library` + scoped `semantic_search` on dependency source |
 | D | LSP-inferred discovery | Auto-register libraries from `goto_definition` responses |
 
@@ -51,7 +56,7 @@ Search and navigate third-party library/dependency source code. Read-only access
 
 ---
 
-### Project Dashboard
+### Project Dashboard — **Implemented**
 
 A unified view of project health, configuration, and activity — surfaced via a `dashboard` CLI subcommand and/or a `get_dashboard` MCP tool.
 
@@ -81,7 +86,7 @@ A unified view of project health, configuration, and activity — surfaced via a
 
 ---
 
-### Tool Usage Monitor / Statistics
+### Tool Usage Monitor / Statistics — **Implemented**
 
 Track tool call patterns to surface bugs, usage drift, and performance regressions over time.
 
@@ -111,7 +116,7 @@ Track tool call patterns to surface bugs, usage drift, and performance regressio
 
 Make code-explorer usable by any MCP-capable agent — Copilot, Cursor, Cline, custom agents — with routing knowledge included so agents know *when* to reach for each tool.
 
-**Motivation:** The server already speaks MCP over stdio. The gap is that agents other than Claude Code lack the curated routing guidance (the `server_instructions.md` prompt) that tells Claude *how* to choose between `semantic_search`, `find_symbol`, `get_symbols_overview`, etc. Without this, agents default to over-using a single tool (usually semantic search).
+**Motivation:** The server already speaks MCP over stdio. The gap is that agents other than Claude Code lack the curated routing guidance (the `server_instructions.md` prompt) that tells Claude *how* to choose between `semantic_search`, `find_symbol`, `list_symbols`, etc. Without this, agents default to over-using a single tool (usually semantic search).
 
 **Work streams:**
 
@@ -160,7 +165,7 @@ Detect *how much* code changed in meaning, not just *that* it changed. SHA-256 i
 **Use cases:**
 - **Smart doc staleness filtering** — SHA-256 flags 20 files, drift scores show only 3 had meaningful changes
 - **Drift-aware re-indexing feedback** — `IndexReport` gains drift summary so the agent knows *what kind* of changes happened
-- **On-demand query** — `check_drift` tool reads `drift_report` with threshold/path filters
+- **On-demand query** — `index_status` with threshold parameter reads `drift_report` with threshold/path filters
 
 **Scoring:** Per-file `avg_drift` + `max_drift` (captures both broad-but-shallow and narrow-but-deep changes). Chunk matching: exact content match first (drift 0.0), then greedy cosine pairing on remainder, with unmatched chunks as added/removed (drift 1.0).
 
@@ -259,11 +264,11 @@ Three Claude Code skills living in `.claude/skills/` within this repo. Contribut
 
 ### `project-management`
 
-Surface current sprint status from the roadmap, map recent commits to sprint items, and guide contributors through opening correctly-structured PRs. Uses `git_log`, `git_diff`, and the GitHub MCP tools alongside `docs/ROADMAP.md` and `docs/plans/`.
+Surface current sprint status from the roadmap, map recent commits to sprint items, and guide contributors through opening correctly-structured PRs. Uses `run_command` with `git log`, `run_command` with `git diff`, and the GitHub MCP tools alongside `docs/ROADMAP.md` and `docs/plans/`.
 
 ### `debugging`
 
-Systematic workflow from symptom to fix to verification — covering build failures, test failures, LSP timeouts, tree-sitter parse errors, and embedding pipeline issues. Guides contributors through hypothesis formation (`semantic_search`, `find_symbol`), targeted investigation (`git_blame`, `search_for_pattern`), and the `cargo build` / `cargo test` / `cargo clippy` verification loop.
+Systematic workflow from symptom to fix to verification — covering build failures, test failures, LSP timeouts, tree-sitter parse errors, and embedding pipeline issues. Guides contributors through hypothesis formation (`semantic_search`, `find_symbol`), targeted investigation (`git_blame`, `search_pattern`), and the `cargo build` / `cargo test` / `cargo clippy` verification loop.
 
 ### `log-stat-analyzer`
 

@@ -7,7 +7,13 @@ These tools manage the agent's working context: which project is active, whether
 **Purpose:** Perform initial project discovery — detect languages, list the top-level directory structure, create a default config file, and write a startup memory entry.
 
 **Parameters:** None. Requires an active project (set one with `activate_project` first).
+**Parameters:**
 
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `force` | boolean | no | `false` | Re-run full discovery even if already onboarded |
+
+Requires an active project (set one with `activate_project` first).
 **Example:**
 
 ```json
@@ -35,57 +41,11 @@ These tools manage the agent's working context: which project is active, whether
 
 `config_created` is `true` when `.code-explorer/project.toml` did not exist and was created by this call. The `instructions` field contains a prompt with guidance for working on this project — read it before starting work.
 
-**Tips:** Call `onboarding` once per project, the first time you work on it. It writes a memory entry under the topic `"onboarding"` with a summary of what it found. On subsequent sessions, use `check_onboarding_performed` instead of calling `onboarding` again.
+**Tips:** Call `onboarding` once per project, the first time you work on it. It writes a memory entry under the topic `"onboarding"` with a summary of what it found. On subsequent sessions, call `onboarding` with `force: false` (the default) — it detects previous onboarding and returns existing memories without re-running discovery.
 
 ---
 
-## `check_onboarding_performed`
-
-**Purpose:** Check whether onboarding has already been done for the active project, and list available memories.
-
-**Parameters:** None.
-
-**Example:**
-
-```json
-{}
-```
-
-**Output (onboarding done):**
-
-```json
-{
-  "onboarded": true,
-  "has_config": true,
-  "has_onboarding_memory": true,
-  "memories": [
-    "architecture",
-    "conventions/error-handling",
-    "onboarding"
-  ],
-  "message": "Onboarding already performed. Available memories: architecture, conventions/error-handling, onboarding. Use `read_memory(topic)` to read relevant ones as needed for your current task. Do not read all memories at once — only read those relevant to what you're working on."
-}
-```
-
-**Output (onboarding not done):**
-
-```json
-{
-  "onboarded": false,
-  "has_config": false,
-  "has_onboarding_memory": false,
-  "memories": [],
-  "message": "Onboarding not performed yet. Call the `onboarding` tool to discover the project and create memories that will help you work effectively."
-}
-```
-
-Onboarding is considered complete when both conditions are true: `.code-explorer/project.toml` exists, and a memory entry named `"onboarding"` exists.
-
-**Tips:** Make this the first tool call at the start of every session. If it returns `onboarded: true`, scan the `memories` list and selectively read the entries relevant to your current task. If it returns `onboarded: false`, call `onboarding` to set up the project.
-
----
-
-## `execute_shell_command`
+## `run_command`
 
 **Purpose:** Run a shell command in the active project root and return its stdout, stderr, and exit code.
 
@@ -158,7 +118,7 @@ Output is capped at `shell_output_limit_bytes` (default 102400, i.e. 100 KB) per
 
 On Unix the command runs under `sh -c`. On Windows it runs under `cmd /C`.
 
-**Tips:** Use `execute_shell_command` for build, test, and lint commands where the output tells you whether your changes are correct. Increase `timeout_secs` for slow build steps like `cargo build` or full test suites. Pipe verbose output through `tail -N` to avoid hitting the output limit.
+**Tips:** Use `run_command` for build, test, and lint commands where the output tells you whether your changes are correct. Increase `timeout_secs` for slow build steps like `cargo build` or full test suites. Pipe verbose output through `tail -N` to avoid hitting the output limit.
 
 ---
 
@@ -202,11 +162,11 @@ On Unix the command runs under `sh -c`. On Windows it runs under `cmd /C`.
 
 The tool returns an error if the path does not exist or is not a directory.
 
-**Tips:** When working across multiple projects in a single session, call `activate_project` to switch between them. After activating, call `check_onboarding_performed` to see whether the new project has been set up. The server starts with no active project — you must call `activate_project` (or have it activated via the `--project` CLI flag) before using any tool that requires a project context.
+**Tips:** When working across multiple projects in a single session, call `activate_project` to switch between them. After activating, call `onboarding` to see whether the new project has been set up. The server starts with no active project — you must call `activate_project` (or have it activated via the `--project` CLI flag) before using any tool that requires a project context.
 
 ---
 
-## `get_current_config`
+## `get_config`
 
 **Purpose:** Display the active project root and the full contents of its configuration.
 
@@ -250,4 +210,56 @@ The tool returns an error if the path does not exist or is not a directory.
 }
 ```
 
+
+
+---
+
+## `get_usage_stats`
+
+**Purpose:** Get tool call statistics for the current project. Returns per-tool call counts, error rates, overflow rates, and latency percentiles (p50/p99) for a time window. Use this to diagnose agent behavior: high `overflow_rate_pct` means queries are too broad; high `error_rate_pct` on a tool means it is failing repeatedly.
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `window` | string | no | `"30d"` | Time window: `"1h"`, `"24h"`, `"7d"`, or `"30d"` |
+
+**Example:**
+
+```json
+{ "window": "7d" }
+```
+
+**Output:**
+
+```json
+{
+  "window": "7d",
+  "tools": [
+    {
+      "tool_name": "semantic_search",
+      "call_count": 142,
+      "error_rate_pct": 0.0,
+      "overflow_rate_pct": 12.7,
+      "p50_ms": 210,
+      "p99_ms": 890
+    },
+    {
+      "tool_name": "find_symbol",
+      "call_count": 98,
+      "error_rate_pct": 2.0,
+      "overflow_rate_pct": 4.1,
+      "p50_ms": 35,
+      "p99_ms": 180
+    }
+  ]
+}
+```
+
+**Tips:**
+
+- Use `get_usage_stats` to understand how an agent is using the tool set. A high `overflow_rate_pct` for `semantic_search` suggests the agent is querying too broadly — it should use `find_symbol` for known names instead.
+- Compare error rates across windows to spot regressions after changes to the project or config.
+- The stats are read from `.code-explorer/usage.db` which is populated by the usage recorder built into the MCP server. The database is created automatically on the first tool call.
+- Stats are only available for the active project. Switch projects with `activate_project` before calling `get_usage_stats`.
 **Tips:** Use this to verify which project is active and to check security settings before attempting shell commands or indexing. If you need to change configuration, edit `.code-explorer/project.toml` directly — the config is re-read on each tool call, so changes take effect immediately without restarting the server.

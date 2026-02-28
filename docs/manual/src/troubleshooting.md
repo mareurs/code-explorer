@@ -122,17 +122,17 @@ retry the tool call.
 
 ### "No tree-sitter grammar for 'X'"
 
-The `list_functions` or `extract_docstrings` tool was called on a file whose
+The `list_functions` or `list_docs` tool was called on a file whose
 language does not have a bundled tree-sitter grammar.
 
-**Fix:** Use LSP-based tools instead. `get_symbols_overview` provides similar
+**Fix:** Use LSP-based tools instead. `list_symbols` provides similar
 information (file structure, symbol names and kinds) and works for all 9 LSP
 languages, not just the 6 with tree-sitter grammars.
 
 If the language is not supported at all, only file operations and semantic
 search (after indexing) are available.
 
-### `find_referencing_symbols` returns nothing
+### `find_references` returns nothing
 
 Two common causes:
 
@@ -377,7 +377,7 @@ Two common causes:
 Files that have never been committed cannot be blamed -- there is no git
 history for them.
 
-**Fix:** This is expected. Commit the file first, or use `git_diff` to see
+**Fix:** This is expected. Commit the file first, or use `run_command` with `git diff` to see
 its contents as uncommitted changes.
 
 ---
@@ -401,7 +401,7 @@ process. Startup time varies:
 
 **Fix:** This is expected. Subsequent calls are fast because the server stays
 running. If startup time is a problem for Java or Kotlin, consider using the
-AST tools (`list_functions`, `extract_docstrings`) for initial exploration --
+AST tools (`list_functions`, `list_docs`) for initial exploration --
 they use tree-sitter and have no startup delay.
 
 ### Large project causes tool timeouts
@@ -450,11 +450,11 @@ If none of the above resolves your issue:
 
    This shows every tool call, LSP message, and embedding operation.
 
-3. **Check the configuration.** Use the `get_current_config` tool to see the
+3. **Check the configuration.** Use the `get_config` tool to see the
    active configuration as the server sees it:
 
    ```json
-   { "tool": "get_current_config", "arguments": {} }
+   { "tool": "get_config", "arguments": {} }
    ```
 
 4. **File an issue.** Open a GitHub issue with:

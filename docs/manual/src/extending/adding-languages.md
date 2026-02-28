@@ -6,8 +6,8 @@ previous. You can ship a partial implementation and add deeper support later.
 | Level | What it enables | Effort |
 |-------|-----------------|--------|
 | Detection only | File detection, semantic search chunking, basic file ops | 1 line |
-| LSP support | All symbol tools (`find_symbol`, `get_symbols_overview`, references, rename) | ~10 lines |
-| Tree-sitter grammar | Offline `list_functions`, `extract_docstrings`, richer AST extraction | ~50–200 lines |
+| LSP support | All symbol tools (`find_symbol`, `list_symbols`, references, rename) | ~10 lines |
+| Tree-sitter grammar | Offline `list_functions`, `list_docs`, richer AST extraction | ~50–200 lines |
 
 ---
 
@@ -53,7 +53,7 @@ used throughout the codebase. Keep it lowercase, no spaces.
 - `detect_language()` calls throughout the codebase recognize your file type
 - The semantic search chunker can split files of this type into chunks
 - `list_dir` reports the language for each file
-- `search_for_pattern` and `find_file` include these files in results
+- `search_pattern` and `find_file` include these files in results
 
 This is enough to ship. Many languages in the current codebase (e.g. `php`,
 `swift`, `scala`, `elixir`, `haskell`, `lua`, `bash`) have detection only.
@@ -135,11 +135,12 @@ touch this function.
 
 **What this enables:**
 
-- `get_symbols_overview` — symbol tree for files and directories
+- `list_symbols` — symbol tree for files and directories
 - `find_symbol` — search symbols by name across the project
-- `find_referencing_symbols` — find all callers/references
-- `replace_symbol_body` — edit a symbol's source code
-- `insert_before_symbol` / `insert_after_symbol` — insert code around symbols
+- `find_references` — find all callers/references
+- `replace_symbol` — edit a symbol's source code
+- `insert_code` — insert code before or after symbols
+- `rename_symbol` — project-wide rename
 - `rename_symbol` — project-wide rename
 
 The `LspManager` starts the server lazily on first use and keeps it alive for
@@ -150,7 +151,7 @@ subsequent requests.
 ## Level 3: Tree-sitter Grammar (full support)
 
 Tree-sitter gives you offline symbol extraction without a running language
-server. This powers `list_functions` and `extract_docstrings`, and improves
+server. This powers `list_functions` and `list_docs`, and improves
 the fallback path when LSP is unavailable.
 
 ### Step 1: Add the tree-sitter crate
@@ -294,7 +295,7 @@ If the language has a documentation comment convention, add a corresponding
 **What this enables:**
 
 - `list_functions` — fast offline function listing without an LSP server
-- `extract_docstrings` — documentation extraction
+- `list_docs` — documentation extraction
 - Better fallback when the LSP server is unavailable or slow to start
 
 ---

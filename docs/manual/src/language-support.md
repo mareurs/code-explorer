@@ -4,11 +4,11 @@ code-explorer provides three tiers of support depending on which backends are
 available for a given language.
 
 - **Full support** — LSP server + tree-sitter grammar. All symbol tools work,
-  including `list_functions` and `extract_docstrings`. Semantic search is also
+  including `list_functions` and `list_docs`. Semantic search is also
   available after indexing.
 - **LSP only** — LSP server configured, no tree-sitter grammar. Symbol
   navigation, references, and rename work. `list_functions` and
-  `extract_docstrings` are not available.
+  `list_docs` are not available.
 - **Detection only** — Language is recognized for chunking and file detection.
   No LSP server and no tree-sitter grammar. Only file operations and semantic
   search (after indexing) are available.
@@ -56,14 +56,13 @@ is configured and no tree-sitter grammar is bundled.
 | Feature                   | Full support | LSP only | Detection only |
 |---------------------------|:------------:|:--------:|:--------------:|
 | `find_symbol`             | Yes          | Yes      | No             |
-| `get_symbols_overview`    | Yes          | Yes      | No             |
-| `find_referencing_symbols`| Yes          | Yes      | No             |
-| `replace_symbol_body`     | Yes          | Yes      | No             |
-| `insert_before_symbol`    | Yes          | Yes      | No             |
-| `insert_after_symbol`     | Yes          | Yes      | No             |
+| `list_symbols`            | Yes          | Yes      | No             |
+| `find_references`         | Yes          | Yes      | No             |
+| `replace_symbol`          | Yes          | Yes      | No             |
+| `insert_code`             | Yes          | Yes      | No             |
 | `rename_symbol`           | Yes          | Yes      | No             |
 | `list_functions`          | Yes          | No       | No             |
-| `extract_docstrings`      | Yes          | No       | No             |
+| `list_docs`               | Yes          | No       | No             |
 | `semantic_search`         | Yes          | Yes      | Yes            |
 | File tools, git tools     | Yes          | Yes      | Yes            |
 

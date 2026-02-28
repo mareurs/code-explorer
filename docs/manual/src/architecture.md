@@ -66,7 +66,7 @@ When the LLM calls a tool, here is what happens:
 
 3. **Security check.** Before the tool runs, `check_tool_access()` verifies
    that the tool is not disabled by the project's security configuration. For
-   example, if `shell_enabled` is false, `execute_shell_command` is blocked
+   example, if `shell_enabled` is false, `run_command` is blocked
    here. If `git_enabled` is false, git tools are blocked.
 
 4. **ToolContext creation.** A `ToolContext` is assembled with clones of the
@@ -170,7 +170,7 @@ is faster than LSP for simple structural queries and has zero startup cost.
 The AST engine powers two tools:
 
 - `list_functions` -- extracts all function and method signatures from a file.
-- `extract_docstrings` -- extracts doc comments paired with their symbol names.
+- `list_docs` -- extracts doc comments paired with their symbol names.
 
 Supported languages for tree-sitter: Rust, Python, TypeScript, Go, Java,
 Kotlin. See the [Language Support](language-support.md) page for the full

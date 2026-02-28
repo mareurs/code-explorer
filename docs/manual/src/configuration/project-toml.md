@@ -60,7 +60,7 @@ drift_detection_enabled = true
 | `model` | string | `"ollama:mxbai-embed-large"` | Embedding model. The prefix selects the backend. See [Embedding Backends](embedding-backends.md) for the full list of supported prefixes and models. |
 | `chunk_size` | integer | `1200` | Target size of each text chunk in characters before embedding. Larger values give more context per result but reduce search precision. |
 | `chunk_overlap` | integer | `200` | Number of characters shared between adjacent chunks. Overlap prevents relevant content from being split across chunk boundaries. |
-| `drift_detection_enabled` | bool | `true` | Enable semantic drift detection during index builds. `index_project` compares old and new chunk embeddings to score how much each changed file's *meaning* shifted. Results queryable via `check_drift`. Set to `false` to opt out. Experimental — adds memory overhead proportional to changed-file count. |
+| `drift_detection_enabled` | bool | `true` | Enable semantic drift detection during index builds. `index_project` compares old and new chunk embeddings to score how much each changed file's *meaning* shifted. Results queryable via `index_status(threshold)`. Set to `false` to opt out. Experimental — adds memory overhead proportional to changed-file count. |
 
 **Changing the model after indexing:** If you change `model`, you must rebuild the index
 (`index_project` with `force: true`). code-explorer detects model mismatches and will warn
@@ -134,11 +134,11 @@ indexing_enabled = true
 |---|---|---|---|
 | `denied_read_patterns` | array of strings | `[]` | Additional path prefixes to block from `read_file` and other read tools, beyond the built-in deny-list (see below). |
 | `extra_write_roots` | array of strings | `[]` | Additional directories where file write tools are allowed. By default writes are restricted to the project root. |
-| `shell_command_mode` | string | `"warn"` | Controls `execute_shell_command` behaviour. One of `"unrestricted"`, `"warn"`, or `"disabled"`. |
+| `shell_command_mode` | string | `"warn"` | Controls `run_command` behaviour. One of `"unrestricted"`, `"warn"`, or `"disabled"`. |
 | `shell_output_limit_bytes` | integer | `102400` | Maximum bytes captured from shell command stdout or stderr. Output beyond this limit is truncated and flagged in the response. |
-| `shell_enabled` | bool | `false` | Master switch for shell execution. Must be `true` for `execute_shell_command` to run any command regardless of `shell_command_mode`. |
-| `file_write_enabled` | bool | `true` | Enables file write tools: `create_text_file`, `replace_content`, and the symbol write tools. Set to `false` for a read-only session. |
-| `git_enabled` | bool | `true` | Enables git tools: `git_blame`, `git_log`, `git_diff`. |
+| `shell_enabled` | bool | `false` | Master switch for shell execution. Must be `true` for `run_command` to run any command regardless of `shell_command_mode`. |
+| `file_write_enabled` | bool | `true` | Enables file write tools: `create_file` and the symbol write tools. Set to `false` for a read-only session. |
+| `git_enabled` | bool | `true` | Enables git tools: `git_blame`. |
 | `indexing_enabled` | bool | `true` | Enables `index_project` and `index_status`. Set to `false` to prevent the agent from kicking off potentially long-running indexing. |
 
 ### Built-in Read Deny-List
@@ -173,7 +173,7 @@ denied_read_patterns = [
 
 ### Shell Command Mode
 
-The `shell_command_mode` field fine-tunes what happens when `execute_shell_command` is called
+The `shell_command_mode` field fine-tunes what happens when `run_command` is called
 (assuming `shell_enabled = true`):
 
 | Value | Behaviour |
@@ -250,10 +250,10 @@ At startup and whenever `activate_project` is called, code-explorer:
 2. If found, parses it. Any section that is missing falls back to its defaults.
 3. If not found, constructs a default config using the directory name as the project name.
 
-The effective configuration is always visible via the `get_current_config` tool:
+The effective configuration is always visible via the `get_config` tool:
 
 ```json
-{ "name": "get_current_config", "arguments": {} }
+{ "name": "get_config", "arguments": {} }
 ```
 
 Changes to `project.toml` take effect the next time the project is activated — either by

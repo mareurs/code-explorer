@@ -54,25 +54,26 @@ tree-sitter, git, embedding index) and returns structured, compact results.
 
 Four pillars:
 
-### LSP Navigation (7 tools, 9 languages)
+### LSP Navigation (8 tools, 9 languages)
 
 The Language Server Protocol is how IDEs answer questions like "where is this
 defined?" and "who calls this?". code-explorer runs LSP servers on your behalf
 and exposes their answers as agent-friendly tools.
 
 - `find_symbol` — locate any symbol by name across the project
-- `get_symbols_overview` — the outline of a file or directory: classes,
+- `list_symbols` — the outline of a file or directory: classes,
   functions, structs, in tree form
-- `find_referencing_symbols` — all callers/usages of a given symbol
-- `replace_symbol_body` — replace a function body by name, not by line number
-- `insert_before_symbol` / `insert_after_symbol` — add code relative to a
-  named symbol
+- `find_references` — all callers/usages of a given symbol
+- `replace_symbol` — replace a function body by name, not by line number
+- `insert_code` — add code relative to a named symbol (`position: "before"` or `position: "after"`)
+- `goto_definition` — jump to the definition of a symbol at a given line
+- `hover` — type info and documentation for a symbol at a given position
 - `rename_symbol` — rename across the entire codebase via LSP
 
 Supported languages: Rust, Python, TypeScript/JavaScript, Go, Java, Kotlin,
 C/C++, C#, Ruby.
 
-### Semantic Search (4 tools)
+### Semantic Search (3 tools)
 
 Sometimes you know the concept but not the name. Semantic search finds code by
 meaning using embeddings, not keywords.
@@ -83,19 +84,19 @@ meaning using embeddings, not keywords.
   library, or all sources.
 - `index_project` — build or incrementally update the embedding index (smart
   change detection via git diff → mtime → SHA-256 fallback)
-- `index_status` — check index coverage and staleness
-- `check_drift` — after re-indexing, see which files changed meaningfully in
-  *semantics* vs. trivially in bytes. Opt out with `drift_detection_enabled = false`
-  in `[embeddings]`.
+- `index_status` — check index coverage, staleness, and semantic drift (use `threshold` parameter
+  to surface files that changed meaningfully in *semantics* vs. trivially in bytes). Opt out with
+  `drift_detection_enabled = false` in `[embeddings]`.
 
 The embedding backend is configurable: OpenAI, Ollama, or any compatible
 endpoint.
 
-### Git Integration (3 tools)
+### Git Integration (1 tool)
 
 - `git_blame` — who last changed each line and in which commit
-- `git_log` — commit history for a file or the whole project
-- `git_diff` — uncommitted changes, or diff against a specific commit
+
+For commit history and diffs, use `run_command` with shell git commands (e.g. `run_command("git log src/auth.rs")` or `run_command("git diff HEAD")`).
+
 
 ### Persistent Memory (4 tools)
 
@@ -119,9 +120,10 @@ project root.
 
 ### The Rest
 
-Beyond the five pillars: 7 file operation tools (directory listing, file
-reading, pattern search, file creation, content replacement), 2 AST analysis
+Beyond the five pillars: 6 file operation tools (directory listing, file
+reading, pattern search, file creation, line-level editing), 2 AST analysis
 tools (function signatures, docstrings via tree-sitter), 3 workflow tools
+(project onboarding, shell commands), and 2 config tools — **31 tools total**.
 (project onboarding, shell commands), and 2 config tools — **33 tools total**.
 
 ### Token Efficiency by Design
@@ -206,21 +208,23 @@ lines), scans for `authenticate_user`, reads the function, then uses `grep` for
 callers, gets 23 hits including test fixtures, reads three more files to
 disambiguate, and still misses that the error type changed in a recent refactor.
 
+
 **With code-explorer:**
 
 ```
-get_symbols_overview("src/auth.rs")
+list_symbols("src/auth.rs")
   → authenticate_user [fn, line 142], SessionStore [struct, line 12], ...
 
-find_referencing_symbols("authenticate_user", "src/auth.rs")
+find_references("authenticate_user", "src/auth.rs")
   → middleware/auth_guard.rs:88, handlers/login.rs:34, handlers/api.rs:201
 
-git_log("src/auth.rs")
+run_command("git log src/auth.rs")
   → 3 days ago: "refactor: change AuthError to return structured payload"
 
 find_symbol("AuthError", include_body=true)
   → enum AuthError { ... } with full definition
 ```
+
 
 Four targeted calls. The agent sees the symbol tree, the exact call sites, the
 relevant git history, and the type definition — without reading a single full

@@ -3,3 +3,5 @@
 /.code-explorer/
 /docs/research/
 /docs/observations.md
+/scripts/node_modules/
+/scripts/package-lock.json

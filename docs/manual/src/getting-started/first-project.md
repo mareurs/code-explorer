@@ -24,11 +24,12 @@ The first time code-explorer activates in a project it:
    grammar support).
 3. Starts LSP servers for the detected languages, ready to answer symbol queries.
 
-You can check the generated configuration at any time with the `get_current_config` tool:
+You can check the generated configuration at any time with the `get_config` tool:
 
 ```json
-{ "name": "get_current_config", "arguments": {} }
+{ "name": "get_config", "arguments": {} }
 ```
+
 
 ## Running Onboarding
 
@@ -42,11 +43,13 @@ memory entries so future sessions start with context already in place.
 
 Onboarding takes 10–30 seconds depending on project size. It produces a summary of what it found
 and tells you how many memory entries it wrote. Subsequent sessions skip the heavy discovery work
-because the memories are already there — use `check_onboarding_performed` to confirm:
+because the memories are already there — call `onboarding` again (with default arguments) to
+retrieve existing memories without re-running discovery:
 
 ```json
-{ "name": "check_onboarding_performed", "arguments": {} }
+{ "name": "onboarding", "arguments": {} }
 ```
+
 
 ## Building the Embedding Index
 
@@ -95,13 +98,18 @@ Drill into a subdirectory:
 { "name": "list_dir", "arguments": { "path": "src", "recursive": true } }
 ```
 
-### Get Symbols Overview
+### List Symbols
 
 See the classes, functions, and types defined in a directory — one compact line per symbol,
 no bodies:
 
 ```json
-{ "name": "get_symbols_overview", "arguments": { "relative_path": "src/" } }
+{ "name": "list_symbols", "arguments": { "path": "src/" } }
+```
+
+Sample output (Rust project):
+
+```
 ```
 
 Sample output (Rust project):
@@ -170,9 +178,10 @@ A practical sequence for exploring an unfamiliar codebase:
 1. `onboarding` — discover and remember the project structure.
 2. `index_project` — build the semantic search index.
 3. `list_dir` on the root and key subdirectories — build a mental map.
-4. `get_symbols_overview("src/")` — see what is defined at the top level.
+4. `list_symbols("src/")` — see what is defined at the top level.
 5. `semantic_search("entry point")` or `find_symbol("main")` — find where execution starts.
-6. From there, use `find_referencing_symbols` to trace callers and `get_symbols_overview` to
+6. From there, use `find_references` to trace callers and `list_symbols` to
+   navigate deeper into subsystems.
    navigate deeper into subsystems.
 
 After the first session, onboarding memories persist in `.code-explorer/memories/` and the

@@ -166,7 +166,7 @@ Avoid storing things that are already obvious from reading the code, or that cha
 
 Memory persists indefinitely across sessions. The recommended workflow is:
 
-1. At the start of a new session, call `check_onboarding_performed`. If onboarding has been done, it will list available memories.
+1. At the start of a new session, call `onboarding`. If onboarding has been done, it will list available memories.
 2. Scan the list and call `read_memory` for topics relevant to your current task.
 3. As you work, call `write_memory` when you learn something worth remembering.
 4. If you correct an earlier misunderstanding, overwrite the old entry with updated content.

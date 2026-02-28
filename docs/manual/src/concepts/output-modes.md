@@ -20,7 +20,7 @@ Results are capped at **200 items** (or 200 files for directory-spanning tools).
 If more results exist, the response includes an `overflow` object explaining
 what was omitted and how to narrow the query.
 
-**Example — exploring mode response for `get_symbols_overview`:**
+**Example — exploring mode response for `list_symbols`:**
 
 ```json
 {
@@ -86,13 +86,14 @@ Pass `detail_level: "full"` to any tool that supports it:
 
 ```json
 {
-  "tool": "get_symbols_overview",
+  "tool": "list_symbols",
   "arguments": {
-    "relative_path": "src/services/",
+    "path": "src/services/",
     "detail_level": "full",
     "limit": 10
   }
 }
+```
 ```
 
 ## Overflow Messages
@@ -145,12 +146,11 @@ These tools respect `detail_level`, `offset`, and `limit`:
 
 | Tool | Exploring output | Focused output |
 |------|-----------------|----------------|
-| `get_symbols_overview` | Names, kinds, files, lines | Full symbol trees with bodies |
+| `list_symbols` | Names, kinds, files, lines | Full symbol trees with bodies |
 | `find_symbol` | Names, kinds, locations | + bodies (when `include_body=true`) |
-| `find_referencing_symbols` | Reference locations | Paginated reference list |
+| `find_references` | Reference locations | Paginated reference list |
 | `list_dir` | File paths | Paginated entries |
 | `git_blame` | First 200 lines | Paginated full blame |
-| `git_diff` | Truncated diff | Full diff paginated by file |
 | `semantic_search` | Top matches with scores | Paginated full chunks |
 
 ## Tools With Fixed Output
@@ -160,11 +160,10 @@ switching:
 
 | Tool | Behaviour |
 |------|-----------|
-| `git_log` | Always returns up to `limit` commits (default: 20) |
-| `search_for_pattern` | Always returns up to `max_results` matches (default: 50) |
+| `search_pattern` | Always returns up to `max_results` matches (default: 50) |
 | `find_file` | Always returns up to `max_results` paths (default: 100) |
 | `list_functions` | Returns all functions in a single file; files are bounded by nature |
-| `extract_docstrings` | Returns all docstrings in a single file |
+| `list_docs` | Returns all docstrings in a single file |
 
 For these tools, use their own `limit` or `max_results` parameter to control
 output size. They do not use the `detail_level` / `offset` / `limit` pattern.

@@ -77,7 +77,7 @@ you start a Claude Code session.
 ### Verification
 
 After installation, start a new Claude Code session and ask Claude which tools it will use for
-code search. You should see it cite `search_for_pattern`, `find_symbol`, and `semantic_search`
+code search. You should see it cite `search_pattern`, `find_symbol`, and `semantic_search`
 rather than `grep`. You can also check installed plugins:
 
 ```bash
@@ -92,8 +92,8 @@ claude /plugin list
 
 Injects the following guidance at the start of every session:
 
-- Prefer `search_for_pattern` over `grep` for regex search across files.
-- Prefer `get_symbols_overview` and `find_symbol` over `cat`/`Read` when exploring code structure.
+- Prefer `search_pattern` over `grep` for regex search across files.
+- Prefer `list_symbols` and `find_symbol` over `cat`/`Read` when exploring code structure.
 - Prefer `list_dir` over `ls` and `find_file` over `find`.
 - Use `semantic_search` when looking for code by concept rather than by name.
 - Reserve built-in file tools for writing new content and reading files that code-explorer does
@@ -118,9 +118,9 @@ The interception hook fires before any of these built-in tools execute:
 
 | Built-in called | Redirected to |
 |---|---|
-| `grep` | `search_for_pattern` |
-| `Read` | `get_symbols_overview` or `find_symbol` (for source files) |
-| `cat` | `get_symbols_overview` or `find_symbol` (for source files) |
+| `grep` | `search_pattern` |
+| `Read` | `list_symbols` or `find_symbol` (for source files) |
+| `cat` | `list_symbols` or `find_symbol` (for source files) |
 | `find` | `find_file` |
 | `ls` | `list_dir` |
 

@@ -1,10 +1,9 @@
 # Editing
 
-code-explorer provides three categories of editing tools:
+code-explorer provides two categories of editing tools:
 
-- **File-creation** — `create_text_file` writes a complete file from scratch.
-- **Text-level editing** — `replace_content` and `edit_lines` operate on raw text and line positions.
-- **Symbol-level editing** — `replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol`, and `rename_symbol` operate on named code symbols located via the LSP. These are the preferred tools for editing source code.
+- **Text-level editing** — `edit_lines` operates on raw text and line positions.
+- **Symbol-level editing** — `replace_symbol`, `insert_code`, and `rename_symbol` operate on named code symbols located via the LSP. These are the preferred tools for editing source code.
 
 All write operations are restricted to the active project root. Attempts to write outside the project root, or to paths on the security deny-list, are rejected with an error.
 
@@ -14,19 +13,18 @@ All write operations are restricted to the active project root. Attempts to writ
 
 | Situation | Recommended tool |
 |-----------|-----------------|
-| Rewrite a function or method body | `replace_symbol_body` |
-| Add a new function next to an existing one | `insert_before_symbol` / `insert_after_symbol` |
+| Rewrite a function or method body | `replace_symbol` |
+| Add a new function next to an existing one | `insert_code` |
 | Rename a symbol everywhere it is used | `rename_symbol` |
 | Edit lines inside a function when you know their numbers | `edit_lines` |
-| Replace a known string or pattern throughout a file | `replace_content` |
-| Edit a config file, Markdown, or other non-code file | `edit_lines` or `replace_content` |
-| Create a new file | `create_text_file` |
+| Edit a config file, Markdown, or other non-code file | `edit_lines` |
+| Create a new file | `create_file` |
 
-For source code, prefer the symbol tools. They address code by name rather than by line number, which means your edit remains correct even if the file was modified since you last read it. Fall back to `edit_lines` when you need to change something inside a function body at a known position, and to `replace_content` for simple textual substitutions.
+For source code, prefer the symbol tools. They address code by name rather than by line number, which means your edit remains correct even if the file was modified since you last read it. Fall back to `edit_lines` when you need to change something inside a function body at a known position.
 
 ---
 
-## `create_text_file`
+## `create_file`
 
 **Purpose:** Create a new file, or completely overwrite an existing one, with the supplied content. Parent directories are created automatically.
 
@@ -58,65 +56,8 @@ For source code, prefer the symbol tools. They address code by name rather than 
 
 **Tips:**
 
-- Use this tool when you are generating a file from scratch. If the file already exists and you only need to change part of it, use `edit_lines`, `replace_content`, or a symbol tool instead — those tools are less likely to accidentally discard content you did not intend to touch.
+- Use this tool when you are generating a file from scratch. If the file already exists and you only need to change part of it, use `edit_lines` or a symbol tool instead — those tools are less likely to accidentally discard content you did not intend to touch.
 - The path is resolved relative to the active project root, so `src/util/helpers.rs` and `./src/util/helpers.rs` both work. Absolute paths that fall inside the project root are also accepted.
-
----
-
-## `replace_content`
-
-**Purpose:** Find and replace text in a file. Supports both literal string matching and regular expressions.
-
-**Parameters:**
-
-| Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| `path` | string | yes | — | File to edit, relative to project root |
-| `old` | string | yes | — | Text or regex pattern to find |
-| `new` | string | yes | — | Replacement text |
-| `is_regex` | boolean | no | `false` | Treat `old` as a regular expression |
-| `replace_all` | boolean | no | `true` | Replace every occurrence; set to `false` to replace only the first |
-
-**Example — literal replacement:**
-
-```json
-{
-  "path": "config/settings.toml",
-  "old": "log_level = \"warn\"",
-  "new": "log_level = \"debug\""
-}
-```
-
-**Example — regex replacement, first occurrence only:**
-
-```json
-{
-  "path": "src/lib.rs",
-  "old": "version = \"\\d+\\.\\d+\\.\\d+\"",
-  "new": "version = \"2.0.0\"",
-  "is_regex": true,
-  "replace_all": false
-}
-```
-
-**Output:**
-
-```json
-{
-  "status": "ok",
-  "replacements": 1,
-  "path": "/home/user/project/src/lib.rs"
-}
-```
-
-The `replacements` count is the number of substitutions made. If `old` is not found in the file, `replacements` is `0` and the file is left unchanged.
-
-**Tips:**
-
-- When `is_regex` is `false` (the default), `old` is matched as a plain string — no escaping is needed for special characters.
-- When `is_regex` is `true`, the pattern uses Rust's `regex` syntax. Backreferences and lookaheads are not supported.
-- For multi-line replacements, include newline characters (`\n`) directly in `old` and `new`. The regex engine does not operate in multi-line mode by default, so `.` does not match newlines unless you add `(?s)` to the pattern.
-- If you need to change a function's implementation, `replace_symbol_body` is usually cleaner — it does not require you to reproduce the surrounding context as part of `old`.
 
 ---
 
@@ -196,20 +137,20 @@ The tool preserves the file's trailing newline. Requesting a `start_line` beyond
 
 - Use `read_file` with `start_line`/`end_line` to confirm the exact line numbers before making the edit.
 - `edit_lines` is well suited to changes inside a function body when you already know the line range from a prior `read_file` or `find_symbol` call.
-- For adding a completely new top-level definition adjacent to an existing one, `insert_before_symbol` or `insert_after_symbol` is more convenient because you address the location by symbol name rather than line number.
+- For adding a completely new top-level definition adjacent to an existing one, `insert_code` is more convenient because you address the location by symbol name rather than line number.
 
 ---
 
 ## Symbol editing tools
 
-The following four tools address code by symbol name and are backed by the Language Server Protocol. They work with any language that has an LSP server configured. See [Symbol Navigation](./symbol-navigation.md) for background on how symbols are identified.
+The following three tools address code by symbol name and are backed by the Language Server Protocol. They work with any language that has an LSP server configured. See [Symbol Navigation](./symbol-navigation.md) for background on how symbols are identified.
 
-All four require:
+All three require:
 
-- `name_path` — the symbol's name path as returned by `find_symbol` or `get_symbols_overview`, e.g. `"MyStruct/my_method"`.
-- `relative_path` — the file containing the symbol, relative to the project root.
+- `name_path` — the symbol's name path as returned by `find_symbol` or `list_symbols`, e.g. `"MyStruct/my_method"`.
+- `path` — the file containing the symbol, relative to the project root.
 
-### `replace_symbol_body`
+### `replace_symbol`
 
 **Purpose:** Replace the entire body of a named symbol — function, method, class, or any other LSP-visible construct — with new source code.
 
@@ -240,56 +181,38 @@ All four require:
 }
 ```
 
-### `insert_before_symbol`
+### `insert_code`
 
-**Purpose:** Insert code immediately before a named symbol (e.g. add a new function above an existing one, or add an attribute).
-
-**Parameters:**
-
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `name_path` | string | yes | Symbol to insert before |
-| `relative_path` | string | yes | File containing the symbol |
-| `code` | string | yes | Code to insert |
-
-**Example:**
-
-```json
-{
-  "name_path": "process_request",
-  "relative_path": "src/server.rs",
-  "code": "#[tracing::instrument]\n"
-}
-```
-
-**Output:**
-
-```json
-{
-  "status": "ok",
-  "inserted_at_line": 47
-}
-```
-
-### `insert_after_symbol`
-
-**Purpose:** Insert code immediately after a named symbol (e.g. add a companion function or a closing comment block).
+**Purpose:** Insert code immediately before or after a named symbol (e.g. add a new function above or below an existing one, or add an attribute).
 
 **Parameters:**
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `name_path` | string | yes | Symbol to insert after |
-| `relative_path` | string | yes | File containing the symbol |
+| `name_path` | string | yes | Symbol to insert relative to |
+| `path` | string | yes | File containing the symbol |
 | `code` | string | yes | Code to insert |
+| `position` | string | no | `"before"` or `"after"` (default: `"after"`) |
 
-**Example:**
+**Example (insert after):**
 
 ```json
 {
   "name_path": "serialize",
-  "relative_path": "src/codec.rs",
-  "code": "\npub fn deserialize(bytes: &[u8]) -> Result<Self> {\n    todo!()\n}"
+  "path": "src/codec.rs",
+  "code": "\npub fn deserialize(bytes: &[u8]) -> Result<Self> {\n    todo!()\n}",
+  "position": "after"
+}
+```
+
+**Example (insert before):**
+
+```json
+{
+  "name_path": "process_request",
+  "path": "src/server.rs",
+  "code": "#[tracing::instrument]\n",
+  "position": "before"
 }
 ```
 
@@ -340,6 +263,6 @@ All four require:
 
 **Tips for symbol tools:**
 
-- Use `find_symbol` or `get_symbols_overview` first to obtain the correct `name_path`. Nested symbols use a slash-separated path: `"OuterStruct/inner_method"`.
-- `rename_symbol` requires a running LSP server for the file's language. If the LSP is unavailable, the tool returns an error — fall back to `replace_content` with `replace_all: true` in that case, but be aware it will not respect scoping.
-- After a `replace_symbol_body` edit, the file's line numbers shift. If you plan to make additional `edit_lines` edits in the same file, re-read the file or call `get_symbols_overview` again to get fresh line numbers.
+- Use `find_symbol` or `list_symbols` first to obtain the correct `name_path`. Nested symbols use a slash-separated path: `"OuterStruct/inner_method"`.
+- `rename_symbol` requires a running LSP server for the file's language. If the LSP is unavailable, the tool returns an error — fall back to `search_pattern` combined with manual `edit_lines` in that case, but be aware it will not respect scoping.
+- After a `replace_symbol` edit, the file's line numbers shift. If you plan to make additional `edit_lines` edits in the same file, re-read the file or call `list_symbols` again to get fresh line numbers.

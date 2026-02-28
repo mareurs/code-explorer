@@ -194,9 +194,14 @@ the current HEAD commit, results include:
 chunks it covers, which model was used to build it, and where the database
 lives.
 
-**Parameters:** None.
+**Parameters:**
 
-**Example:**
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `threshold` | number | no | — | When provided, includes drift data: minimum `avg_drift` to include (0.0–1.0). Omit to skip drift query. |
+| `path` | string | no | — | SQL LIKE pattern to filter drift results by file path (e.g. `"src/tools/%"`) |
+
+**Example (basic stats only):**
 
 ```json
 {}
@@ -225,6 +230,43 @@ lives.
 }
 ```
 
+**Example (with drift query):**
+
+```json
+{ "threshold": 0.2 }
+```
+
+**Output (with drift data):**
+
+```json
+{
+  "indexed": true,
+  "file_count": 47,
+  "chunk_count": 312,
+  "drift": {
+    "results": [
+      {
+        "file_path": "src/auth/service.rs",
+        "avg_drift": 0.72,
+        "max_drift": 0.91,
+        "chunks_added": 2,
+        "chunks_removed": 1
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
+Drift results are sorted by `max_drift` descending. `avg_drift` is the mean across all chunks; `max_drift` is the worst single chunk. Use `threshold: 0.1` to surface all meaningfully changed files; use `threshold: 0.4` to focus on major rewrites only.
+
+Opt out of drift detection entirely with `drift_detection_enabled = false` in `.code-explorer/project.toml`:
+
+```toml
+[embeddings]
+drift_detection_enabled = false
+```
+
 **Tips:**
 
 - Call `index_status` before `semantic_search` to confirm the index exists and
@@ -234,67 +276,5 @@ lives.
 - `chunk_count` and `embedding_count` should be equal under normal conditions.
   A mismatch can indicate an interrupted indexing run; fix it with
   `index_project`.
+- Use `index_status` with `threshold: 0.1` after re-indexing to surface which files changed semantically, not just syntactically. A whitespace-only reformat will have `avg_drift ≈ 0.0`; a full function rewrite will approach `1.0`.
 
----
-
-## `check_drift`
-
-**Purpose:** Query semantic drift scores from the most recent index build.
-Answers the question "which files changed *meaningfully* in code semantics, not
-just in bytes?" after running `index_project`.
-
-**Opt out** by setting `drift_detection_enabled = false` in `.code-explorer/project.toml`:
-
-```toml
-[embeddings]
-drift_detection_enabled = false
-```
-
-If drift detection is opted out, `check_drift` returns
-`{"status": "disabled", "hint": "..."}` with the TOML snippet to re-enable it.
-
-**Parameters:**
-
-| Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| `threshold` | number | no | `0.1` | Minimum `avg_drift` to include (range 0.0–1.0) |
-| `path` | string | no | — | SQL LIKE pattern to filter file paths (e.g. `"src/tools/%"`) |
-| `detail_level` | string | no | exploring | `"full"` adds the most-drifted chunk content snippet |
-
-**Example:**
-
-```json
-{ "threshold": 0.2 }
-```
-
-**Output (exploring mode):**
-
-```json
-{
-  "results": [
-    {
-      "file_path": "src/auth/service.rs",
-      "avg_drift": 0.72,
-      "max_drift": 0.91,
-      "chunks_added": 2,
-      "chunks_removed": 1
-    }
-  ],
-  "total": 1
-}
-```
-
-Results are sorted by `max_drift` descending (most-changed files first).
-`avg_drift` is the mean across all chunks (including exact-match chunks at
-0.0). `max_drift` is the worst single chunk — useful for detecting large
-isolated rewrites.
-
-**Tips:**
-
-- Use `check_drift` after a major refactor to surface which files changed
-  semantically, not just syntactically. A whitespace-only reformatting will
-  have `avg_drift ≈ 0.0`; a complete function rewrite will approach `1.0`.
-- The drift table is cleared and rebuilt on every `index_project` run. It
-  only reflects the *most recent* indexing operation.
-- Pair with doc-staleness workflows: `avg_drift < 0.05` means the doc is
-  likely still accurate; `avg_drift > 0.4` means it probably needs updating.

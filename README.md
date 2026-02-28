@@ -8,6 +8,8 @@ LLMs waste most of their context window on code navigation. `grep` returns walls
 
 The result: shallow understanding, hallucinated edits, constant human course-correction.
 
+![Dashboard — Tool Stats page](docs/images/dashboard.png)
+
 ## The Solution
 
 code-explorer is an MCP server that gives your AI coding agent the same navigation tools a human developer uses in an IDE — but optimized for token efficiency.
@@ -16,17 +18,20 @@ code-explorer is an MCP server that gives your AI coding agent the same navigati
 
 | Pillar | What it does | Tools |
 |---|---|---|
-| LSP Navigation | Go-to-definition, find references, rename — via real language servers | 7 tools, 9 languages |
-| Semantic Search | Find code by concept, not just text match — via embeddings | 4 tools |
-| Git Integration | Blame, history, diffs — context no other tool provides | 3 tools |
+| LSP Navigation | Go-to-definition, hover, find references, rename — via real language servers | 8 tools, 9 languages |
+| Semantic Search | Find code by concept, not just text match — via embeddings | 3 tools |
+| Git Integration | Blame — context no other tool provides | 1 tool |
 | Persistent Memory | Remember project knowledge across sessions | 4 tools |
 
-Plus file operations (7 tools), AST analysis (2 tools), workflow (3 tools), config (2 tools), and library navigation (2 tools) — **33 tools total**.
+Plus file operations (6 tools), AST analysis (2 tools), workflow & config (4 tools), library navigation (2 tools), and usage statistics (1 tool) — **31 tools total**.
 
 **Recent additions:**
+- **`goto_definition` + `hover`** — LSP-backed jump-to-definition and type/doc inspection. `goto_definition` auto-discovers and registers library source when the definition lives outside the project root.
+- **`get_usage_stats`** — per-tool call counts, error rates, overflow rates, and p50/p99 latency over configurable time windows (1h / 24h / 7d / 30d).
+- **Dashboard** — `code-explorer dashboard --project .` launches a local web UI (default port 8099) with tool usage charts and project health views.
 - **Library Search** — navigate third-party dependency source code via LSP-inferred discovery, symbol navigation, and semantic search. Libraries auto-register when `goto_definition` returns paths outside the project root.
 - **Incremental Index Rebuilding** — smart change detection for the embedding index. Uses git diff → mtime → SHA-256 fallback chain to skip unchanged files, with staleness warnings when the index falls behind HEAD.
-- **Semantic Drift Detection** — detects *how much* code changed in meaning after re-indexing, not just that bytes changed. Useful for filtering doc staleness and understanding the scope of a refactor. Opt out with `drift_detection_enabled = false` in `[embeddings]`.
+- **Semantic Drift Detection** — detects *how much* code changed in meaning after re-indexing, not just that bytes changed. Surfaced via `index_status(threshold)`. Opt out with `drift_detection_enabled = false` in `[embeddings]`.
 
 ## Platform Support
 
@@ -51,7 +56,7 @@ If you prefer to install manually, follow the steps below.
 
 code-explorer has two components that work together:
 
-1. **MCP Server** — provides the 33 tools (symbol navigation, semantic search, git, etc.)
+1. **MCP Server** — provides the 31 tools (symbol navigation, semantic search, git, etc.)
 2. **Routing Plugin** — ensures Claude always uses the right tool, across all sessions and subagents
 
 **Both are recommended.** The MCP server gives Claude the capability; the plugin ensures
@@ -99,7 +104,7 @@ The plugin is available from the [claude-plugins marketplace](https://github.com
 
 ```bash
 claude mcp list
-# Should show: code-explorer with 33 tools
+# Should show: code-explorer with 31 tools
 ```
 
 ### How They Interact
@@ -118,7 +123,7 @@ claude mcp list
 │  └──────────────────────┬──────────────────────┘    │
 │                         │ routes to                   │
 │  ┌──────────────────────▼──────────────────────┐    │
-│  │  code-explorer MCP server (33 tools)         │    │
+│  │  code-explorer MCP server (31 tools)         │    │
 │  │                                              │    │
 │  │  LSP · Semantic · Git · AST · Memory · ...   │    │
 │  └──────────────────────────────────────────────┘    │
@@ -133,18 +138,19 @@ instead of `semantic_search`.
 tool to use for each situation. The `PreToolUse` hook actively intercepts
 suboptimal tool calls and redirects them before they execute.
 
-## Tools (33)
+## Tools (31)
 
 | Category | Count | Highlights |
 |---|---|---|
-| Symbol Navigation | 7 | `find_symbol`, `get_symbols_overview`, `find_referencing_symbols`, `rename_symbol` |
-| File Operations | 7 | `read_file`, `list_dir`, `search_for_pattern`, `create_text_file` |
-| Semantic Search | 4 | `semantic_search`, `index_project`, `index_status`, `check_drift` |
+| Symbol Navigation | 8 | `find_symbol`, `list_symbols`, `goto_definition`, `hover`, `find_references`, `replace_symbol`, `insert_code`, `rename_symbol` |
+| File Operations | 6 | `read_file`, `list_dir`, `search_pattern`, `create_file`, `find_file`, `edit_lines` |
+| Semantic Search | 3 | `semantic_search`, `index_project`, `index_status` |
 | Library Navigation | 2 | `list_libraries`, `index_library` |
-| Git | 3 | `git_blame`, `git_log`, `git_diff` |
-| AST Analysis | 2 | `list_functions`, `extract_docstrings` (offline, instant) |
+| Git | 1 | `git_blame` |
+| AST Analysis | 2 | `list_functions`, `list_docs` (offline, instant) |
 | Memory | 4 | `write_memory`, `read_memory`, `list_memories`, `delete_memory` |
-| Workflow & Config | 4 | `onboarding`, `execute_shell_command`, `activate_project` |
+| Workflow & Config | 4 | `onboarding`, `run_command`, `activate_project`, `get_config` |
+| Usage | 1 | `get_usage_stats` |
 
 Every tool defaults to compact output (exploring mode) and supports `detail_level: "full"` with pagination for when you need the complete picture.
 

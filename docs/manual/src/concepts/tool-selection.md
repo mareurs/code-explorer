@@ -21,12 +21,13 @@ server index.
 }
 ```
 
-**`get_symbols_overview(path)`** — list all symbols in a file, directory, or
+**`list_symbols(path)`** — list all symbols in a file, directory, or
 glob pattern. Use this when you have a file and want to see what is in it
 before deciding which symbol to read.
 
 ```json
-{ "tool": "get_symbols_overview", "arguments": { "relative_path": "src/services/auth.rs" } }
+{ "tool": "list_symbols", "arguments": { "path": "src/services/auth.rs" } }
+```
 ```
 
 **`list_functions(path)`** — list all function and method signatures in a file
@@ -37,15 +38,16 @@ supported file.
 { "tool": "list_functions", "arguments": { "path": "src/services/auth.rs" } }
 ```
 
-**`find_referencing_symbols(name_path, relative_path)`** — find every location
+**`find_references(name_path, path)`** — find every location
 that references a specific symbol. Use this when you know the symbol and want
 to trace all its callers or usages.
 
 ```json
 {
-  "tool": "find_referencing_symbols",
-  "arguments": { "name_path": "AuthService/verify_token", "relative_path": "src/services/auth.rs" }
+  "tool": "find_references",
+  "arguments": { "name_path": "AuthService/verify_token", "path": "src/services/auth.rs" }
 }
+```
 ```
 
 Once you have located the symbol you want, switch to Focused mode to read its
@@ -87,7 +89,7 @@ read the full symbols.
 
 1. `semantic_search("how are database errors handled")` — get a list of
    relevant files and line ranges.
-2. `get_symbols_overview(found_file)` — see the symbol structure around those
+2. `list_symbols(found_file)` — see the symbol structure around those
    lines.
 3. `find_symbol(name, include_body=true, detail_level="full")` — read the
    specific function body.
@@ -110,7 +112,7 @@ is usually enough to identify where to look next.
 **Step 2 — scan a promising file or directory:**
 
 ```json
-{ "tool": "get_symbols_overview", "arguments": { "relative_path": "src/services/" } }
+{ "tool": "list_symbols", "arguments": { "path": "src/services/" } }
 ```
 
 This shows all symbols across the directory in compact form. You get names,
@@ -137,19 +139,19 @@ Once you have a target, use `find_symbol` in Focused mode to read actual code.
 context. If you know the function name, use `find_symbol(include_body=true)`
 instead — you get the function body without the surrounding boilerplate.
 
-**Using `search_for_pattern` (grep) when `semantic_search` would serve better.**
-`search_for_pattern` matches literal text. It works well for finding exact
+**Using `search_pattern` (grep) when `semantic_search` would serve better.**
+`search_pattern` matches literal text. It works well for finding exact
 strings, imports, or call sites where you know the exact text. When you want
 code that implements a concept ("retry logic", "cache invalidation"), semantic
 search finds related code even when the words you think of do not appear in the
 source.
 
 **Switching to Focused mode before knowing what you want.**
-Calling `get_symbols_overview` with `detail_level: "full"` on a large directory
+Calling `list_symbols` with `detail_level: "full"` on a large directory
 floods the context with every function body in every file. Use Exploring mode
 to identify the target, then use Focused mode on that specific target.
 
-**Using `find_referencing_symbols` without a specific symbol.**
+**Using `find_references` without a specific symbol.**
 This tool requires a fully-qualified symbol path (`TypeName/method_name` in the
 file that defines it). It is not a search tool — it is a precision tool for
 tracing usages of a known symbol.
@@ -158,9 +160,9 @@ tracing usages of a known symbol.
 
 | You know... | Start with |
 |-------------|------------|
-| File path | `get_symbols_overview(file)` |
+| File path | `list_symbols(file)` |
 | Function/class name | `find_symbol(pattern)` |
-| Who calls a function | `find_referencing_symbols(name_path, file)` |
+| Who calls a function | `find_references(name_path, file)` |
 | A concept or behaviour | `semantic_search(query)` |
-| Nothing (unfamiliar area) | `list_dir` → `get_symbols_overview` → `semantic_search` |
-| Exact string or import | `search_for_pattern(regex)` |
+| Nothing (unfamiliar area) | `list_dir` → `list_symbols` → `semantic_search` |
+| Exact string or import | `search_pattern(regex)` |

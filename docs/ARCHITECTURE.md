@@ -7,7 +7,7 @@ code-explorer is an MCP server that gives LLMs IDE-grade code intelligence. It e
 ```
 ┌────────────────────────────────────────────────────────┐
 │              MCP Layer (rmcp)                           │
-│   CodeExplorerServer → registered tools (33)           │
+│   CodeExplorerServer → registered tools (31)           │
 └────────────────────────────────────────────────────────┘
                           ↓
 ┌────────────────────────────────────────────────────────┐
@@ -92,21 +92,30 @@ Third-party library source code navigation (read-only).
 
 Markdown-based persistent store in `.code-explorer/memories/`. Supports nested topics (path-like), directory traversal protection, CRUD operations.
 
+### Usage Recorder (`src/usage/`)
+
+Transparent wrapper around the tool dispatch loop in `server.rs`. Records every tool call to `.code-explorer/usage.db` (append-only SQLite). Captures: tool name, timestamp, outcome (success/error/overflow), latency (ms), and output mode. Surfaced via `get_usage_stats`.
+
+### Dashboard (`src/dashboard/`)
+
+Axum HTTP server launched via `code-explorer dashboard --project . [--port 8099]`. Serves a static HTML/CSS/JS app with multiple views: Tool Stats (per-tool call charts from `usage.db`), index status, memories browser, and library list. API routes under `/api/` read from the same data sources as the MCP tools. Not started by the MCP server — opt-in via the `dashboard` CLI subcommand.
+
 ### Tools (`src/tools/`)
 
 Each tool implements the `Tool` trait (`name`, `description`, `input_schema`, `async call`). Organized by category:
 
-| Category | File | Tools | Status |
-|----------|------|-------|--------|
-| File | `file.rs` | read_file, list_dir, search_for_pattern, find_file, create_text_file, replace_content, edit_lines | Working |
-| Workflow | `workflow.rs` | onboarding, check_onboarding_performed, execute_shell_command | Working |
-| Symbol | `symbol.rs` | find_symbol, get_symbols_overview, find_referencing_symbols, replace_symbol_body, insert_before_symbol, insert_after_symbol, rename_symbol (all support `scope` param) | Working (LSP) |
-| AST | `ast.rs` | list_functions, extract_docstrings | Working (tree-sitter) |
-| Git | `git.rs` | git_blame, git_log, git_diff | Working |
-| Semantic | `semantic.rs` | semantic_search, index_project, index_status, check_drift | Working |
-| Library | `library.rs` | list_libraries, index_library | Working |
-| Memory | `memory.rs` | write_memory, read_memory, list_memories, delete_memory | Working |
-| Config | `config.rs` | activate_project, get_current_config | Working |
+| Category | File | Tools |
+|----------|------|-------|
+| File | `file.rs` | `read_file`, `list_dir`, `search_pattern`, `find_file`, `create_file`, `edit_lines` |
+| Workflow | `workflow.rs` | `onboarding`, `run_command` |
+| Symbol | `symbol.rs` | `find_symbol`, `list_symbols`, `goto_definition`, `hover`, `find_references`, `replace_symbol`, `insert_code`, `rename_symbol` (all navigation tools support `scope` param) |
+| AST | `ast.rs` | `list_functions`, `list_docs` |
+| Git | `git.rs` | `git_blame` |
+| Semantic | `semantic.rs` | `semantic_search`, `index_project`, `index_status` (includes drift query via `threshold`/`path` params) |
+| Library | `library.rs` | `list_libraries`, `index_library` |
+| Memory | `memory.rs` | `write_memory`, `read_memory`, `list_memories`, `delete_memory` |
+| Config | `config.rs` | `activate_project`, `get_config` |
+| Usage | `usage.rs` | `get_usage_stats` |
 
 ### Utilities (`src/util/`)
 

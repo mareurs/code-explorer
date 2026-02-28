@@ -10,8 +10,8 @@ language server needs to be running, and no active project is required.
 
 ## AST Tools vs LSP Tools
 
-Both AST tools and LSP symbol tools (`get_symbols_overview`, `find_symbol`,
-`find_referencing_symbols`) can tell you about the structure of a file. Choose
+Both AST tools and LSP symbol tools (`list_symbols`, `find_symbol`,
+`find_references`) can tell you about the structure of a file. Choose
 based on what you need:
 
 | | AST tools | LSP tools |
@@ -32,12 +32,12 @@ Use AST tools when:
 
 Use LSP tools when:
 - You need full symbol trees with type information.
-- You need to find all callers of a function (`find_referencing_symbols`).
+- You need to find all callers of a function (`find_references`).
 - You need to perform a rename that propagates across the project.
 - The file's language is not in the AST tool's supported set (Java, Kotlin,
   C/C++, C#, Ruby).
 
-For most interactive coding tasks, start with `get_symbols_overview` (LSP).
+For most interactive coding tasks, start with `list_symbols` (LSP).
 Fall back to `list_functions` if the language server is unavailable or slow to
 start.
 
@@ -111,9 +111,9 @@ inside modules, and so on are all included.
 
 - `list_functions` is the fastest way to get a flat list of every callable in a
   file. It is useful as a first step before deciding which function to read in
-  full with `get_symbols_overview` and `find_symbol`.
+  full with `list_symbols` and `find_symbol`.
 - If the file's language is not supported (e.g., Java, Kotlin), the tool
-  returns an error. Use `get_symbols_overview` for those languages instead.
+  returns an error. Use `list_symbols` for those languages instead.
 - Both absolute and relative paths are accepted. Relative paths are resolved
   against the project root if one is active, or against the current working
   directory otherwise.
@@ -122,7 +122,7 @@ inside modules, and so on are all included.
 
 ---
 
-## `extract_docstrings`
+## `list_docs`
 
 **Purpose:** Extract all documentation comments from a file using tree-sitter.
 Returns each doc comment alongside the name of the symbol it is attached to.
@@ -176,7 +176,7 @@ Each entry has:
 
 **Tips:**
 
-- Use `extract_docstrings` to quickly survey the documented API surface of a
+- Use `list_docs` to quickly survey the documented API surface of a
   file without reading the full source. It is particularly useful for
   understanding a library or module you are unfamiliar with.
 - In Python, triple-quoted strings that appear as the first statement of a
@@ -188,4 +188,4 @@ Each entry has:
   `docstrings` array means the file has no documentation comments.
 - `symbol_name` is the bare name of the immediately following declaration. For
   more context — such as which struct a method belongs to — use
-  `get_symbols_overview` on the same file.
+  `list_symbols` on the same file.

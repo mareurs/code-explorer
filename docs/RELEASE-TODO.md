@@ -16,7 +16,7 @@ Tracking remaining work items for the first public release of code-explorer.
 
 - [ ] **CI pipeline** — GitHub Actions workflow running `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` on every PR. Single biggest protection against bad contributions.
 - [ ] **Integration test: path security through MCP** — End-to-end test via `call_tool` flow (server → tool → path validation → error). Current tests validate the path_security module in isolation; need to confirm wiring through the server layer.
-- [ ] **CreateTextFile overwrite protection** — Add `overwrite: bool` param (default false) so the LLM can't silently clobber existing files. Currently `create_text_file` overwrites without warning.
+- [ ] **CreateFile overwrite protection** — Add `overwrite: bool` param (default false) so the LLM can't silently clobber existing files. Currently `create_file` overwrites without warning.
 - [ ] **Error message path sanitization** — Error messages leak full filesystem paths (home dirs, mount points) back to the LLM. Relativize paths to project root in tool error responses.
 
 ## Medium Priority
@@ -32,7 +32,7 @@ Tracking remaining work items for the first public release of code-explorer.
 - [ ] **Audit logging** — Log all tool invocations (tool name, args, result status) to a file for post-incident review.
 - [ ] **ActivateProject restrictions** — Currently accepts any directory. Consider requiring a marker file (`.git/`, `.code-explorer/`, `Cargo.toml`) to prevent activating arbitrary system directories.
 - [ ] **Symlink deny-list for writes** — While `canonicalize()` catches symlinks pointing outside the project, consider an explicit `follow_symlinks: false` option for extra safety.
-- [ ] **Content-type validation for file writes** — Prevent writing binary/executable content through `create_text_file` (e.g., reject files with null bytes or shebang lines to unexpected paths).
+- [ ] **Content-type validation for file writes** — Prevent writing binary/executable content through `create_file` (e.g., reject files with null bytes or shebang lines to unexpected paths).
 
 ## Configuration Reference
 
