@@ -513,7 +513,6 @@ impl Tool for EditLines {
             new_text.lines().collect()
         };
 
-        let lines_inserted = insert_lines.len();
 
         // Splice: remove delete_count lines at idx, insert new lines
         let tail: Vec<&str> = lines.split_off(idx + delete_count);
@@ -529,13 +528,7 @@ impl Tool for EditLines {
         std::fs::write(&resolved, &out)?;
         ctx.lsp.notify_file_changed(&resolved).await;
 
-        Ok(json!({
-            "status": "ok",
-            "path": resolved.display().to_string(),
-            "lines_deleted": delete_count,
-            "lines_inserted": lines_inserted,
-            "new_total_lines": lines.len()
-        }))
+        Ok(json!("ok"))
     }
 }
 
@@ -545,7 +538,6 @@ mod tests {
     use crate::agent::Agent;
     use crate::lsp::LspManager;
     use serde_json::json;
-    use std::sync::Arc;
     use tempfile::tempdir;
 
     async fn test_ctx() -> ToolContext {
@@ -1400,11 +1392,33 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(result["status"], "ok");
-        assert_eq!(result["lines_deleted"], 1);
-        assert_eq!(result["lines_inserted"], 1);
+        assert_eq!(result, json!("ok"));
         let content = std::fs::read_to_string(&file).unwrap();
         assert_eq!(content, "line1\nreplaced\nline3\n");
+    }
+
+    #[tokio::test]
+    async fn edit_lines_returns_ok_string() {
+        // The response must be a plain "ok" string, not a verbose object.
+        let (dir, ctx) = project_ctx().await;
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "a\nb\nc\n").unwrap();
+
+        let result = EditLines
+            .call(
+                json!({
+                    "path": file.to_str().unwrap(),
+                    "start_line": 2,
+                    "delete_count": 1,
+                    "new_text": "B"
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result, json!("ok"));
+        assert!(result.is_string(), "response must be a plain string, not an object");
     }
 
     #[tokio::test]
@@ -1426,9 +1440,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(result["lines_deleted"], 2);
-        assert_eq!(result["lines_inserted"], 3);
-        assert_eq!(result["new_total_lines"], 5);
+        assert_eq!(result, json!("ok"));
         let content = std::fs::read_to_string(&file).unwrap();
         assert_eq!(content, "a\nX\nY\nZ\nd\n");
     }
@@ -1452,8 +1464,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(result["lines_deleted"], 0);
-        assert_eq!(result["lines_inserted"], 1);
+        assert_eq!(result, json!("ok"));
         let content = std::fs::read_to_string(&file).unwrap();
         assert_eq!(content, "line1\ninserted\nline2\n");
     }
@@ -1477,8 +1488,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(result["lines_deleted"], 0);
-        assert_eq!(result["lines_inserted"], 1);
+        assert_eq!(result, json!("ok"));
         let content = std::fs::read_to_string(&file).unwrap();
         assert_eq!(content, "line1\nline2\nline3\n");
     }
@@ -1501,9 +1511,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(result["lines_deleted"], 2);
-        assert_eq!(result["lines_inserted"], 0);
-        assert_eq!(result["new_total_lines"], 2);
+        assert_eq!(result, json!("ok"));
         let content = std::fs::read_to_string(&file).unwrap();
         assert_eq!(content, "a\nd\n");
     }
@@ -1581,7 +1589,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(result["status"], "ok");
+        assert_eq!(result, json!("ok"));
         assert_eq!(
             std::fs::read_to_string(&file).unwrap(),
             "alpha\nREPLACED\ngamma\n"

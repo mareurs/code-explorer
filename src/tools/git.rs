@@ -97,7 +97,6 @@ mod tests {
     use super::*;
     use crate::agent::Agent;
     use crate::lsp::LspManager;
-    use std::sync::Arc;
     use tempfile::tempdir;
 
     /// Create a temp git repo with one commit and return the context.

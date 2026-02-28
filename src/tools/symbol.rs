@@ -1649,7 +1649,6 @@ async fn tag_external_path(
 mod tests {
     use super::*;
     use crate::agent::Agent;
-    use crate::lsp::LspManager;
     use crate::tools::ToolContext;
     use serde_json::json;
     use std::sync::Arc;

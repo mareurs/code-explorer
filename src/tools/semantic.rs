@@ -364,7 +364,6 @@ mod tests {
     use crate::agent::Agent;
     use crate::embed::index;
     use crate::lsp::LspManager;
-    use std::sync::Arc;
     use tempfile::tempdir;
 
     async fn project_ctx() -> (tempfile::TempDir, ToolContext) {

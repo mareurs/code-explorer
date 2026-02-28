@@ -481,7 +481,6 @@ fn truncate_output(output: &str, limit: usize) -> (String, bool) {
 mod tests {
     use super::*;
     use crate::agent::Agent;
-    use crate::lsp::LspManager;
     use std::sync::Arc;
     use tempfile::tempdir;
 

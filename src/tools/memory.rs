@@ -116,7 +116,6 @@ impl Tool for DeleteMemory {
 mod tests {
     use super::*;
     use crate::agent::Agent;
-    use crate::lsp::LspManager;
     use std::sync::Arc;
     use tempfile::tempdir;
 

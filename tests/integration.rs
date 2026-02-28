@@ -3,7 +3,6 @@
 //! These tests exercise realistic tool sequences that a coding agent would
 //! perform, ensuring tools compose correctly end-to-end.
 
-use std::sync::Arc;
 
 use code_explorer::agent::Agent;
 use code_explorer::lsp::LspManager;
@@ -85,7 +84,7 @@ async fn workflow_read_search_replace() {
         )
         .await
         .unwrap();
-    assert_eq!(replace_result["status"], "ok");
+    assert_eq!(replace_result, json!("ok"));
 
     // Step 4: Verify the change
     let read_after = ReadFile

@@ -146,7 +146,6 @@ mod tests {
     use crate::agent::Agent;
     use crate::lsp::LspManager;
     use std::path::PathBuf;
-    use std::sync::Arc;
 
     async fn project_ctx() -> ToolContext {
         let dir = tempfile::tempdir().unwrap();

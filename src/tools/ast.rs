@@ -149,7 +149,6 @@ mod tests {
     use super::*;
     use crate::agent::Agent;
     use crate::lsp::LspManager;
-    use std::sync::Arc;
     use tempfile::tempdir;
 
     async fn project_ctx_with_file(

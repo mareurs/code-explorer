@@ -86,7 +86,7 @@ broad and matched a partial occurrence the tool incorrectly reported as 0.
 
 **Date:** 2026-02-28
 **Severity:** High — silently corrupts the file
-**Status:** ✅ FIXED — `trim_symbol_start` skips LSP lead-in tokens before splicing. Regression tests: `tests/symbol_lsp.rs::replace_symbol_preserves_preceding_close_brace`
+**Status:** ⚠️ PARTIALLY FIXED — `trim_symbol_start` skips leading `}` lines, but the fix has a blind spot. Observed recurrence: `replace_symbol` on `impl Tool for EditLines/call` (2026-02-28) still ate the closing `}` of `input_schema`, corrupting the file. The exact trigger is unclear — may be a case where the LSP range starts on the first real line of the target `fn` but the preceding method's `}` is somehow still included. Regression tests: `tests/symbol_lsp.rs::replace_symbol_preserves_preceding_close_brace`. **Workaround: use `edit_lines` instead of `replace_symbol` for method bodies in impl blocks.**
 
 **What happened:**
 Called `replace_symbol` on `impl Tool for EditLines/input_schema`. The LSP's symbol range

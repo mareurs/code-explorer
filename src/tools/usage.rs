@@ -55,7 +55,6 @@ mod tests {
     use crate::agent::Agent;
     use crate::lsp::manager::LspManager;
     use crate::tools::ToolContext;
-    use std::sync::Arc;
     use tempfile::TempDir;
 
     async fn ctx_with_project(root: &std::path::Path) -> ToolContext {
