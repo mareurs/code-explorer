@@ -1135,4 +1135,66 @@ struct Point {
         let dead = unsafe { libc::kill(pid as i32, 0) };
         assert_ne!(dead, 0, "child should be dead after drop");
     }
+
+    /// Reproduce the stale-position bug: after editing a file on disk without sending
+    /// didChange, the LSP returns positions from the old content. did_change fixes it.
+    #[tokio::test]
+    async fn did_change_refreshes_stale_symbol_positions() {
+        if !rust_analyzer_available() {
+            eprintln!("Skipping: rust-analyzer not installed");
+            return;
+        }
+
+        let dir = tempdir().unwrap();
+        create_test_cargo_project(dir.path());
+        let main_rs = dir.path().join("src/main.rs");
+
+        let config = LspServerConfig {
+            command: "rust-analyzer".into(),
+            args: vec![],
+            workspace_root: dir.path().to_path_buf(),
+            init_timeout: None,
+        };
+        let client = LspClient::start(config).await.unwrap();
+
+        // Step 1: query symbols — fn add is at line 4 (0-indexed) in the original file.
+        let syms = client.document_symbols(&main_rs, "rust").await.unwrap();
+        let add_before = syms
+            .iter()
+            .find(|s| s.name == "add")
+            .expect("fn add not found");
+        let original_line = add_before.start_line;
+
+        // Step 2: prepend 3 blank lines on disk — shifts fn add to line 7.
+        let original = std::fs::read_to_string(&main_rs).unwrap();
+        std::fs::write(&main_rs, format!("\n\n\n{}", original)).unwrap();
+
+        // Step 3: query again WITHOUT did_change — LSP returns stale positions.
+        let syms_stale = client.document_symbols(&main_rs, "rust").await.unwrap();
+        let add_stale = syms_stale
+            .iter()
+            .find(|s| s.name == "add")
+            .expect("fn add not found");
+        assert_eq!(
+            add_stale.start_line, original_line,
+            "without did_change, LSP should still return the old (stale) line number"
+        );
+
+        // Step 4: notify the LSP about the disk change.
+        client.did_change(&main_rs).await.unwrap();
+
+        // Step 5: query again — LSP should now return the shifted position.
+        let syms_fresh = client.document_symbols(&main_rs, "rust").await.unwrap();
+        let add_fresh = syms_fresh
+            .iter()
+            .find(|s| s.name == "add")
+            .expect("fn add not found");
+        assert_eq!(
+            add_fresh.start_line,
+            original_line + 3,
+            "after did_change, LSP should return the updated line number (shifted by 3)"
+        );
+
+        client.shutdown().await.unwrap();
+    }
 }

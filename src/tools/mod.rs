@@ -222,6 +222,7 @@ mod tests {
         let input = serde_json::json!({ "n": "-5" });
         assert!(require_u64_param(&input, "n").is_err());
     }
+    #[test]
     fn recoverable_error_downcasts_from_anyhow() {
         let e: anyhow::Error = RecoverableError::new("test error").into();
         assert!(
