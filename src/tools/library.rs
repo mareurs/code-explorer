@@ -157,7 +157,7 @@ mod tests {
         std::mem::forget(dir);
         ToolContext {
             agent,
-            lsp: Arc::new(LspManager::new()),
+            lsp: LspManager::new_arc(),
         }
     }
 
@@ -196,7 +196,7 @@ mod tests {
         let agent = Agent::new(None).await.unwrap();
         let ctx = ToolContext {
             agent,
-            lsp: Arc::new(LspManager::new()),
+            lsp: LspManager::new_arc(),
         };
         let tool = ListLibraries;
         let result = tool.call(json!({}), &ctx).await;

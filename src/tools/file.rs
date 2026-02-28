@@ -551,7 +551,7 @@ mod tests {
     async fn test_ctx() -> ToolContext {
         ToolContext {
             agent: Agent::new(None).await.unwrap(),
-            lsp: Arc::new(LspManager::new()),
+            lsp: LspManager::new_arc(),
         }
     }
 
@@ -563,7 +563,7 @@ mod tests {
             dir,
             ToolContext {
                 agent,
-                lsp: Arc::new(LspManager::new()),
+                lsp: LspManager::new_arc(),
             },
         )
     }

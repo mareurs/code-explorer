@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::lsp::LspManager;
+use crate::lsp::{LspManager, LspProvider};
 
 use anyhow::Result;
 use rmcp::{
@@ -39,7 +39,7 @@ use crate::usage::UsageRecorder;
 #[derive(Clone)]
 pub struct CodeExplorerServer {
     agent: Agent,
-    lsp: Arc<LspManager>,
+    lsp: Arc<dyn LspProvider>,
     tools: Vec<Arc<dyn Tool>>,
     /// Pre-computed at construction because `get_info()` is sync.
     /// Becomes stale if project state changes mid-session (e.g. after onboarding or indexing).
@@ -50,11 +50,11 @@ pub struct CodeExplorerServer {
 
 impl CodeExplorerServer {
     pub async fn new(agent: Agent) -> Self {
-        Self::from_parts(agent, Arc::new(LspManager::new())).await
+        Self::from_parts(agent, LspManager::new_arc()).await
     }
 
     /// Create a server with an existing LspManager (used for HTTP multi-session).
-    pub async fn from_parts(agent: Agent, lsp: Arc<LspManager>) -> Self {
+    pub async fn from_parts(agent: Agent, lsp: Arc<dyn LspProvider>) -> Self {
         let status = agent.project_status().await;
         let instructions = crate::prompts::build_server_instructions(status.as_ref());
         let tools: Vec<Arc<dyn Tool>> = vec![
@@ -299,7 +299,7 @@ pub async fn run(
     // If no --project given, auto-detect from CWD (Claude Code launches servers from the project dir)
     let project = project.or_else(|| std::env::current_dir().ok());
     let agent = Agent::new(project).await?;
-    let lsp = Arc::new(LspManager::new());
+    let lsp = LspManager::new_arc();
 
     match transport {
         "stdio" => {

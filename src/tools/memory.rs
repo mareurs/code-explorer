@@ -120,8 +120,8 @@ mod tests {
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    fn lsp() -> Arc<LspManager> {
-        Arc::new(LspManager::new())
+    fn lsp() -> Arc<dyn crate::lsp::LspProvider> {
+        crate::lsp::LspManager::new_arc()
     }
 
     async fn test_ctx_with_project() -> (tempfile::TempDir, ToolContext) {

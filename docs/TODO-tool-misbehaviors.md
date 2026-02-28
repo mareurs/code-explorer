@@ -22,6 +22,7 @@ capture: what you did, what you expected, what actually happened, and a reproduc
 
 **Date:** 2026-02-28
 **Severity:** High — silently corrupts the file
+**Status:** ✅ FIXED — `expected_content` guard added (commit `e03bce7`)
 
 **What happened:**
 Wanted to replace `project_explicitly_activated: false,` (line 56) with a variable binding.
@@ -34,16 +35,9 @@ producing a duplicate `Ok(Self {` block and two compiler errors.
 There is no `old_content` parameter (unlike the builtin `Edit` tool's `old_string`), so
 a one-off line count error causes silent corruption.
 
-**Workaround:**
-Always run `search_pattern` to verify the exact content and line number of the target line
-before calling `edit_lines`. Prefer `replace_symbol` for code whenever possible — it
-addresses by name, not line number.
-
-**Fix ideas:**
-- Add an optional `expected_content: String` guard — if line N doesn't match, return a
-  `RecoverableError` instead of applying the edit.
-- Return `old_content` in the success response so the caller can detect the mistake post-hoc.
-- Prefer `replace_symbol` for all code edits; reserve `edit_lines` for non-code files only.
+**Fix applied:**
+Added optional `expected_content: String` guard — if line N doesn't match, returns a
+`RecoverableError` instead of applying the edit.
 
 ---
 
@@ -51,6 +45,7 @@ addresses by name, not line number.
 
 **Date:** 2026-02-28
 **Severity:** High — produces unparseable source
+**Status:** Open
 
 **What happened:**
 Renamed test function `project_not_explicitly_activated_on_startup` →
@@ -87,32 +82,11 @@ broad and matched a partial occurrence the tool incorrectly reported as 0.
 
 ---
 
-## Template for new entries
-
-```
-### BUG-XXX — <tool name>: <one-line description>
-
-**Date:** YYYY-MM-DD
-**Severity:** Low / Medium / High
-
-**What happened:**
-<what you did, what you expected, what happened instead>
-
-**Reproduction hint:**
-<minimal steps or context to reproduce>
-
-**Root cause hypothesis:**
-<your best guess at why it happened>
-
-**Fix ideas:**
-<options for fixing it in the tool or in its UX>
-
----
-
 ### BUG-003 — `replace_symbol` eats closing `}` of preceding method
 
 **Date:** 2026-02-28
 **Severity:** High — silently corrupts the file
+**Status:** ✅ FIXED — `trim_symbol_start` skips LSP lead-in tokens before splicing. Regression tests: `tests/symbol_lsp.rs::replace_symbol_preserves_preceding_close_brace`
 
 **What happened:**
 Called `replace_symbol` on `impl Tool for EditLines/input_schema`. The LSP's symbol range
@@ -121,7 +95,7 @@ for `input_schema` apparently included the closing `    }` and blank line of the
 `    }` prefix), so the description method lost its closing brace — making it span into
 `input_schema` and beyond in the compiler's view.
 
-**Root cause hypothesis:**
+**Root cause:**
 The LSP (rust-analyzer) reports the symbol range for a method as including any leading
 whitespace or closing tokens from the prior method that appear before the `fn` keyword.
 When `replace_symbol` replaces that range with content that doesn't re-emit those tokens,
@@ -131,10 +105,10 @@ they're silently deleted.
 Any `replace_symbol` on a method that is not the first in an impl block. The preceding
 method's closing `}` and the blank line separator are both at risk.
 
-**Fix ideas:**
-- Before any `replace_symbol`, verify the body starts where expected using `search_pattern`.
-- Use `edit_lines` with `expected_content` for surgical modifications instead of full-body replacement.
-- Inspect the raw LSP range returned for each symbol and warn when it includes content from preceding symbols.
+**Fix applied:**
+`trim_symbol_start(start, &lines)` scans forward from `sym.start_line` skipping lines
+that are empty or contain only `}`, `},`, or `};` — landing on the actual `fn`/`pub`/
+keyword. Applied in both `replace_symbol::call` and `insert_code::call` ("before" case).
 
 ---
 
@@ -142,6 +116,7 @@ method's closing `}` and the blank line separator are both at risk.
 
 **Date:** 2026-02-28
 **Severity:** High — silently corrupts the file
+**Status:** ✅ PARTIALLY FIXED — `trim_symbol_start` applied to the "before" case. Regression tests: `tests/symbol_lsp.rs::insert_code_before_skips_lead_in`. The "after" case (using `end_line`) is not yet protected.
 
 **What happened:**
 Called `insert_code(name_path="tests/edit_lines_missing_params_errors", position="after")`.
@@ -158,7 +133,31 @@ Could also be a name-path resolution issue — the tool may have matched the wro
 - After `insert_code`, verify the insertion with `search_pattern` to confirm the new code
   is in the expected location.
 - Consider using `edit_lines` for insertions when position must be precise.
-- Add a post-insertion check: if the line immediately after the insertion is not a blank line
-  or `#[...` or `}`, warn the caller.
+- For the "after" case: similarly apply a `trim_symbol_end` that scans backwards from
+  `end_line` to find the actual closing token, guarding against over-extended LSP ranges.
 
+---
+
+## Template for new entries
+
+```
+### BUG-XXX — <tool name>: <one-line description>
+
+**Date:** YYYY-MM-DD
+**Severity:** Low / Medium / High
+**Status:** Open
+
+**What happened:**
+<what you did, what you expected, what happened instead>
+
+**Reproduction hint:**
+<minimal steps or context to reproduce>
+
+**Root cause hypothesis:**
+<your best guess at why it happened>
+
+**Fix ideas:**
+<options for fixing it in the tool or in its UX>
+
+---
 ```

@@ -124,7 +124,7 @@ mod tests {
             dir,
             ToolContext {
                 agent,
-                lsp: Arc::new(LspManager::new()),
+                lsp: LspManager::new_arc(),
             },
         )
     }
@@ -196,7 +196,7 @@ mod tests {
     async fn tools_error_without_project() {
         let ctx = ToolContext {
             agent: Agent::new(None).await.unwrap(),
-            lsp: Arc::new(LspManager::new()),
+            lsp: LspManager::new_arc(),
         };
         assert!(GitBlame.call(json!({ "path": "x" }), &ctx).await.is_err());
     }

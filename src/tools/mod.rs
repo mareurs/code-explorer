@@ -22,7 +22,7 @@ use anyhow::Result;
 use serde_json::Value;
 
 use crate::agent::Agent;
-use crate::lsp::LspManager;
+use crate::lsp::LspProvider;
 
 /// Shared context passed to every tool invocation.
 ///
@@ -31,7 +31,7 @@ use crate::lsp::LspManager;
 /// resources are added — all tools get access automatically.
 pub struct ToolContext {
     pub agent: Agent,
-    pub lsp: Arc<LspManager>,
+    pub lsp: Arc<dyn LspProvider>,
 }
 
 /// A recoverable tool error: the LLM gave bad input and can self-correct.

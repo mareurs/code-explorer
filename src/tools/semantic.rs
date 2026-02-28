@@ -375,7 +375,7 @@ mod tests {
             dir,
             ToolContext {
                 agent,
-                lsp: Arc::new(LspManager::new()),
+                lsp: LspManager::new_arc(),
             },
         )
     }
@@ -396,7 +396,7 @@ mod tests {
             dir,
             ToolContext {
                 agent,
-                lsp: Arc::new(LspManager::new()),
+                lsp: LspManager::new_arc(),
             },
         )
     }
@@ -438,7 +438,7 @@ mod tests {
     async fn tools_error_without_project() {
         let ctx = ToolContext {
             agent: Agent::new(None).await.unwrap(),
-            lsp: Arc::new(LspManager::new()),
+            lsp: LspManager::new_arc(),
         };
         assert!(SemanticSearch
             .call(json!({ "query": "test" }), &ctx)
@@ -607,7 +607,7 @@ mod tests {
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         let ctx = ToolContext {
             agent,
-            lsp: Arc::new(LspManager::new()),
+            lsp: LspManager::new_arc(),
         };
         let result = IndexStatus
             .call(json!({"threshold": 0.1}), &ctx)

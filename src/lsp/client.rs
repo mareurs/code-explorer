@@ -784,6 +784,66 @@ impl Drop for LspClient {
     }
 }
 
+#[async_trait::async_trait]
+impl crate::lsp::ops::LspClientOps for LspClient {
+    async fn document_symbols(
+        &self,
+        path: &std::path::Path,
+        language_id: &str,
+    ) -> anyhow::Result<Vec<crate::lsp::SymbolInfo>> {
+        LspClient::document_symbols(self, path, language_id).await
+    }
+
+    async fn workspace_symbols(&self, query: &str) -> anyhow::Result<Vec<crate::lsp::SymbolInfo>> {
+        LspClient::workspace_symbols(self, query).await
+    }
+
+    async fn references(
+        &self,
+        path: &std::path::Path,
+        line: u32,
+        col: u32,
+        language_id: &str,
+    ) -> anyhow::Result<Vec<lsp_types::Location>> {
+        LspClient::references(self, path, line, col, language_id).await
+    }
+
+    async fn goto_definition(
+        &self,
+        path: &std::path::Path,
+        line: u32,
+        col: u32,
+        language_id: &str,
+    ) -> anyhow::Result<Vec<lsp_types::Location>> {
+        LspClient::goto_definition(self, path, line, col, language_id).await
+    }
+
+    async fn hover(
+        &self,
+        path: &std::path::Path,
+        line: u32,
+        col: u32,
+        language_id: &str,
+    ) -> anyhow::Result<Option<String>> {
+        LspClient::hover(self, path, line, col, language_id).await
+    }
+
+    async fn rename(
+        &self,
+        path: &std::path::Path,
+        line: u32,
+        col: u32,
+        new_name: &str,
+        language_id: &str,
+    ) -> anyhow::Result<lsp_types::WorkspaceEdit> {
+        LspClient::rename(self, path, line, col, new_name, language_id).await
+    }
+
+    async fn did_change(&self, path: &std::path::Path) -> anyhow::Result<()> {
+        LspClient::did_change(self, path).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -39,7 +39,7 @@ async fn fixture_context(language: &str) -> Arc<ToolContext> {
         .await
         .unwrap_or_else(|e| panic!("Failed to create Agent for {language}: {e}"));
 
-    let lsp = Arc::new(LspManager::new());
+    let lsp = LspManager::new_arc();
     Arc::new(ToolContext { agent, lsp })
 }
 

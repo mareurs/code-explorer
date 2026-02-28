@@ -211,6 +211,34 @@ impl LspManager {
     }
 }
 
+#[async_trait::async_trait]
+impl crate::lsp::ops::LspProvider for LspManager {
+    async fn get_or_start(
+        &self,
+        language: &str,
+        workspace_root: &std::path::Path,
+    ) -> anyhow::Result<Arc<dyn crate::lsp::ops::LspClientOps>> {
+        let client = LspManager::get_or_start(self, language, workspace_root).await?;
+        Ok(client as Arc<dyn crate::lsp::ops::LspClientOps>)
+    }
+
+    async fn notify_file_changed(&self, path: &std::path::Path) {
+        LspManager::notify_file_changed(self, path).await
+    }
+
+    async fn shutdown_all(&self) {
+        LspManager::shutdown_all(self).await
+    }
+}
+
+impl LspManager {
+    /// Convenience constructor returning `Arc<dyn LspProvider>`.
+    /// Use this everywhere `ToolContext` is constructed instead of `Arc::new(LspManager::new())`.
+    pub fn new_arc() -> Arc<dyn crate::lsp::ops::LspProvider> {
+        Arc::new(Self::new())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -164,7 +164,7 @@ mod tests {
             dir,
             ToolContext {
                 agent,
-                lsp: Arc::new(LspManager::new()),
+                lsp: LspManager::new_arc(),
             },
         )
     }
@@ -236,7 +236,7 @@ mod tests {
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         let ctx = ToolContext {
             agent,
-            lsp: Arc::new(LspManager::new()),
+            lsp: LspManager::new_arc(),
         };
         let result = ListFunctions
             .call(json!({ "path": "nonexistent.rs" }), &ctx)

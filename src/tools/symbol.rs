@@ -123,7 +123,7 @@ fn get_path_param(input: &Value, required: bool) -> anyhow::Result<Option<&str>>
 async fn get_lsp_client(
     ctx: &ToolContext,
     path: &Path,
-) -> anyhow::Result<(std::sync::Arc<crate::lsp::LspClient>, String)> {
+) -> anyhow::Result<(std::sync::Arc<dyn crate::lsp::LspClientOps>, String)> {
     let lang = ast::detect_language(path).ok_or_else(|| {
         RecoverableError::with_hint(
             format!("unsupported file type: {:?}", path),
@@ -1064,6 +1064,27 @@ impl Tool for Hover {
 
 // ── replace_symbol_body ────────────────────────────────────────────────────
 
+/// Advance `start` past any LSP-reported lead-in tokens: closing `}` variants
+/// and blank lines that rust-analyzer includes at the start of a sibling
+/// symbol's range from the preceding declaration.
+///
+/// # BUG-003 / BUG-004
+/// rust-analyzer reports the symbol range for a method as including the closing
+/// `}` (and optional blank line) of the *previous* method. Without this trim,
+/// `replace_symbol` and `insert_code("before")` would silently delete that `}`.
+fn trim_symbol_start(start: usize, lines: &[&str]) -> usize {
+    let mut s = start;
+    while s < lines.len() {
+        let t = lines[s].trim();
+        if t.is_empty() || t == "}" || t == "}," || t == "};" {
+            s += 1;
+        } else {
+            break;
+        }
+    }
+    s
+}
+
 pub struct ReplaceSymbol;
 
 #[async_trait::async_trait]
@@ -1105,7 +1126,7 @@ impl Tool for ReplaceSymbol {
         let content = std::fs::read_to_string(&full_path)?;
         let lines: Vec<&str> = content.lines().collect();
 
-        let start = sym.start_line as usize;
+        let start = trim_symbol_start(sym.start_line as usize, &lines);
         let end = (sym.end_line as usize + 1).min(lines.len());
 
         let mut new_lines = Vec::new();
@@ -1168,7 +1189,7 @@ impl Tool for InsertCode {
         let content = std::fs::read_to_string(&full_path)?;
         let lines: Vec<&str> = content.lines().collect();
         let insert_at = match position {
-            "before" => sym.start_line as usize,
+            "before" => trim_symbol_start(sym.start_line as usize, &lines),
             _ => (sym.end_line as usize + 1).min(lines.len()),
         };
 
@@ -1634,8 +1655,8 @@ mod tests {
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    fn lsp() -> Arc<LspManager> {
-        Arc::new(LspManager::new())
+    fn lsp() -> Arc<dyn crate::lsp::LspProvider> {
+        crate::lsp::LspManager::new_arc()
     }
 
     /// Create a test Cargo project and return the context.

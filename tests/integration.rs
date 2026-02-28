@@ -25,7 +25,7 @@ async fn project_with_files(files: &[(&str, &str)]) -> (tempfile::TempDir, ToolC
     let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
     let ctx = ToolContext {
         agent,
-        lsp: Arc::new(LspManager::new()),
+        lsp: LspManager::new_arc(),
     };
     (dir, ctx)
 }
@@ -236,7 +236,7 @@ async fn workflow_git_blame() {
     let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
     let ctx = ToolContext {
         agent,
-        lsp: Arc::new(LspManager::new()),
+        lsp: LspManager::new_arc(),
     };
 
     // Step 1: Create a file via tool
@@ -548,7 +548,7 @@ async fn write_allowed_when_project_provided_at_startup_even_with_worktrees() {
     assert!(agent.is_project_explicitly_activated().await);
     let ctx = ToolContext {
         agent,
-        lsp: Arc::new(LspManager::new()),
+        lsp: LspManager::new_arc(),
     };
 
     // 3. Write should succeed — worktree guard bypassed because project was

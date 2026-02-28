@@ -63,7 +63,7 @@ mod tests {
         let agent = Agent::new(Some(root.to_path_buf())).await.unwrap();
         ToolContext {
             agent,
-            lsp: Arc::new(LspManager::new()),
+            lsp: LspManager::new_arc(),
         }
     }
 
@@ -83,7 +83,7 @@ mod tests {
         let agent = Agent::new(None).await.unwrap();
         let ctx = ToolContext {
             agent,
-            lsp: Arc::new(LspManager::new()),
+            lsp: LspManager::new_arc(),
         };
         let tool = GetUsageStats;
         let result = tool.call(serde_json::json!({}), &ctx).await;
