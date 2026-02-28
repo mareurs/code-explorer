@@ -153,6 +153,73 @@ You have just onboarded this project. Below you'll find pre-gathered context fro
 
 ---
 
+### 7. System Prompt — `.code-explorer/system-prompt.md`
+
+After creating the 6 memories above, synthesize a concise system prompt (15-30 lines)
+for this project. This prompt is injected into EVERY code-explorer session
+automatically — it must be short and high-value. Do NOT repeat information from the
+static tool guidance (how to use find_symbol, list_symbols, etc.) — that's already
+provided to you separately.
+
+**What to include:**
+- Entry points: where to start exploring this codebase (specific files + symbols)
+- Key abstractions: 3-5 core types/traits that form the skeleton of this project
+- Search tips: semantic_search queries that work well for THIS codebase, and terms to avoid (too broad, too generic)
+- Navigation strategy: recommended exploration order for a new task in this project
+- Project rules: conventions the AI should always follow that aren't captured by linters
+
+**What NOT to include (already covered elsewhere):**
+- How code-explorer tools work (the static tool guidance handles this)
+- Full architecture details (the `architecture` memory covers this)
+- Command lists, glossary, detailed conventions (memories cover these)
+- Anything over 30 lines (keep it concise — this is injected every session)
+
+**Template:**
+```
+# [Project Name] — Code Explorer Guidance
+
+## Entry Points
+[Where to start. Specific files + symbols, not module descriptions.]
+
+## Key Abstractions
+[3-5 core types with file paths. What to understand first.]
+
+## Search Tips
+[Concrete query examples that work well. Terms to avoid.]
+
+## Navigation Strategy
+[Recommended exploration order for new tasks.]
+
+## Project Rules
+[Conventions the AI should always follow.]
+```
+
+**Process:** Present the draft to the user and ask: "Does this system prompt look
+right? I'll save it to `.code-explorer/system-prompt.md`." After confirmation, write
+the file using `create_file`. Inform the user they can edit it anytime.
+
+---
+
+## After Everything Is Created
+
+After confirming all 6 memories and the system prompt with the user, deliver this:
+
+---
+
+**Your code-explorer setup is complete.**
+
+- **System prompt** (`.code-explorer/system-prompt.md`) — always-on project guidance,
+  injected into every session. Edit anytime to refine how AI navigates your codebase.
+- **Memories** — reference material read on demand via `read_memory(topic)`. Update
+  with `write_memory(topic, content)`.
+- **Quick start for new tasks:**
+  1. `read_memory("architecture")` — orient yourself
+  2. `list_symbols("src/")` — see the module structure
+  3. `semantic_search("your concept")` — find relevant code
+  4. `find_symbol("Name", include_body=true)` — read the implementation
+
+---
+
 ## Gathered Project Data
 
 The data below was collected automatically. Use it as your starting point, then explore with code-explorer tools to fill gaps.

@@ -133,6 +133,53 @@ fn gather_project_context(root: &std::path::Path) -> GatheredContext {
     ctx
 }
 
+fn build_system_prompt_draft(languages: &[String], entry_points: &[String]) -> String {
+    let mut draft = String::new();
+    draft.push_str("# Project — Code Explorer Guidance\n\n");
+
+    // Entry points section
+    draft.push_str("## Entry Points\n");
+    if entry_points.is_empty() {
+        draft.push_str("- Explore with `list_dir(\".\")` then `list_symbols` on key files\n");
+    } else {
+        for ep in entry_points {
+            draft.push_str(&format!("- `{}` — start here\n", ep));
+        }
+    }
+    draft.push('\n');
+
+    // Key abstractions — placeholder for the LLM to fill
+    draft.push_str("## Key Abstractions\n");
+    draft.push_str("- [Discover with `list_symbols` on main source directories]\n\n");
+
+    // Search tips
+    draft.push_str("## Search Tips\n");
+    if !languages.is_empty() {
+        draft.push_str(&format!("- This is a {} project\n", languages.join("/")));
+    }
+    draft.push_str("- Use specific terms over generic ones (e.g., avoid 'data', 'utils')\n\n");
+
+    // Navigation strategy
+    draft.push_str("## Navigation Strategy\n");
+    draft.push_str("1. `read_memory(\"architecture\")` — orient yourself\n");
+    if !entry_points.is_empty() {
+        draft.push_str(&format!(
+            "2. `list_symbols(\"{}\")` — see main structure\n",
+            entry_points[0]
+        ));
+    } else {
+        draft.push_str("2. `list_symbols(\"src/\")` — see main structure\n");
+    }
+    draft.push_str("3. `semantic_search(\"your concept\")` — find relevant code\n");
+    draft.push_str("4. `find_symbol(\"Name\", include_body=true)` — read implementation\n\n");
+
+    // Project rules — placeholder
+    draft.push_str("## Project Rules\n");
+    draft.push_str("- [Add project-specific conventions here]\n");
+
+    draft
+}
+
 #[async_trait::async_trait]
 impl Tool for Onboarding {
     fn name(&self) -> &str {
@@ -141,8 +188,8 @@ impl Tool for Onboarding {
     fn description(&self) -> &str {
         "Perform initial project discovery: detect languages, read key files \
          (README, build config, CLAUDE.md), and return instructions for creating \
-         project memories. Requires an active project. Returns status if already \
-         onboarded (use force=true to re-scan)."
+         project memories and a system prompt draft. Requires an active project. \
+         Returns status if already onboarded (use force=true to re-scan)."
     }
     fn input_schema(&self) -> Value {
         json!({
@@ -283,6 +330,9 @@ impl Tool for Onboarding {
             &gathered.test_dirs,
         );
 
+        // Build the system prompt draft scaffold
+        let system_prompt_draft = build_system_prompt_draft(&lang_list, &gathered.entry_points);
+
         Ok(json!({
             "languages": lang_list,
             "top_level": top_level,
@@ -294,6 +344,7 @@ impl Tool for Onboarding {
             "test_dirs": gathered.test_dirs,
             "ci_files": gathered.ci_files,
             "instructions": prompt,
+            "system_prompt_draft": system_prompt_draft,
         }))
     }
 }
@@ -696,5 +747,27 @@ mod tests {
         // Verify the instructions now contain the gathered README content
         let instructions = result["instructions"].as_str().unwrap();
         assert!(instructions.contains("# Test Project"));
+    }
+
+    #[tokio::test]
+    async fn onboarding_includes_system_prompt_draft_field() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("README.md"), "# Test Project\nA test.").unwrap();
+        std::fs::write(dir.path().join("main.py"), "print('hello')").unwrap();
+        let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
+        let ctx = ToolContext { agent, lsp: lsp() };
+        let result = Onboarding.call(json!({}), &ctx).await.unwrap();
+
+        // system_prompt_draft should be present and be a string
+        assert!(
+            result.get("system_prompt_draft").is_some(),
+            "onboarding output should include system_prompt_draft"
+        );
+        assert!(
+            result["system_prompt_draft"].is_string(),
+            "system_prompt_draft should be a string"
+        );
+        let draft = result["system_prompt_draft"].as_str().unwrap();
+        assert!(!draft.is_empty(), "system_prompt_draft should not be empty");
     }
 }

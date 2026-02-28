@@ -37,6 +37,20 @@ Only switch to focused AFTER identifying targets.
 Overflow produces: `{ "overflow": { "shown": N, "total": M, "hint": "...", "by_file": {...} } }` — follow the hint.
 `by_file` (on `find_symbol` overflow) shows per-file match counts; use `path=` to zoom into the top file.
 
+## Project Customization
+
+If `.code-explorer/system-prompt.md` exists, its contents appear below as
+"Custom Instructions" — project-specific guidance from the user. Edit the file
+to customize how the AI navigates and works with your codebase.
+
+## Worktrees
+
+After `EnterWorktree`, ALWAYS call `activate_project("/absolute/worktree/path")` before
+using any code-explorer tools. code-explorer tracks its own active project independently
+of the shell's working directory — they are NOT automatically coupled.
+MCP write tools (`edit_lines`, `replace_symbol`, `insert_code`, `create_file`) are
+HARD-BLOCKED until `activate_project` is called.
+
 ## Rules
 
 1. **PREFER symbol tools over read_file.** `list_symbols` + `find_symbol(include_body=true)` beats reading entire files.

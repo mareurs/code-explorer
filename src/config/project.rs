@@ -24,6 +24,8 @@ pub struct ProjectSection {
     pub encoding: String,
     #[serde(default = "default_timeout")]
     pub tool_timeout_secs: u64,
+    /// Deprecated: use `.code-explorer/system-prompt.md` instead.
+    /// This field is still read as a fallback if the file doesn't exist.
     #[serde(default)]
     pub system_prompt: Option<String>,
 }

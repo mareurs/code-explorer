@@ -110,13 +110,22 @@ impl Agent {
         let project = inner.active_project.as_ref()?;
         let memories = project.memory.list().unwrap_or_default();
         let has_index = crate::embed::index::db_path(&project.root).exists();
+
+        // Read system prompt: file takes precedence over TOML field
+        let prompt_file = project.root.join(".code-explorer").join("system-prompt.md");
+        let system_prompt = if prompt_file.exists() {
+            std::fs::read_to_string(&prompt_file).ok()
+        } else {
+            project.config.project.system_prompt.clone()
+        };
+
         Some(crate::prompts::ProjectStatus {
             name: project.config.project.name.clone(),
             path: project.root.display().to_string(),
             languages: project.config.project.languages.clone(),
             memories,
             has_index,
-            system_prompt: project.config.project.system_prompt.clone(),
+            system_prompt,
         })
     }
 
@@ -301,5 +310,61 @@ mod tests {
     async fn library_registry_none_without_project() {
         let agent = Agent::new(None).await.unwrap();
         assert!(agent.library_registry().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn project_status_reads_system_prompt_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path().join(".code-explorer");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("project.toml"),
+            "[project]\nname = \"test\"\n",
+        )
+        .unwrap();
+        std::fs::write(config_dir.join("system-prompt.md"), "Always use pytest.\n").unwrap();
+
+        let agent = Agent::new(None).await.unwrap();
+        agent.activate(dir.path().to_path_buf()).await.unwrap();
+        let status = agent.project_status().await.unwrap();
+        assert_eq!(
+            status.system_prompt.as_deref(),
+            Some("Always use pytest.\n")
+        );
+    }
+
+    #[tokio::test]
+    async fn project_status_falls_back_to_toml_system_prompt() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path().join(".code-explorer");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("project.toml"),
+            "[project]\nname = \"test\"\nsystem_prompt = \"From TOML\"\n",
+        )
+        .unwrap();
+
+        let agent = Agent::new(None).await.unwrap();
+        agent.activate(dir.path().to_path_buf()).await.unwrap();
+        let status = agent.project_status().await.unwrap();
+        assert_eq!(status.system_prompt.as_deref(), Some("From TOML"));
+    }
+
+    #[tokio::test]
+    async fn project_status_file_takes_precedence_over_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path().join(".code-explorer");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("project.toml"),
+            "[project]\nname = \"test\"\nsystem_prompt = \"From TOML\"\n",
+        )
+        .unwrap();
+        std::fs::write(config_dir.join("system-prompt.md"), "From file\n").unwrap();
+
+        let agent = Agent::new(None).await.unwrap();
+        agent.activate(dir.path().to_path_buf()).await.unwrap();
+        let status = agent.project_status().await.unwrap();
+        assert_eq!(status.system_prompt.as_deref(), Some("From file\n"));
     }
 }
