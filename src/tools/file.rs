@@ -241,7 +241,9 @@ impl Tool for SearchPattern {
     }
 
     fn description(&self) -> &str {
-        "Search the codebase for a regex pattern. Returns matching lines with file and line number."
+        "Search the codebase for a regex pattern. Returns matching lines with file and line number. \
+         Pass context_lines to see surrounding code — adjacent matches that share context windows \
+         are merged into one block."
     }
 
     fn input_schema(&self) -> Value {
@@ -252,7 +254,12 @@ impl Tool for SearchPattern {
                 "pattern": { "type": "string", "description": "Regex pattern" },
                 "path": { "type": "string", "description": "File or directory to search (default: project root)" },
                 "max_results": { "type": "integer", "default": 50, "description": "Maximum matches to return. Alias: limit" },
-                "limit": { "type": "integer", "description": "Alias for max_results" }
+                "limit": { "type": "integer", "description": "Alias for max_results" },
+                "context_lines": {
+                    "type": "integer",
+                    "default": 0,
+                    "description": "Lines of context before and after each match (max 20). Adjacent matches that share context are merged into one block with a flat multiline content string."
+                }
             }
         })
     }
@@ -271,14 +278,17 @@ impl Tool for SearchPattern {
             .as_u64()
             .or_else(|| input["limit"].as_u64())
             .unwrap_or(50) as usize;
+        let context_lines = input["context_lines"].as_u64().unwrap_or(0).min(20) as usize;
         let re = regex::RegexBuilder::new(pattern)
             .size_limit(1 << 20)
             .dfa_size_limit(1 << 20)
             .build()
-            .map_err(|e| RecoverableError::with_hint(
-                format!("invalid regex: {e}"),
-                "patterns are full regex syntax — escape metacharacters like \\( \\. \\[ for literals",
-            ))?;
+            .map_err(|e| {
+                RecoverableError::with_hint(
+                    format!("invalid regex: {e}"),
+                    "patterns are full regex syntax — escape metacharacters like \\( \\. \\[ for literals",
+                )
+            })?;
         let mut matches = vec![];
 
         let walker = ignore::WalkBuilder::new(&search_path)
@@ -292,16 +302,77 @@ impl Tool for SearchPattern {
             let Ok(text) = std::fs::read_to_string(entry.path()) else {
                 continue;
             };
-            for (i, line) in text.lines().enumerate() {
-                if re.is_match(line) {
+
+            if context_lines == 0 {
+                // Original behaviour: one entry per matching line
+                for (i, line) in text.lines().enumerate() {
+                    if re.is_match(line) {
+                        matches.push(json!({
+                            "file": entry.path().display().to_string(),
+                            "line": i + 1,
+                            "content": line
+                        }));
+                        if matches.len() >= max {
+                            break 'outer;
+                        }
+                    }
+                }
+            } else {
+                // Context mode: merge overlapping windows into blocks
+                let file_lines: Vec<&str> = text.lines().collect();
+                let n = file_lines.len();
+                // (block_start_idx, first_match_idx, block_end_idx) — all 0-indexed
+                let mut current: Option<(usize, usize, usize)> = None;
+                let mut match_count = 0usize;
+
+                for (i, line) in file_lines.iter().enumerate() {
+                    if !re.is_match(line) {
+                        continue;
+                    }
+                    match_count += 1;
+                    let ctx_start = i.saturating_sub(context_lines);
+                    let ctx_end = (i + context_lines).min(n.saturating_sub(1));
+
+                    match current {
+                        None => {
+                            current = Some((ctx_start, i, ctx_end));
+                        }
+                        Some((blk_start, blk_first, blk_end)) => {
+                            if ctx_start <= blk_end + 1 {
+                                // Overlapping or adjacent: extend the current block
+                                current = Some((blk_start, blk_first, ctx_end.max(blk_end)));
+                            } else {
+                                // Non-overlapping: emit finished block, start new one
+                                let content = file_lines[blk_start..=blk_end].join("\n");
+                                matches.push(json!({
+                                    "file": entry.path().display().to_string(),
+                                    "match_line": blk_first + 1,
+                                    "start_line": blk_start + 1,
+                                    "content": content,
+                                }));
+                                current = Some((ctx_start, i, ctx_end));
+                            }
+                        }
+                    }
+
+                    if match_count >= max {
+                        break;
+                    }
+                }
+
+                // Emit the last in-flight block
+                if let Some((blk_start, blk_first, blk_end)) = current {
+                    let content = file_lines[blk_start..=blk_end].join("\n");
                     matches.push(json!({
                         "file": entry.path().display().to_string(),
-                        "line": i + 1,
-                        "content": line
+                        "match_line": blk_first + 1,
+                        "start_line": blk_start + 1,
+                        "content": content,
                     }));
-                    if matches.len() >= max {
-                        break 'outer;
-                    }
+                }
+
+                if match_count >= max {
+                    break 'outer;
                 }
             }
         }
@@ -1930,5 +2001,155 @@ mod tests {
             err.contains("start_line") || err.contains("line range"),
             "error hint should mention range option: {err}"
         );
+    }
+
+    #[tokio::test]
+    async fn search_pattern_context_lines_zero_backward_compat() {
+        // context_lines absent → old format (line + content keys)
+        let ctx = test_ctx().await;
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("code.rs"), "fn main() {}\nlet x = 42;\n").unwrap();
+
+        let result = SearchPattern
+            .call(
+                json!({ "pattern": "fn main", "path": dir.path().to_str().unwrap() }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        let matches = result["matches"].as_array().unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0]["line"], 1);
+        assert!(matches[0]["content"].as_str().unwrap().contains("fn main"));
+    }
+
+    #[tokio::test]
+    async fn search_pattern_context_lines_single_match() {
+        let ctx = test_ctx().await;
+        let dir = tempdir().unwrap();
+        // TARGET is line 3; context=2 → block covers lines 1-5
+        std::fs::write(
+            dir.path().join("code.rs"),
+            "line1\nline2\nTARGET\nline4\nline5\n",
+        )
+        .unwrap();
+
+        let result = SearchPattern
+            .call(
+                json!({
+                    "pattern": "TARGET",
+                    "path": dir.path().to_str().unwrap(),
+                    "context_lines": 2
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        let matches = result["matches"].as_array().unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(
+            matches[0]["match_line"], 3,
+            "match_line should be 1-indexed line of TARGET"
+        );
+        assert_eq!(
+            matches[0]["start_line"], 1,
+            "start_line = match(3) - context(2) = 1"
+        );
+        let content = matches[0]["content"].as_str().unwrap();
+        assert!(
+            content.contains("line1"),
+            "context_before should include line1"
+        );
+        assert!(content.contains("TARGET"), "content should include match");
+        assert!(
+            content.contains("line5"),
+            "context_after should include line5"
+        );
+    }
+
+    #[tokio::test]
+    async fn search_pattern_context_lines_adjacent_matches_merge() {
+        let ctx = test_ctx().await;
+        let dir = tempdir().unwrap();
+        // MATCH_A at line 3, MATCH_B at line 5; context=2 → windows overlap → one block
+        std::fs::write(
+            dir.path().join("code.rs"),
+            "line1\nline2\nMATCH_A\nline4\nMATCH_B\nline6\nline7\n",
+        )
+        .unwrap();
+
+        let result = SearchPattern
+            .call(
+                json!({
+                    "pattern": "MATCH_",
+                    "path": dir.path().to_str().unwrap(),
+                    "context_lines": 2
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        let matches = result["matches"].as_array().unwrap();
+        assert_eq!(
+            matches.len(),
+            1,
+            "overlapping context windows should merge into one block"
+        );
+        let content = matches[0]["content"].as_str().unwrap();
+        assert!(
+            content.contains("MATCH_A"),
+            "merged block should contain first match"
+        );
+        assert!(
+            content.contains("MATCH_B"),
+            "merged block should contain second match"
+        );
+        assert!(
+            content.contains("line7"),
+            "block should extend to MATCH_B's context_after"
+        );
+    }
+
+    #[tokio::test]
+    async fn search_pattern_context_lines_non_adjacent_matches_separate() {
+        let ctx = test_ctx().await;
+        let dir = tempdir().unwrap();
+        // MATCH at line 2 and line 18; with context=2 the windows don't overlap → two blocks
+        let file_content = (1..=20)
+            .map(|i| {
+                if i == 2 || i == 18 {
+                    format!("MATCH line{i}")
+                } else {
+                    format!("other line{i}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        std::fs::write(dir.path().join("code.rs"), file_content).unwrap();
+
+        let result = SearchPattern
+            .call(
+                json!({
+                    "pattern": "MATCH",
+                    "path": dir.path().to_str().unwrap(),
+                    "context_lines": 2
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        let matches = result["matches"].as_array().unwrap();
+        assert_eq!(
+            matches.len(),
+            2,
+            "non-overlapping windows should produce two separate blocks"
+        );
+        assert_eq!(matches[0]["match_line"], 2);
+        assert_eq!(matches[1]["match_line"], 18);
     }
 }
