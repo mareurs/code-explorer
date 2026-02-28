@@ -50,10 +50,14 @@ impl Agent {
             None
         };
 
+        // A project provided at startup (via --project or CWD) is treated as explicitly
+        // activated — the server operator already chose the write target.
+        let project_explicitly_activated = active_project.is_some();
+
         Ok(Self {
             inner: Arc::new(RwLock::new(AgentInner {
                 active_project,
-                project_explicitly_activated: false,
+                project_explicitly_activated,
             })),
             cached_embedder: Arc::new(tokio::sync::Mutex::new(None)),
         })
@@ -384,7 +388,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn project_not_explicitly_activated_on_startup() {
+    async fn project_not_explicitly_activated_without_project() {
         let agent = Agent::new(None).await.unwrap();
         assert!(!agent.is_project_explicitly_activated().await);
     }
@@ -395,6 +399,14 @@ mod tests {
         std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
         let agent = Agent::new(None).await.unwrap();
         agent.activate(dir.path().to_path_buf()).await.unwrap();
+        assert!(agent.is_project_explicitly_activated().await);
+    }
+
+    #[tokio::test]
+    async fn new_with_project_sets_explicitly_activated() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         assert!(agent.is_project_explicitly_activated().await);
     }
 }

@@ -60,9 +60,11 @@ impl Tool for ReadFile {
                 return Err(RecoverableError::with_hint(
                     "read_file is not available for source code files",
                     "Use symbol tools instead:\n  \
-                     get_symbols_overview(path) — see all symbols + line numbers\n  \
+                     list_symbols(path) — see all symbols + line numbers\n  \
                      find_symbol(name, include_body=true) — read a specific symbol body\n  \
-                     list_functions(path) — quick function signatures",
+                     list_functions(path) — quick function signatures\n  \
+                     search_pattern(\".\", path) — read raw lines (e.g. imports); \
+                     then edit_lines(path, line, count, text) to modify",
                 )
                 .into());
             }

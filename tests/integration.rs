@@ -527,7 +527,7 @@ async fn workflow_find_symbol_path_types() {
 }
 
 #[tokio::test]
-async fn write_blocked_when_worktrees_exist_and_not_explicitly_activated() {
+async fn write_allowed_when_project_provided_at_startup_even_with_worktrees() {
     use code_explorer::tools::file::CreateFile;
 
     // 1. Create a temp project dir with fake worktree metadata
@@ -542,36 +542,21 @@ async fn write_blocked_when_worktrees_exist_and_not_explicitly_activated() {
     let gitdir_content = format!("{}/.git\n", fake_wt_root.display());
     std::fs::write(wt_entry.join("gitdir"), &gitdir_content).unwrap();
 
-    // 2. Create Agent via new(Some(path)) — project_explicitly_activated stays false
+    // 2. Create Agent via new(Some(path)) — project_explicitly_activated is now true
+    //    (the server operator already chose the write target at startup)
     let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
+    assert!(agent.is_project_explicitly_activated().await);
     let ctx = ToolContext {
         agent,
         lsp: Arc::new(LspManager::new()),
     };
 
-    // 3. Attempt a write via create_file tool
+    // 3. Write should succeed — worktree guard bypassed because project was
+    //    explicitly activated at startup
     let result = CreateFile
         .call(json!({ "path": "test.txt", "content": "hello" }), &ctx)
         .await;
-
-    // 4. Should fail with a RecoverableError mentioning worktrees
-    let err = result.unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("Write blocked"),
-        "expected 'Write blocked' in error, got: {msg}"
-    );
-    assert!(
-        msg.contains("activate_project"),
-        "expected 'activate_project' hint in error, got: {msg}"
-    );
-
-    // 5. Verify it's a RecoverableError (not a fatal error)
-    assert!(
-        err.downcast_ref::<code_explorer::tools::RecoverableError>()
-            .is_some(),
-        "expected RecoverableError, got: {err:?}"
-    );
+    assert!(result.is_ok(), "expected write to succeed, got: {result:?}");
 
     drop(dir);
 }

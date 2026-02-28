@@ -35,7 +35,28 @@ impl Tool for GitBlame {
         let security = ctx.agent.security_config().await;
         crate::util::path_security::validate_read_path(file, Some(&root), &security)?;
 
-        let lines = crate::git::blame::blame_file(&root, Path::new(file))?;
+        // git2 requires a project-relative path. If the caller passed an absolute
+        // path (which validate_read_path accepts), strip the project root prefix.
+        let rel_path = {
+            let p = Path::new(file);
+            if p.is_absolute() {
+                p.strip_prefix(&root).map_err(|_| {
+                    super::RecoverableError::with_hint(
+                        format!("path `{}` is outside the project root", file),
+                        format!(
+                            "git_blame requires a project-relative path (e.g. `src/foo.rs`). \
+                             Got absolute path `{}` which is not under `{}`.",
+                            file,
+                            root.display()
+                        ),
+                    )
+                })?
+            } else {
+                p
+            }
+        };
+
+        let lines = crate::git::blame::blame_file(&root, rel_path)?;
 
         // Optional line range filter
         let start = input["start_line"].as_u64().map(|n| n as usize);
@@ -157,6 +178,20 @@ mod tests {
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0]["line"], 2);
     }
+
+    #[tokio::test]
+    async fn blame_accepts_absolute_path() {
+        let (dir, ctx) = git_test_ctx().await;
+        let abs_path = dir.path().join("hello.rs");
+        let result = GitBlame
+            .call(json!({ "path": abs_path.to_str().unwrap() }), &ctx)
+            .await
+            .unwrap();
+        let lines = result["lines"].as_array().unwrap();
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0]["content"].as_str().unwrap().contains("fn main"));
+    }
+
 
     #[tokio::test]
     async fn tools_error_without_project() {

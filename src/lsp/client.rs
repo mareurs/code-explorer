@@ -1,7 +1,7 @@
 //! Async LSP client: spawns a language server subprocess and communicates
 //! via JSON-RPC over stdio.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
@@ -109,6 +109,10 @@ pub struct LspClient {
     child_pid: Option<u32>,
     /// Timeout for the LSP initialize handshake.
     init_timeout: std::time::Duration,
+    /// Tracks files opened via textDocument/didOpen to prevent duplicate notifications.
+    /// The LSP spec prohibits sending didOpen for an already-open file without an
+    /// intervening didClose; some servers (e.g. kotlin-lsp) error on duplicates.
+    open_files: StdMutex<HashSet<PathBuf>>,
 }
 
 impl LspClient {
@@ -220,6 +224,7 @@ impl LspClient {
             capabilities: StdMutex::new(lsp_types::ServerCapabilities::default()),
             child_pid,
             init_timeout,
+            open_files: StdMutex::new(HashSet::new()),
         };
 
         // Perform the LSP initialize handshake
@@ -230,8 +235,36 @@ impl LspClient {
 
     /// Send a JSON-RPC request and await the response.
     pub async fn request(&self, method: &str, params: Value) -> Result<Value> {
-        self.request_with_timeout(method, params, std::time::Duration::from_secs(30))
-            .await
+        // Retry on -32800 (RequestCancelled) — disabled for now; re-enable if
+        // empirical evidence shows retries help more than they delay failure reporting.
+        const RETRY_ON_CANCELLED: bool = false;
+        const MAX_RETRIES: usize = 3;
+        const RETRY_DELAY_MS: u64 = 300;
+
+        let mut last_err = None;
+        for attempt in 0..=MAX_RETRIES {
+            if attempt > 0 {
+                let delay = std::time::Duration::from_millis(RETRY_DELAY_MS * attempt as u64);
+                tokio::time::sleep(delay).await;
+                tracing::debug!(
+                    "LSP request cancelled, retrying {}/{}: {}",
+                    attempt,
+                    MAX_RETRIES,
+                    method
+                );
+            }
+            match self
+                .request_with_timeout(method, params.clone(), std::time::Duration::from_secs(30))
+                .await
+            {
+                Ok(result) => return Ok(result),
+                Err(e) if RETRY_ON_CANCELLED && e.to_string().contains("code -32800") => {
+                    last_err = Some(e);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Err(last_err.unwrap())
     }
 
     pub async fn request_with_timeout(
@@ -433,6 +466,15 @@ impl LspClient {
 
     /// Send textDocument/didOpen notification for a file.
     pub async fn did_open(&self, path: &Path, language_id: &str) -> Result<()> {
+        // Guard against duplicate didOpen notifications. The LSP spec prohibits sending
+        // textDocument/didOpen for a document that is already open (without a prior didClose).
+        {
+            let mut open_files = self.open_files.lock().unwrap();
+            if !open_files.insert(path.to_path_buf()) {
+                return Ok(());
+            }
+        }
+
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read file for didOpen: {:?}", path))?;
         let uri = path_to_uri(path)?;
