@@ -4,6 +4,8 @@ Rust MCP server giving LLMs IDE-grade code intelligence — symbol navigation, s
 
 ![Dashboard — Tool Stats page](docs/images/dashboard.png)
 
+*[Dashboard docs](docs/manual/src/concepts/dashboard.md) — tool usage charts, error log, memory browser, drift view. Run with `code-explorer dashboard --project .`*
+
 **What sets it apart:**
 
 - **Output Buffers** — large command output is stored in a buffer, not dumped into context. The AI queries it with Unix tools (`grep @cmd_id`, `sed @cmd_id`), keeping the context window lean while making exploration visible and reviewable in Claude Code's UI.
