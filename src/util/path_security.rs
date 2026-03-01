@@ -485,6 +485,14 @@ pub fn check_source_file_access(command: &str) -> Option<String> {
     Some(hint.to_string())
 }
 
+/// Returns true if the path refers to a source code file (by extension).
+/// Used to gate `edit_file` multi-line source edits.
+pub fn is_source_path(path: &str) -> bool {
+    Regex::new(SOURCE_EXTENSIONS)
+        .map(|re| re.is_match(path))
+        .unwrap_or(false)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -1114,5 +1122,19 @@ mod tests {
         // A pipe AFTER a heredoc segment must still be checked independently.
         // `cat <<'EOF' ... EOF | cat src/main.rs` — second segment is a real read.
         assert!(check_source_file_access("cat <<'EOF'\nhello\nEOF\n | cat src/main.rs").is_some());
+    }
+
+    #[test]
+    fn is_source_path_recognizes_supported_extensions() {
+        assert!(is_source_path("src/main.rs"));
+        assert!(is_source_path("lib.py"));
+        assert!(is_source_path("index.ts"));
+        assert!(is_source_path("main.go"));
+        assert!(is_source_path("App.java"));
+        assert!(is_source_path("Main.kt"));
+        assert!(is_source_path("server.js"));
+        assert!(!is_source_path("README.md"));
+        assert!(!is_source_path("Cargo.toml"));
+        assert!(!is_source_path("config.json"));
     }
 }
