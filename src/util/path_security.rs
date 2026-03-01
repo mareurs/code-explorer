@@ -443,7 +443,11 @@ const SOURCE_ACCESS_COMMANDS: &str = r"\b(cat|head|tail|sed|awk|less|more|wc)\b"
 /// - `read_file`, `list_symbols`, `find_symbol` for reading
 /// - `search_pattern` for regex extraction
 ///
-/// Known limit: variable expansion (`cat $FILE`) is undetectable at parse time — accepted.
+/// Known limits:
+/// - Variable expansion (`cat $FILE`) is undetectable at parse time — accepted.
+/// - Heredocs (`cat <<'EOF'`) read stdin, not a file; any source extension appearing
+///   inside the heredoc body is not a filename argument. Segments containing `<<` are
+///   skipped — the operator unambiguously means stdin redirection.
 pub fn check_source_file_access(command: &str) -> Option<String> {
     let cmd_re = Regex::new(SOURCE_ACCESS_COMMANDS).ok()?;
     let ext_re = Regex::new(SOURCE_EXTENSIONS).ok()?;
@@ -452,9 +456,13 @@ pub fn check_source_file_access(command: &str) -> Option<String> {
     // `git diff src/server.rs | head -80` should NOT be blocked — `head` here
     // filters git output, not the source file directly. Both conditions must
     // match within the *same* segment to trigger a block.
+    //
+    // Segments containing `<<` use a heredoc: `cat <<'EOF'` reads from stdin,
+    // so any source extension in that segment is in the heredoc content, not a
+    // filename argument to the blocked command.
     let blocked_segment = command
         .split('|')
-        .find(|seg| cmd_re.is_match(seg) && ext_re.is_match(seg))?;
+        .find(|seg| !seg.contains("<<") && cmd_re.is_match(seg) && ext_re.is_match(seg))?;
 
     let hint = if let Some(m) = cmd_re.find(blocked_segment) {
         match m.as_str() {
@@ -1079,5 +1087,27 @@ mod tests {
     fn source_file_access_blocks_cat_in_same_segment_as_source_file() {
         // `cat` and `.rs` are in the same segment — still blocked.
         assert!(check_source_file_access("cat src/main.rs | grep fn").is_some());
+    }
+
+    #[test]
+    fn source_file_access_allows_cat_heredoc_with_source_ext_in_content() {
+        // `cat <<'EOF'` reads stdin via a heredoc — the `.rs` extension appears
+        // only in the heredoc body (e.g. a commit message), not as a filename
+        // argument to cat. The `<<` operator marks the segment as stdin-reading
+        // so it must not be blocked.
+        assert!(check_source_file_access(
+            "git commit -m \"$(cat <<'EOF'\nFix bug in path_security.rs\nEOF\n)\""
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn source_file_access_blocks_cat_rs_file_after_heredoc_segment() {
+        // A pipe AFTER a heredoc segment must still be checked independently.
+        // `cat <<'EOF' ... EOF | cat src/main.rs` — second segment is a real read.
+        assert!(check_source_file_access(
+            "cat <<'EOF'\nhello\nEOF\n | cat src/main.rs"
+        )
+        .is_some());
     }
 }
