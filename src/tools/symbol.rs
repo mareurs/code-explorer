@@ -163,7 +163,7 @@ fn collect_matching(
     include_body: bool,
     source_code: Option<&str>,
     depth: usize,
-    source: &str,
+    show_file: bool,
     out: &mut Vec<Value>,
     kind_filter: Option<&str>,
 ) {
@@ -177,7 +177,7 @@ fn collect_matching(
                 include_body,
                 source_code,
                 depth,
-                source,
+                show_file,
             ));
         }
         // Always recurse so nested matches inside filtered-out parents are still found.
@@ -187,7 +187,7 @@ fn collect_matching(
             include_body,
             source_code,
             depth,
-            source,
+            show_file,
             out,
             kind_filter,
         );
@@ -200,17 +200,23 @@ fn symbol_to_json(
     include_body: bool,
     source_code: Option<&str>,
     depth: usize,
-    source: &str,
+    show_file: bool,
 ) -> Value {
     let mut obj = json!({
         "name": sym.name,
         "name_path": sym.name_path,
         "kind": format!("{:?}", sym.kind),
-        "file": sym.file.display().to_string(),
         "start_line": sym.start_line + 1,
         "end_line": sym.end_line + 1,
-        "source": source,
     });
+
+    if show_file {
+        obj["file"] = json!(sym.file.display().to_string());
+    }
+
+    if let Some(sig) = &sym.detail {
+        obj["signature"] = json!(sig);
+    }
 
     if include_body {
         if let Some(src) = source_code {
@@ -227,7 +233,7 @@ fn symbol_to_json(
         obj["children"] = json!(sym
             .children
             .iter()
-            .map(|c| symbol_to_json(c, include_body, source_code, depth - 1, source))
+            .map(|c| symbol_to_json(c, include_body, source_code, depth - 1, show_file))
             .collect::<Vec<_>>());
     }
 
@@ -328,7 +334,7 @@ impl Tool for ListSymbols {
                         let json_symbols: Vec<Value> = symbols
                             .iter()
                             .map(|s| {
-                                symbol_to_json(s, include_body, source.as_deref(), depth, "project")
+                                symbol_to_json(s, include_body, source.as_deref(), depth, false)
                             })
                             .collect();
                         result.push(json!({
@@ -358,7 +364,7 @@ impl Tool for ListSymbols {
             };
             let json_symbols: Vec<Value> = symbols
                 .iter()
-                .map(|s| symbol_to_json(s, include_body, source.as_deref(), depth, "project"))
+                .map(|s| symbol_to_json(s, include_body, source.as_deref(), depth, false))
                 .collect();
 
             // Cap single-file results to prevent large files blowing the context window.
@@ -444,7 +450,7 @@ impl Tool for ListSymbols {
                             include_body,
                             source.as_deref(),
                             depth.saturating_sub(1),
-                            "project",
+                            false,
                         )
                     })
                     .collect();
@@ -616,7 +622,7 @@ impl Tool for FindSymbol {
                     include_body,
                     source.as_deref(),
                     depth,
-                    "project",
+                    true,
                     &mut matches,
                     kind_filter,
                 );
@@ -679,7 +685,7 @@ impl Tool for FindSymbol {
                             include_body,
                             source.as_deref(),
                             depth,
-                            "project",
+                            true,
                         ));
                     }
                 }
@@ -713,7 +719,7 @@ impl Tool for FindSymbol {
                             include_body,
                             source.as_deref(),
                             depth,
-                            "project",
+                            true,
                             &mut matches,
                             kind_filter,
                         );
@@ -2797,7 +2803,7 @@ fn main() {
             false,
             None,
             0,
-            "project",
+            true,
             &mut results,
             None,
         );
@@ -2815,7 +2821,7 @@ fn main() {
             false,
             None,
             0,
-            "project",
+            true,
             &mut results2,
             None,
         );
@@ -3016,7 +3022,7 @@ fn main() {
             false,
             None,
             0,
-            "project",
+            true,
             &mut results,
             None,
         );
@@ -3102,7 +3108,7 @@ fn main() {
             false,
             None,
             0,
-            "project",
+            true,
             &mut out,
             Some("class"),
         );
@@ -3139,7 +3145,7 @@ fn main() {
         ];
 
         let mut out = vec![];
-        collect_matching(&symbols, "foo", false, None, 0, "project", &mut out, None);
+        collect_matching(&symbols, "foo", false, None, 0, true, &mut out, None);
         assert_eq!(
             out.len(),
             2,
@@ -3207,6 +3213,69 @@ fn main() {
             input["kind"].as_str()
         };
         assert!(kind_filter.is_none());
+    }
+
+    // ── symbol_to_json field contract ────────────────────────────────────────
+
+    fn make_test_sym(name: &str, detail: Option<&str>) -> crate::lsp::SymbolInfo {
+        crate::lsp::SymbolInfo {
+            name: name.to_string(),
+            name_path: name.to_string(),
+            kind: crate::lsp::SymbolKind::Function,
+            file: std::path::PathBuf::from("src/foo.rs"),
+            start_line: 0,
+            end_line: 5,
+            start_col: 0,
+            children: vec![],
+            detail: detail.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn symbol_to_json_omits_file_when_show_file_false() {
+        let sym = make_test_sym("foo", None);
+        let result = symbol_to_json(&sym, false, None, 0, false);
+        assert!(
+            result.get("file").is_none(),
+            "file must be absent when show_file=false, got: {result}"
+        );
+        assert_eq!(result["name"], "foo");
+    }
+
+    #[test]
+    fn symbol_to_json_includes_file_when_show_file_true() {
+        let sym = make_test_sym("foo", None);
+        let result = symbol_to_json(&sym, false, None, 0, true);
+        assert_eq!(result["file"], "src/foo.rs");
+    }
+
+    #[test]
+    fn symbol_to_json_includes_signature_when_detail_present() {
+        let sym = make_test_sym("foo", Some("(x: i32) -> bool"));
+        let result = symbol_to_json(&sym, false, None, 0, false);
+        assert_eq!(result["signature"], "(x: i32) -> bool");
+    }
+
+    #[test]
+    fn symbol_to_json_omits_signature_when_detail_absent() {
+        let sym = make_test_sym("foo", None);
+        let result = symbol_to_json(&sym, false, None, 0, false);
+        assert!(
+            result.get("signature").is_none(),
+            "signature must be absent when detail=None"
+        );
+    }
+
+    #[test]
+    fn symbol_to_json_never_includes_source_field() {
+        let sym = make_test_sym("foo", None);
+        for show_file in [false, true] {
+            let result = symbol_to_json(&sym, false, None, 0, show_file);
+            assert!(
+                result.get("source").is_none(),
+                "source field must never appear (show_file={show_file})"
+            );
+        }
     }
 
     #[test]
