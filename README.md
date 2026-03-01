@@ -40,96 +40,23 @@ Plus file operations (6 tools), AST analysis (2 tools), workflow & config (4 too
 - **Incremental Index Rebuilding** — smart change detection for the embedding index. Uses git diff → mtime → SHA-256 fallback chain to skip unchanged files, with staleness warnings when the index falls behind HEAD.
 - **Semantic Drift Detection** — detects *how much* code changed in meaning after re-indexing, not just that bytes changed. Surfaced via `index_status(threshold)`. Opt out with `drift_detection_enabled = false` in `[embeddings]`.
 
-## Output Buffers — Custom Paging Inside Claude Code
+## Output Buffers
 
-When `run_command` or `read_file` produces more output than fits comfortably in context, code-explorer doesn't flood the AI's context window with it. Instead, the full output is stored in an in-memory buffer and a compact summary + `@id` handle is returned:
+Large command output and file reads are stored in a buffer and returned as `@id` handles rather than dumped into context. The AI queries them with Unix tools: `run_command("grep FAILED @cmd_a1b2c3")`, `run_command("sed -n '42,80p' @file_abc456")`. Each query appears as a distinct tool call in Claude Code's UI, keeping exploration visible and the context window lean.
 
-```
-run_command("cargo test")
-→ { "summary": "47 passed, 2 failed", "output_id": "@cmd_a1b2c3", ... }
-```
-
-The AI then drills in with targeted follow-up calls using standard Unix tools and the `@ref` handle:
-
-```
-run_command("grep FAILED @cmd_a1b2c3")
-run_command("sed -n '42,80p' @cmd_a1b2c3")
-run_command("diff @cmd_a1b2c3 @file_abc456")
-```
-
-File reads work the same way — large files are stored as `@file_id` references and can be queried without re-reading. Refs compose freely across calls.
-
-**Why this matters:** Short output is returned inline; only large responses get buffered. Each buffer query shows up as a distinct, reviewable tool call in Claude Code's UI — the user sees the AI methodically drilling into results rather than one undifferentiated wall of text. It's a persistent scratchpad that keeps the context window lean while making the AI's exploration transparent and auditable.
+→ [Full details: Output Buffers](docs/manual/src/concepts/output-buffers.md)
 
 ## Shell Integration
 
-`run_command` executes any shell command from the project root, with stderr capture, Output Buffer support, and a thin safety layer:
+`run_command` executes any shell command from the project root with stderr capture, Output Buffer support, and safety guardrails: dangerous commands require explicit acknowledgement, direct source file access via `cat`/`grep` is blocked and redirected to symbol tools, and `cwd` paths are validated against the project root.
 
-```bash
-run_command("cargo build")
-run_command("git log --oneline -20")
-run_command("grep FAILED @cmd_a1b2c3")   # chain into a previous result
-run_command("diff @cmd_abc @file_def")   # compose refs freely
-```
-
-Stderr is captured automatically — no `2>&1` needed. Scope with `cwd` for subdirectory commands.
-
-### Dangerous Command Detection
-
-Commands with destructive potential (`rm -rf`, `git reset --hard`, `DROP TABLE`, force-push, etc.) are detected and blocked until the AI explicitly passes `acknowledge_risk: true`. The intent is a deliberate pause before operations that are hard to reverse.
-
-> **Honest note:** Over 6+ months of daily use, Claude has never done something genuinely dangerous unprompted. The main practical effect is pressing *Yes* on permission prompts more often than you'd like. It's still worth keeping — MCP tools run with your full user permissions, and the occasional extra confirmation costs almost nothing compared to what it could prevent.
-
-### Source File Access Blocking
-
-`cat`, `grep`, `head`, and similar commands on source files (`.rs`, `.py`, `.ts`, etc.) are blocked at the tool level and redirected toward code-explorer equivalents — `find_symbol`, `search_pattern`, `read_file`. This enforces token-efficient navigation: reading an entire file to find one function is exactly the antipattern code-explorer is designed to eliminate.
-
-Pass `acknowledge_risk: true` to bypass when you genuinely need raw access.
-
-### Path Traversal Protection
-
-The `cwd` parameter lets the AI run commands in project subdirectories, but any path that escapes the project root — via `../`, symlinks, or absolute paths — is rejected before the command runs. Output Buffer refs (`@cmd_id`, `@file_id`) are resolved within the session and never expose paths outside it.
+→ [Full details: Shell Integration](docs/manual/src/concepts/shell-integration.md)
 
 ## Git Worktree Support
 
-Claude Code's `EnterWorktree` creates an isolated branch for feature work — but there's a subtle trap: the MCP server's active project root is **decoupled from the shell's working directory**. When the agent enters a worktree, the shell moves, but code-explorer doesn't know. Write tools keep pointing at the main repo. Files land in the wrong tree, silently, with no error.
+`EnterWorktree` moves the shell into a worktree, but the MCP server's project root doesn't follow — write tools silently target the main repo unless you call `activate_project` first. Three layers handle this: a write guard (hard block), a `worktree_hint` advisory on every write response, and `.worktrees/` exclusions from file navigation.
 
-code-explorer has three layers to catch and prevent this:
-
-### `activate_project` — explicit project switching
-
-`activate_project(path)` tells the MCP server which tree to work in. After `EnterWorktree`, this must be called before any writes:
-
-```
-activate_project("/abs/path/to/.claude/worktrees/my-feature")
-```
-
-All subsequent symbol navigation, file writes, and shell commands then target that tree. Switch back by calling `activate_project` with the main repo root.
-
-### Worktree Hint on Write Responses
-
-After every successful write, if git linked worktrees exist under the active project root, the response includes an advisory `"worktree_hint"` field:
-
-```json
-{
-  "worktree_hint": "This repo has linked worktrees: [/repo/.claude/worktrees/my-feature].
-                    If you meant to edit a worktree, call activate_project first."
-}
-```
-
-The AI sees this immediately after the write and can self-correct before the mistake compounds. Zero overhead when no worktrees exist — it's a single `.git/worktrees/` directory check.
-
-### Write Guard
-
-If the agent enters a worktree but hasn't called `activate_project`, write tools raise a hard block rather than silently writing to the wrong place. The error message names the detected worktrees and the exact `activate_project` call needed to unblock.
-
-### `.worktrees/` Excluded from Navigation
-
-Worktree directories (`.claude/worktrees/`, `.worktrees/`) are excluded from `find_file` and `list_dir` results so they don't pollute symbol navigation or file listings in the main project.
-
----
-
-> **Cleanup gotcha:** `git worktree remove <path>` requires the directory to still exist. If the worktree directory was already deleted, use `git worktree prune` from the main repo root instead.
+→ [Full details: Git Worktrees](docs/manual/src/concepts/worktrees.md)
 
 ## Platform Support
 

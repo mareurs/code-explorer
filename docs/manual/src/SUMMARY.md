@@ -11,6 +11,9 @@
 - [Progressive Disclosure](concepts/progressive-disclosure.md)
   - [Tool Selection](concepts/tool-selection.md)
   - [Output Modes](concepts/output-modes.md)
+  - [Output Buffers](concepts/output-buffers.md)
+  - [Shell Integration](concepts/shell-integration.md)
+  - [Git Worktrees](concepts/worktrees.md)
 
 - [Project Configuration](configuration/project-toml.md)
   - [Embedding Backends](configuration/embedding-backends.md)
