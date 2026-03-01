@@ -37,6 +37,12 @@ pub fn summarize_source(path: &str, content: &str) -> Value {
     let symbols =
         crate::ast::parser::extract_symbols_from_source(content, language, p).unwrap_or_default();
 
+    if symbols.is_empty() {
+        let mut result = summarize_generic_file(content);
+        result["type"] = serde_json::json!("source");
+        return result;
+    }
+
     let names: Vec<serde_json::Value> = symbols
         .iter()
         .map(|s| {
@@ -173,6 +179,10 @@ mod tests {
         let preview = s["preview"].as_str().unwrap();
         assert!(preview.contains("key_1"));
         assert!(!preview.contains("key_31"));
+        assert!(
+            preview.contains("key_30"),
+            "preview should include up to line 30"
+        );
         assert_eq!(s["line_count"].as_u64().unwrap(), 50);
     }
 
@@ -181,8 +191,20 @@ mod tests {
         let content: String = (1..=100).map(|i| format!("line {}\n", i)).collect();
         let s = summarize_generic_file(&content);
         assert!(s["head"].as_str().unwrap().contains("line 1"));
-        assert!(s["tail"].as_str().unwrap().contains("line 100"));
         assert!(!s["head"].as_str().unwrap().contains("line 21"));
+        assert!(
+            s["head"].as_str().unwrap().contains("line 20"),
+            "head should include line 20"
+        );
+        assert!(s["tail"].as_str().unwrap().contains("line 100"));
+        assert!(
+            !s["tail"].as_str().unwrap().contains("line 90"),
+            "tail should not include line 90"
+        );
+        assert!(
+            s["tail"].as_str().unwrap().contains("line 91"),
+            "tail should start at line 91"
+        );
         assert_eq!(s["line_count"].as_u64().unwrap(), 100);
     }
 }
