@@ -15,6 +15,7 @@
   - [Shell Integration](concepts/shell-integration.md)
   - [Git Worktrees](concepts/worktrees.md)
   - [Routing Plugin](concepts/routing-plugin.md)
+  - [Superpowers Workflow](concepts/superpowers.md)
 
 - [Project Configuration](configuration/project-toml.md)
   - [Embedding Backends](configuration/embedding-backends.md)

@@ -40,6 +40,12 @@ Plus file operations (6 tools), AST analysis (2 tools), workflow & config (4 too
 - **Incremental Index Rebuilding** — smart change detection for the embedding index. Uses git diff → mtime → SHA-256 fallback chain to skip unchanged files, with staleness warnings when the index falls behind HEAD.
 - **Semantic Drift Detection** — detects *how much* code changed in meaning after re-indexing, not just that bytes changed. Surfaced via `index_status(threshold)`. Opt out with `drift_detection_enabled = false` in `[embeddings]`.
 
+## Superpowers
+
+For large plans and parallel work, the recommended workflow is to manually `git worktree add` + `cd` + launch Claude from inside the worktree — one terminal per branch, fully isolated, no mid-session project-switching. Note: `finishing-a-development-branch` cleanup can fail when Claude's CWD is inside the worktree; use `git worktree prune` from the main repo instead.
+
+→ [Full details: Superpowers Workflow](docs/manual/src/concepts/superpowers.md)
+
 ## Routing Plugin
 
 The MCP server gives Claude the tools, but subagents start with a blank slate and fall back to `Read`/`Grep`/`Bash` by default. The companion `code-explorer-routing` plugin closes this: it injects guidance into every agent and subagent via Claude Code hooks, hard-blocks native file-read patterns before they execute, auto-reindexes in the background, and enforces worktree safety.
