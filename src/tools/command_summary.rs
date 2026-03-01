@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 // ---------------------------------------------------------------------------
 
 /// Minimum total line count (stdout + stderr) before summarization kicks in.
-const SUMMARY_LINE_THRESHOLD: usize = 50;
+pub(crate) const SUMMARY_LINE_THRESHOLD: usize = 50;
 
 /// Number of lines to keep from the top in generic summaries.
 const HEAD_LINES: usize = 20;

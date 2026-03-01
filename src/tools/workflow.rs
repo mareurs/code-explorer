@@ -503,7 +503,7 @@ async fn run_command_inner(
 ) -> anyhow::Result<Value> {
     use super::command_summary::{
         count_lines, detect_command_type, needs_summary, summarize_build_output, summarize_generic,
-        summarize_test_output, CommandType,
+        summarize_test_output, CommandType, SUMMARY_LINE_THRESHOLD,
     };
     use crate::util::path_security::is_dangerous_command;
 
@@ -608,11 +608,14 @@ async fn run_command_inner(
                         format!(
                             "Command output is still {total_lines} lines — too large to return inline."
                         ),
-                        "Your query didn't filter enough. Use a targeted command that produces \
-                         fewer than 50 lines, e.g.:\n\
-                         • grep 'keyword' @ref\n\
-                         • sed -n '1,50p' @ref\n\
-                         • head -50 @ref  /  tail -50 @ref",
+                        &format!(
+                            "Your query didn't filter enough. Use a targeted command that produces \
+                             fewer than {SUMMARY_LINE_THRESHOLD} lines, e.g.:\n\
+                             • grep 'keyword' @ref\n\
+                             • sed -n '1,{}p' @ref\n\
+                             • head -{0} @ref  /  tail -{0} @ref",
+                            SUMMARY_LINE_THRESHOLD - 1
+                        ),
                     )
                     .into());
                 }
@@ -717,6 +720,7 @@ fn truncate_output(output: &str, limit: usize) -> (String, bool) {
 mod tests {
     use super::*;
     use crate::agent::Agent;
+    use crate::tools::command_summary::SUMMARY_LINE_THRESHOLD;
     use std::sync::Arc;
     use tempfile::tempdir;
 
@@ -1409,6 +1413,35 @@ mod tests {
             "50",
             "stdout should be exactly '50'"
         );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_command_buffer_only_above_threshold_returns_error() {
+        // SUMMARY_LINE_THRESHOLD + 1 lines — strictly above the limit, must error.
+        let (_dir, ctx) = project_ctx().await;
+        let content: String = (1..=SUMMARY_LINE_THRESHOLD + 1).map(|i| format!("{i}\n")).collect();
+        let id = ctx.output_buffer.store("cmd".into(), content, "".into(), 0);
+        let result = RunCommand
+            .call(json!({ "command": format!("cat {}", id) }), &ctx)
+            .await;
+        assert!(result.is_err(), "expected error above threshold, got Ok: {:?}", result.ok());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_command_buffer_only_at_threshold_returns_inline() {
+        // Exactly SUMMARY_LINE_THRESHOLD lines — the check is `>` not `>=`, so this
+        // must return content inline, not error.
+        let (_dir, ctx) = project_ctx().await;
+        let content: String = (1..=SUMMARY_LINE_THRESHOLD).map(|i| format!("{i}\n")).collect();
+        let id = ctx.output_buffer.store("cmd".into(), content, "".into(), 0);
+        let result = RunCommand
+            .call(json!({ "command": format!("cat {}", id) }), &ctx)
+            .await
+            .expect("expected inline output at threshold");
+        assert!(result.get("stdout").is_some(), "expected stdout field: {:?}", result);
+        assert!(result.get("output_id").is_none(), "should not be buffered: {:?}", result);
     }
 
     #[cfg(unix)]
