@@ -1022,8 +1022,9 @@ pub fn format_list_docs(result: &Value) -> String {
         let symbol = entry["symbol_name"].as_str().unwrap_or("?");
         let content = entry["content"].as_str().unwrap_or("");
         let first_line = content.lines().next().unwrap_or("").trim();
-        let preview = if first_line.len() > 72 {
-            format!("{}…", &first_line[..72])
+        let preview = if first_line.chars().count() > 72 {
+            let truncated: String = first_line.chars().take(72).collect();
+            format!("{truncated}…")
         } else {
             first_line.to_string()
         };
@@ -2671,6 +2672,23 @@ mod tests {
     }
 
     #[test]
+    fn format_list_docs_handles_unicode_near_boundary() {
+        // "ñ" is 2 bytes (0xC3 0xB1). Placing it at byte offset 71 means
+        // the old `&first_line[..72]` slices right through it → panic.
+        // 71 ASCII 'a's + "ñ" + padding to exceed 72 chars total.
+        let long_doc: String = "a".repeat(71) + "ñ world and more text here";
+        let result = serde_json::json!({
+            "file": "src/lib.rs",
+            "docstrings": [
+                {"symbol_name": "MyStruct", "content": long_doc}
+            ]
+        });
+        let out = format_list_docs(&result);
+        // Should not panic and should contain the symbol name
+        assert!(out.contains("MyStruct"), "should show symbol");
+    }
+
+    #[test]
     fn format_index_status_shows_model_and_timestamp() {
         let result = serde_json::json!({
             "indexed": true,
@@ -2727,10 +2745,19 @@ mod tests {
         });
         let out = format_get_usage_stats(&result);
         assert!(out.contains("1h"), "should show window, got: {out}");
-        assert!(out.contains("find_symbol"), "should show tool name, got: {out}");
+        assert!(
+            out.contains("find_symbol"),
+            "should show tool name, got: {out}"
+        );
         assert!(out.contains("47"), "should show call count, got: {out}");
-        assert!(out.contains("run_command"), "should show tool with errors, got: {out}");
-        assert!(!out.contains("list_symbols"), "should omit tools with 0 calls, got: {out}");
+        assert!(
+            out.contains("run_command"),
+            "should show tool with errors, got: {out}"
+        );
+        assert!(
+            !out.contains("list_symbols"),
+            "should omit tools with 0 calls, got: {out}"
+        );
     }
 
     #[test]
