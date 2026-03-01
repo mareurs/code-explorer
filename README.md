@@ -1,14 +1,21 @@
 # code-explorer
 
-Rust MCP server giving LLMs IDE-grade code intelligence.
+Rust MCP server giving LLMs IDE-grade code intelligence — symbol navigation, semantic search, git blame, shell integration, and persistent memory. Built for [Claude Code](https://code.claude.com/).
+
+![Dashboard — Tool Stats page](docs/images/dashboard.png)
+
+**What sets it apart:**
+
+- **Output Buffers** — large command output is stored in a buffer, not dumped into context. The AI queries it with Unix tools (`grep @cmd_id`, `sed @cmd_id`), keeping the context window lean while making exploration visible and reviewable in Claude Code's UI.
+- **Shell integration** — `run_command` executes any shell command from the project root with safety guardrails, stderr capture, and full Output Buffer support for large results.
+- **Symbol-level editing** — `replace_symbol`, `insert_code`, `rename_symbol` operate on named code symbols via LSP, not fragile line ranges.
+- **Progressive disclosure** — every tool defaults to compact output; `detail_level: "full"` + pagination unlocks everything. No accidental context floods.
 
 ## The Problem
 
 LLMs waste most of their context window on code navigation. `grep` returns walls of text. `cat` dumps entire files when you need one function. There's no way to ask "who calls this?" or "what changed here last?" — the tools are blind to code structure.
 
 The result: shallow understanding, hallucinated edits, constant human course-correction.
-
-![Dashboard — Tool Stats page](docs/images/dashboard.png)
 
 ## The Solution
 
@@ -32,6 +39,44 @@ Plus file operations (6 tools), AST analysis (2 tools), workflow & config (4 too
 - **Library Search** — navigate third-party dependency source code via LSP-inferred discovery, symbol navigation, and semantic search. Libraries auto-register when `goto_definition` returns paths outside the project root.
 - **Incremental Index Rebuilding** — smart change detection for the embedding index. Uses git diff → mtime → SHA-256 fallback chain to skip unchanged files, with staleness warnings when the index falls behind HEAD.
 - **Semantic Drift Detection** — detects *how much* code changed in meaning after re-indexing, not just that bytes changed. Surfaced via `index_status(threshold)`. Opt out with `drift_detection_enabled = false` in `[embeddings]`.
+
+## Output Buffers — Custom Paging Inside Claude Code
+
+When `run_command` or `read_file` produces more output than fits comfortably in context, code-explorer doesn't flood the AI's context window with it. Instead, the full output is stored in an in-memory buffer and a compact summary + `@id` handle is returned:
+
+```
+run_command("cargo test")
+→ { "summary": "47 passed, 2 failed", "output_id": "@cmd_a1b2c3", ... }
+```
+
+The AI then drills in with targeted follow-up calls using standard Unix tools and the `@ref` handle:
+
+```
+run_command("grep FAILED @cmd_a1b2c3")
+run_command("sed -n '42,80p' @cmd_a1b2c3")
+run_command("diff @cmd_a1b2c3 @file_abc456")
+```
+
+File reads work the same way — large files are stored as `@file_id` references and can be queried without re-reading. Refs compose freely across calls.
+
+**Why this matters:** Short output is returned inline; only large responses get buffered. Each buffer query shows up as a distinct, reviewable tool call in Claude Code's UI — the user sees the AI methodically drilling into results rather than one undifferentiated wall of text. It's a persistent scratchpad that keeps the context window lean while making the AI's exploration transparent and auditable.
+
+## Shell Integration
+
+`run_command` executes any shell command from the project root with full Output Buffer support:
+
+```bash
+run_command("cargo build")
+run_command("git log --oneline -20")
+run_command("grep FAILED @cmd_a1b2c3")   # chain into a previous result
+run_command("diff @cmd_abc @file_def")   # compose refs freely
+```
+
+**Safety features:**
+- Dangerous commands (`rm -rf`, `git reset --hard`, etc.) require `acknowledge_risk: true` — a speed bump before destructive operations
+- Direct source file access via `cat`/`grep`/`head` on code files is blocked and redirected to symbol tools (`find_symbol`, `search_pattern`, etc.)
+- Stderr is captured automatically — no `2>&1` needed
+- Scope with `cwd` for subdirectory commands; path traversal outside the project root is rejected
 
 ## Platform Support
 
