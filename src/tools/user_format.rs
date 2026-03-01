@@ -996,12 +996,30 @@ pub fn format_list_functions(result: &Value) -> String {
 }
 
 pub fn format_list_docs(result: &Value) -> String {
-    let count = result["docstrings"]
-        .as_array()
-        .map(|a| a.len())
-        .unwrap_or(0);
     let file = result["file"].as_str().unwrap_or("?");
-    format!("{file} → {count} docstrings")
+    let docs = match result["docstrings"].as_array() {
+        Some(d) if !d.is_empty() => d,
+        _ => return format!("{file} — 0 docstrings"),
+    };
+    const MAX_SHOW: usize = 3;
+    let total = docs.len();
+    let mut out = format!("{file} — {total} docstrings");
+    for entry in docs.iter().take(MAX_SHOW) {
+        let symbol = entry["symbol_name"].as_str().unwrap_or("?");
+        let content = entry["content"].as_str().unwrap_or("");
+        let first_line = content.lines().next().unwrap_or("").trim();
+        let preview = if first_line.len() > 72 {
+            format!("{}…", &first_line[..72])
+        } else {
+            first_line.to_string()
+        };
+        out.push_str(&format!("\n  {symbol}  {preview}"));
+    }
+    let hidden = total.saturating_sub(MAX_SHOW);
+    if hidden > 0 {
+        out.push_str(&format!("\n  … +{hidden} more"));
+    }
+    out
 }
 
 pub fn format_find_references(result: &Value) -> String {
@@ -2525,6 +2543,25 @@ mod tests {
         assert!(out.contains("func_0"), "should show first func");
         assert!(!out.contains("func_8"), "should not show 9th func");
         assert!(out.contains("more"), "should show trailer");
+    }
+
+    #[test]
+    fn format_list_docs_shows_previews() {
+        let result = serde_json::json!({
+            "file": "src/tools/output.rs",
+            "docstrings": [
+                {"symbol_name": "OutputGuard", "content": "Enforces progressive disclosure across all tools."},
+                {"symbol_name": "cap_items", "content": "Truncate to exploring-mode limit and produce OverflowInfo."},
+                {"symbol_name": "cap_files", "content": "File-level capping for multi-file result sets."},
+                {"symbol_name": "overflow_json", "content": "Build the overflow object to include in JSON response."}
+            ]
+        });
+        let out = format_list_docs(&result);
+        assert!(out.contains("src/tools/output.rs"), "should show file");
+        assert!(out.contains("OutputGuard"), "should show symbol name");
+        assert!(out.contains("Enforces progressive"), "should show doc preview");
+        assert!(out.contains("more"), "should cap at 3");
+        assert!(!out.contains("overflow_json"), "4th entry should be hidden");
     }
 }
 
