@@ -9,7 +9,7 @@ Implemented capabilities in code-explorer. For what's coming next, see [`ROADMAP
 Session-scoped LRU buffer (max 20 entries) that stores large command output and file content without flooding the context window. Agents query stored output using Unix tools.
 
 **How it works:**
-- `run_command` output > 50 lines → stored in buffer, returns smart summary + `@cmd_xxxx` handle
+- `run_command` output > 50 lines → stored in buffer, returns smart summary + `@cmd_xxxx` handle; buffer-ref queries (`grep @ref`, `jq @tool_ref`) capped at 50 lines inline with `truncated`/`shown`/`total` metadata
 - `read_file` on large files → returns summary + `@file_xxxx` handle
 - Buffer refs can be passed directly to follow-up `run_command` calls:
   ```
