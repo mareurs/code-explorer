@@ -136,6 +136,37 @@ impl OutputBuffer {
         id
     }
 
+    /// Store tool output under a `@tool_*` handle.
+    ///
+    /// Content goes in `stdout`; `stderr` is empty; `exit_code` is 0.
+    /// The `command` field holds the tool name for diagnostics.
+    pub fn store_tool(&self, tool_name: &str, content: String) -> String {
+        let mut inner = self.inner.lock().unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        inner.counter = inner.counter.wrapping_add(1);
+        let id = format!("@tool_{:08x}", now.wrapping_add(inner.counter) as u32);
+
+        if inner.entries.len() >= inner.max_entries {
+            if let Some(oldest_id) = inner.order.first().cloned() {
+                inner.order.remove(0);
+                inner.entries.remove(&oldest_id);
+            }
+        }
+        let entry = BufferEntry {
+            command: tool_name.to_string(),
+            stdout: content,
+            stderr: String::new(),
+            exit_code: 0,
+            timestamp: now,
+        };
+        inner.entries.insert(id.clone(), entry);
+        inner.order.push(id.clone());
+        id
+    }
+
     /// Resolve `@cmd_<8hex>` (and `@cmd_<8hex>.err`) references in a command string.
     ///
     /// Each reference is replaced with a path to a read-only temp file containing
@@ -503,5 +534,24 @@ mod tests {
         assert!(!OutputBuffer::is_buffer_only("cargo test"));
         assert!(!OutputBuffer::is_buffer_only("grep foo /etc/hosts"));
         assert!(!OutputBuffer::is_buffer_only("cat ./README.md"));
+    }
+
+    #[test]
+    fn store_tool_generates_tool_ref() {
+        let buf = OutputBuffer::new(10);
+        let id = buf.store_tool("list_symbols", "{\"symbols\":[]}".to_string());
+        assert!(id.starts_with("@tool_"), "expected @tool_ prefix, got {}", id);
+    }
+
+    #[test]
+    fn store_tool_stores_as_stdout_no_stderr() {
+        let buf = OutputBuffer::new(10);
+        let json = "{\"symbols\":[1,2,3]}".to_string();
+        let id = buf.store_tool("list_symbols", json.clone());
+        let entry = buf.get(&id).unwrap();
+        assert_eq!(entry.stdout, json);
+        assert_eq!(entry.stderr, "");
+        assert_eq!(entry.exit_code, 0);
+        assert_eq!(entry.command, "list_symbols");
     }
 }
