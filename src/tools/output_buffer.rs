@@ -812,7 +812,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file_path = dir.path().join("test.txt");
 
-        // Write initial content
+        // Write initial content and store it
         fs::write(&file_path, "original content").unwrap();
 
         let buf = OutputBuffer::new(10);
@@ -821,15 +821,27 @@ mod tests {
             "original content".to_string(),
         );
 
-        // Sandwich step 1: verify cached content is served
+        // Step 1 (baseline): verify cached content is returned
         assert_eq!(buf.get(&id).unwrap().stdout, "original content");
 
-        // Sandwich step 2: modify file on disk AND advance mtime past the stored timestamp
+        // Step 2: write new content to disk BUT set mtime to the past (before entry.timestamp)
+        // This simulates a file change that shouldn't trigger a refresh yet.
         fs::write(&file_path, "updated content").unwrap();
+        let past = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1);
+        filetime::set_file_mtime(&file_path, filetime::FileTime::from_system_time(past)).unwrap();
+
+        // Step 3 (stale-assert): mtime is in the past — must still return cached content
+        assert_eq!(
+            buf.get(&id).unwrap().stdout,
+            "original content",
+            "expected cached content when mtime has not advanced"
+        );
+
+        // Step 4: now advance mtime past entry.timestamp (trigger condition)
         let future = std::time::SystemTime::now() + std::time::Duration::from_secs(2);
         filetime::set_file_mtime(&file_path, filetime::FileTime::from_system_time(future)).unwrap();
 
-        // Sandwich step 3: get() must return fresh content
+        // Step 5 (fresh-assert): mtime is newer — must return updated content
         let entry = buf.get(&id).unwrap();
         assert_eq!(entry.stdout, "updated content");
     }
