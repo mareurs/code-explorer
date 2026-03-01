@@ -208,7 +208,14 @@ impl OutputBuffer {
             }
         }
 
-        inner.pending_acks.insert(id.clone(), PendingAckCommand { command, cwd, timeout_secs });
+        inner.pending_acks.insert(
+            id.clone(),
+            PendingAckCommand {
+                command,
+                cwd,
+                timeout_secs,
+            },
+        );
         inner.pending_order.push(id.clone());
         id
     }
@@ -233,7 +240,10 @@ impl OutputBuffer {
     ///   buffered output, not real filesystem paths)
     pub fn resolve_refs(&self, command: &str) -> Result<(String, Vec<PathBuf>, bool)> {
         // Guard: @ack_* handles are for deferred execution, not content interpolation.
-        if Regex::new(r"@ack_[0-9a-f]{8}").expect("valid regex").is_match(command) {
+        if Regex::new(r"@ack_[0-9a-f]{8}")
+            .expect("valid regex")
+            .is_match(command)
+        {
             return Err(RecoverableError::with_hint(
                 "ack handle cannot be used for interpolation",
                 "Use run_command(\"@ack_<id>\") directly to execute a pending acknowledgment.",
@@ -638,15 +648,28 @@ mod tests {
     #[test]
     fn store_dangerous_returns_ack_handle() {
         let buf = OutputBuffer::new(10);
-        let handle = buf.store_dangerous("rm -rf /dist".to_string(), Some("frontend/".to_string()), 30);
-        assert!(handle.starts_with("@ack_"), "handle should start with @ack_, got: {handle}");
+        let handle = buf.store_dangerous(
+            "rm -rf /dist".to_string(),
+            Some("frontend/".to_string()),
+            30,
+        );
+        assert!(
+            handle.starts_with("@ack_"),
+            "handle should start with @ack_, got: {handle}"
+        );
     }
 
     #[test]
     fn get_dangerous_returns_stored_command() {
         let buf = OutputBuffer::new(10);
-        let handle = buf.store_dangerous("rm -rf /dist".to_string(), Some("frontend/".to_string()), 10);
-        let cmd = buf.get_dangerous(&handle).expect("should find stored command");
+        let handle = buf.store_dangerous(
+            "rm -rf /dist".to_string(),
+            Some("frontend/".to_string()),
+            10,
+        );
+        let cmd = buf
+            .get_dangerous(&handle)
+            .expect("should find stored command");
         assert_eq!(cmd.command, "rm -rf /dist");
         assert_eq!(cmd.cwd, Some("frontend/".to_string()));
         assert_eq!(cmd.timeout_secs, 10);
@@ -665,8 +688,14 @@ mod tests {
         for i in 0..21u64 {
             handles.push(buf.store_dangerous(format!("cmd_{}", i), None, 30));
         }
-        assert!(buf.get_dangerous(&handles[0]).is_none(), "oldest ack should be evicted");
-        assert!(buf.get_dangerous(&handles[20]).is_some(), "newest ack should survive");
+        assert!(
+            buf.get_dangerous(&handles[0]).is_none(),
+            "oldest ack should be evicted"
+        );
+        assert!(
+            buf.get_dangerous(&handles[20]).is_some(),
+            "newest ack should survive"
+        );
     }
 
     #[test]
@@ -674,8 +703,14 @@ mod tests {
         let buf = OutputBuffer::new(10);
         let handle = buf.store_dangerous("rm -rf /dist".to_string(), None, 30);
         let result = buf.resolve_refs(&format!("grep pattern {handle}"));
-        assert!(result.is_err(), "interpolating an @ack_ handle should return an error");
+        assert!(
+            result.is_err(),
+            "interpolating an @ack_ handle should return an error"
+        );
         let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("ack handle"), "error should mention 'ack handle', got: {msg}");
+        assert!(
+            msg.contains("ack handle"),
+            "error should mention 'ack handle', got: {msg}"
+        );
     }
 }

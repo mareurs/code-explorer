@@ -500,6 +500,31 @@ impl Tool for RunCommand {
         let root = ctx.agent.require_project_root().await?;
         let security = ctx.agent.security_config().await;
 
+        // --- Early dispatch: @ack_* handle ---
+        if looks_like_ack_handle(command) {
+            let stored = ctx
+                .output_buffer
+                .get_dangerous(command)
+                .ok_or_else(|| {
+                    super::RecoverableError::with_hint(
+                        "ack handle expired or unknown",
+                        "Re-run the original command to get a fresh handle.",
+                    )
+                })?;
+            return run_command_inner(
+                &stored.command,
+                &stored.command,
+                stored.timeout_secs,
+                true, // acknowledge_risk
+                stored.cwd.as_deref(),
+                false, // buffer_only
+                &root,
+                &security,
+                ctx,
+            )
+            .await;
+        }
+
         // --- Step 1: Resolve @cmd_ buffer references ---
         let (resolved_command, temp_files, buffer_only) =
             ctx.output_buffer.resolve_refs(command)?;
@@ -540,6 +565,16 @@ fn looks_like_file_read(command: &str) -> bool {
     }
     // At least one argument must look like a file path (not a flag or @ref)
     words.any(|w| !w.starts_with('-') && !w.starts_with('@'))
+}
+
+/// Returns true when `command` is a bare `@ack_<8hex>` handle.
+fn looks_like_ack_handle(command: &str) -> bool {
+    let s = command.trim();
+    if !s.starts_with("@ack_") {
+        return false;
+    }
+    let suffix = &s[5..]; // after "@ack_"
+    suffix.len() == 8 && suffix.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// Inner logic for `RunCommand::call`, extracted so temp-file cleanup
@@ -2019,6 +2054,39 @@ mod tests {
         assert!(
             hint.contains("read_file"),
             "cat on a text file should suggest read_file in the hint, got: {hint}"
+        );
+    }
+
+    #[tokio::test]
+    async fn ack_handle_executes_stored_command() {
+        let (_dir, ctx) = project_ctx().await;
+        let handle = ctx
+            .output_buffer
+            .store_dangerous("echo hello_ack".to_string(), None, 30);
+
+        let tool = RunCommand;
+        let input = serde_json::json!({ "command": handle });
+        let result = tool.call(input, &ctx).await.expect("ack call should succeed");
+
+        let stdout = result["stdout"].as_str().unwrap_or("");
+        assert!(
+            stdout.contains("hello_ack"),
+            "expected 'hello_ack' in stdout, got: {stdout}"
+        );
+    }
+
+    #[tokio::test]
+    async fn ack_handle_unknown_returns_recoverable_error() {
+        let (_dir, ctx) = project_ctx().await;
+        let tool = RunCommand;
+        let input = serde_json::json!({ "command": "@ack_deadbeef" });
+        let err = tool
+            .call(input, &ctx)
+            .await
+            .expect_err("unknown ack handle should return Err");
+        assert!(
+            err.to_string().contains("expired"),
+            "error should mention 'expired', got: {err}"
         );
     }
 }
