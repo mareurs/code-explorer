@@ -268,7 +268,10 @@ impl OutputBuffer {
     /// filesystem — they only read from in-memory output buffers materialized
     /// as read-only temp files.
     pub fn is_buffer_only(command: &str) -> bool {
-        if !command.contains("@cmd_") && !command.contains("@file_") {
+        if !command.contains("@cmd_")
+            && !command.contains("@file_")
+            && !command.contains("@tool_")
+        {
             return false;
         }
         // Reject if any whitespace-separated word looks like a bare path.
@@ -527,6 +530,9 @@ mod tests {
         assert!(OutputBuffer::is_buffer_only("tail -50 @file_abc123"));
         assert!(OutputBuffer::is_buffer_only("diff @cmd_aaa @file_bbb"));
         assert!(OutputBuffer::is_buffer_only("wc -l @cmd_a1b2c3"));
+        // @tool_ refs must also be recognised
+        assert!(OutputBuffer::is_buffer_only("grep foo @tool_abc12345"));
+        assert!(OutputBuffer::is_buffer_only("jq '.symbols' @tool_abc12345"));
     }
 
     #[test]
