@@ -940,8 +940,27 @@ pub fn format_index_library(result: &Value) -> String {
 }
 
 pub fn format_list_libraries(result: &Value) -> String {
-    let count = result["libraries"].as_array().map(|a| a.len()).unwrap_or(0);
-    format!("{count} libraries")
+    let libs = match result["libraries"].as_array() {
+        Some(l) if !l.is_empty() => l,
+        _ => return "0 libraries".to_string(),
+    };
+    let name_width = libs
+        .iter()
+        .filter_map(|l| l["name"].as_str())
+        .map(|n| n.len())
+        .max()
+        .unwrap_or(0);
+    let mut out = format!("{} libraries", libs.len());
+    for lib in libs.iter() {
+        let name = lib["name"].as_str().unwrap_or("?");
+        let status = if lib["indexed"].as_bool().unwrap_or(false) {
+            "indexed"
+        } else {
+            "not indexed"
+        };
+        out.push_str(&format!("\n  {name:<name_width$}  {status}"));
+    }
+    out
 }
 
 pub fn format_index_status(result: &Value) -> String {
@@ -2395,6 +2414,23 @@ mod tests {
             text.contains("No"),
             "should say 'No references found.', got: {}",
             text
+        );
+    }
+
+    #[test]
+    fn format_list_libraries_shows_names_and_status() {
+        let result = serde_json::json!({
+            "libraries": [
+                {"name": "serde", "indexed": true},
+                {"name": "tokio", "indexed": false}
+            ]
+        });
+        let out = format_list_libraries(&result);
+        assert!(out.contains("serde"), "should show library name, got: {out}");
+        assert!(out.contains("tokio"), "should show library name, got: {out}");
+        assert!(
+            out.contains("indexed"),
+            "should show index status, got: {out}"
         );
     }
 }
