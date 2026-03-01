@@ -970,9 +970,23 @@ pub fn format_index_status(result: &Value) -> String {
     }
     let files = result["file_count"].as_u64().unwrap_or(0);
     let chunks = result["chunk_count"].as_u64().unwrap_or(0);
-    let stale = result["stale"].as_bool().unwrap_or(false);
-    let stale_note = if stale { " · stale" } else { "" };
-    format!("{files} files · {chunks} chunks{stale_note}")
+
+    let mut out = format!("{files} files · {chunks} chunks");
+
+    if let Some(model) = result["indexed_with_model"].as_str() {
+        out.push_str(&format!(" · {model}"));
+    }
+    if let Some(ts) = result["indexed_at"].as_str() {
+        out.push_str(&format!(" · {ts}"));
+    }
+    if result["stale"].as_bool().unwrap_or(false) {
+        if let Some(behind) = result["behind_commits"].as_u64().filter(|&n| n > 0) {
+            out.push_str(&format!(" · {behind} commits behind"));
+        } else {
+            out.push_str(" · stale");
+        }
+    }
+    out
 }
 
 pub fn format_list_functions(result: &Value) -> String {
@@ -2599,6 +2613,51 @@ mod tests {
         );
         assert!(out.contains("more"), "should cap at 3");
         assert!(!out.contains("overflow_json"), "4th entry should be hidden");
+    }
+
+    #[test]
+    fn format_index_status_shows_model_and_timestamp() {
+        let result = serde_json::json!({
+            "indexed": true,
+            "file_count": 42,
+            "chunk_count": 1234,
+            "stale": false,
+            "indexed_with_model": "text-embedding-3-small",
+            "indexed_at": "2026-03-01 14:22"
+        });
+        let out = format_index_status(&result);
+        assert!(
+            out.contains("42 files"),
+            "should show file count, got: {out}"
+        );
+        assert!(
+            out.contains("1234 chunks"),
+            "should show chunk count, got: {out}"
+        );
+        assert!(
+            out.contains("text-embedding-3-small"),
+            "should show model, got: {out}"
+        );
+        assert!(
+            out.contains("2026-03-01"),
+            "should show timestamp, got: {out}"
+        );
+    }
+
+    #[test]
+    fn format_index_status_stale_shows_commit_count() {
+        let result = serde_json::json!({
+            "indexed": true,
+            "file_count": 10,
+            "chunk_count": 100,
+            "stale": true,
+            "behind_commits": 5
+        });
+        let out = format_index_status(&result);
+        assert!(
+            out.contains("5 commits behind") || out.contains("stale"),
+            "should note staleness, got: {out}"
+        );
     }
 }
 

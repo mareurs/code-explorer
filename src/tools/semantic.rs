@@ -316,6 +316,7 @@ impl Tool for IndexStatus {
             "indexed": true,
             "configured_model": model,
             "indexed_with_model": stats.model,
+            "indexed_at": stats.indexed_at,
             "file_count": stats.file_count,
             "chunk_count": stats.chunk_count,
             "embedding_count": stats.embedding_count,
