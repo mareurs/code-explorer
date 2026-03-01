@@ -438,4 +438,23 @@ mod tests {
             .unwrap();
         assert_eq!(result, None);
     }
+
+    #[tokio::test]
+    async fn delete_private_does_not_affect_shared_store() {
+        let (_dir, ctx) = test_ctx_with_project().await;
+        ctx.agent
+            .with_project(|p| p.memory.write("tmp", "keep"))
+            .await
+            .unwrap();
+        DeleteMemory
+            .call(json!({"topic": "tmp", "private": true}), &ctx)
+            .await
+            .unwrap();
+        let result = ctx
+            .agent
+            .with_project(|p| p.memory.read("tmp"))
+            .await
+            .unwrap();
+        assert_eq!(result, Some("keep".to_string()));
+    }
 }
