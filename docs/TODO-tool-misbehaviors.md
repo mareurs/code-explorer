@@ -123,25 +123,24 @@ Applied in both `replace_symbol::call` and `insert_code::call` ("before" case).
 
 **Date:** 2026-02-28
 **Severity:** High — silently corrupts the file
-**Status:** ✅ PARTIALLY FIXED — `trim_symbol_start` applied to the "before" case. Regression tests: `tests/symbol_lsp.rs::insert_code_before_skips_lead_in`. The "after" case (using `end_line`) is not yet protected.
+**Status:** ✅ FIXED — `trim_symbol_start` for "before"; `trim_symbol_end` for "after".
+Regression tests: `tests/symbol_lsp.rs::insert_code_before_skips_lead_in`,
+`tests/symbol_lsp.rs::insert_code_after_skips_trail_in`.
 
 **What happened:**
 Called `insert_code(name_path="tests/edit_lines_missing_params_errors", position="after")`.
 The insertion was placed *inside* `edit_lines_delete_past_eof_errors` — inside its
 `json!({...})` body — rather than after `edit_lines_missing_params_errors`.
 
-**Root cause hypothesis:**
-The LSP symbol range for `edit_lines_missing_params_errors` apparently ends at a line that
-is *within* a neighboring (likely the next) function. `insert_code` uses the `end_line` of
-the symbol to determine the insertion point, but the `end_line` was stale or incorrect.
-Could also be a name-path resolution issue — the tool may have matched the wrong function.
+**Root cause:**
+LSP over-extends a symbol's `end_line` to include the opening line of the following symbol
+(`fn following() {`). `insert_code` used `end_line + 1` directly, landing inside the
+following function's body.
 
-**Fix ideas:**
-- After `insert_code`, verify the insertion with `search_pattern` to confirm the new code
-  is in the expected location.
-- Consider using `edit_lines` for insertions when position must be precise.
-- For the "after" case: similarly apply a `trim_symbol_end` that scans backwards from
-  `end_line` to find the actual closing token, guarding against over-extended LSP ranges.
+**Fix applied:**
+Added `trim_symbol_end` (symmetric to `trim_symbol_start`) that walks backward from
+`end_line` past lines ending with `{` (next symbol's opening) and blank lines, stopping at
+the current symbol's own closing `}`. Applied in the "after" branch of `InsertCode::call`.
 
 ---
 

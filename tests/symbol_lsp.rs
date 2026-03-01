@@ -315,3 +315,59 @@ async fn insert_code_after_lands_past_symbol() {
         "bar must be inserted after foo; got:\n{result}"
     );
 }
+
+// ── BUG-004: insert_code "after" skips trail-in ─────────────────────────────
+
+/// When LSP over-extends `target`'s `end_line` to include the opening line of
+/// the following symbol (`fn following() {`), `insert_code(position="after")`
+/// must NOT land inside `following`'s body.
+#[tokio::test]
+async fn insert_code_after_skips_trail_in() {
+    // File layout (0-indexed):
+    //  0: "    fn target() {"
+    //  1: "        body();"
+    //  2: "    }"
+    //  3: "    fn following() {"  ← LSP over-extends target's end_line here
+    //  4: "        inside();"
+    //  5: "    }"
+    let src =
+        "    fn target() {\n        body();\n    }\n    fn following() {\n        inside();\n    }\n";
+
+    let (dir, ctx) = ctx_with_mock(&[("src/lib.rs", src)], |root| {
+        let file = root.join("src/lib.rs");
+        // LSP reports end_line=3 (the `fn following() {` line) — BUG-004 scenario
+        MockLspClient::new().with_symbols(file.clone(), vec![sym("target", 0, 3, file)])
+    })
+    .await;
+
+    InsertCode
+        .call(
+            json!({
+                "path": "src/lib.rs",
+                "name_path": "target",
+                "position": "after",
+                "code": "    // inserted\n"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let result = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
+    assert!(
+        result.contains("// inserted"),
+        "insertion must be present; got:\n{result}"
+    );
+    // Insertion must land BEFORE `fn following()`, not inside its body
+    let insert_pos = result.find("// inserted").unwrap();
+    let following_fn = result.find("fn following()").unwrap();
+    let inside_pos = result.find("inside()").unwrap();
+    assert!(
+        insert_pos < following_fn,
+        "insertion must land before fn following(); got:\n{result}"
+    );
+    assert!(
+        insert_pos < inside_pos,
+        "insertion must not land inside following's body; got:\n{result}"
+    );
+}

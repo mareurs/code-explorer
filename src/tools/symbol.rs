@@ -1115,6 +1115,24 @@ fn trim_symbol_start(start: usize, lines: &[&str]) -> usize {
     s
 }
 
+/// Walk backward from an exclusive `end` past any lines that look like the
+/// opening of a *following* symbol (lines that end with `{`) or blank lines.
+/// LSP sometimes extends a symbol's `end_line` past its own closing `}` to
+/// include the first line of the next symbol — the same "lead-in" artifact
+/// that `trim_symbol_start` handles on the other side of the boundary.
+fn trim_symbol_end(end: usize, lines: &[&str]) -> usize {
+    let mut e = end;
+    while e > 0 {
+        let t = lines[e - 1].trim();
+        if t.is_empty() || t.ends_with('{') {
+            e -= 1;
+        } else {
+            break;
+        }
+    }
+    e
+}
+
 /// Scan backwards from `start` to include contiguous doc comments (`///`, `//!`),
 /// attributes (`#[...]`), and blank lines between them. Stops at the first line
 /// that doesn't match these patterns.
@@ -1330,7 +1348,7 @@ impl Tool for InsertCode {
         let lines: Vec<&str> = content.lines().collect();
         let insert_at = match position {
             "before" => trim_symbol_start(sym.start_line as usize, &lines),
-            _ => (sym.end_line as usize + 1).min(lines.len()),
+            _ => trim_symbol_end((sym.end_line as usize + 1).min(lines.len()), &lines),
         };
 
         let mut new_lines = Vec::new();
