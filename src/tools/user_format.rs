@@ -976,9 +976,23 @@ pub fn format_index_status(result: &Value) -> String {
 }
 
 pub fn format_list_functions(result: &Value) -> String {
-    let count = result["functions"].as_array().map(|a| a.len()).unwrap_or(0);
     let file = result["file"].as_str().unwrap_or("?");
-    format!("{file} → {count} functions")
+    let funcs = match result["functions"].as_array() {
+        Some(f) if !f.is_empty() => f,
+        _ => return format!("{file} — 0 functions"),
+    };
+    const MAX_SHOW: usize = 8;
+    let total = funcs.len();
+    let mut out = format!("{file} — {total} functions");
+    for f in funcs.iter().take(MAX_SHOW) {
+        let name = f["name"].as_str().unwrap_or("?");
+        out.push_str(&format!("\n  {name}"));
+    }
+    let hidden = total.saturating_sub(MAX_SHOW);
+    if hidden > 0 {
+        out.push_str(&format!("\n  … +{hidden} more"));
+    }
+    out
 }
 
 pub fn format_list_docs(result: &Value) -> String {
@@ -2482,6 +2496,35 @@ mod tests {
             out.contains("indexed"),
             "should show index status, got: {out}"
         );
+    }
+
+    #[test]
+    fn format_list_functions_shows_names() {
+        let result = serde_json::json!({
+            "file": "src/tools/symbol.rs",
+            "functions": [
+                {"name": "collect_matching", "start_line": 100, "end_line": 140},
+                {"name": "build_by_file", "start_line": 150, "end_line": 180},
+                {"name": "matches_kind_filter", "start_line": 190, "end_line": 200}
+            ]
+        });
+        let out = format_list_functions(&result);
+        assert!(out.contains("src/tools/symbol.rs"), "should show file");
+        assert!(out.contains("collect_matching"), "should show function name");
+        assert!(out.contains("build_by_file"), "should show function name");
+        assert!(out.contains('3'), "should show count");
+    }
+
+    #[test]
+    fn format_list_functions_caps_at_eight() {
+        let funcs: Vec<serde_json::Value> = (0..12)
+            .map(|i| serde_json::json!({"name": format!("func_{i}"), "start_line": i, "end_line": i + 5}))
+            .collect();
+        let result = serde_json::json!({ "file": "src/big.rs", "functions": funcs });
+        let out = format_list_functions(&result);
+        assert!(out.contains("func_0"), "should show first func");
+        assert!(!out.contains("func_8"), "should not show 9th func");
+        assert!(out.contains("more"), "should show trailer");
     }
 }
 
