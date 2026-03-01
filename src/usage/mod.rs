@@ -49,9 +49,7 @@ impl UsageRecorder {
     }
 }
 
-fn classify_content_result(
-    result: &Result<Vec<Content>>,
-) -> (&'static str, bool, Option<String>) {
+fn classify_content_result(result: &Result<Vec<Content>>) -> (&'static str, bool, Option<String>) {
     match result {
         Err(e) => ("error", false, Some(e.to_string())),
         Ok(blocks) => {
@@ -101,7 +99,8 @@ mod content_tests {
 
     #[test]
     fn classify_content_overflow() {
-        let text = serde_json::json!({"symbols": [], "overflow": {"shown": 200, "total": 500}}).to_string();
+        let text = serde_json::json!({"symbols": [], "overflow": {"shown": 200, "total": 500}})
+            .to_string();
         let r: anyhow::Result<Vec<Content>> = Ok(vec![Content::text(text)]);
         let (outcome, overflowed, _) = classify_content_result(&r);
         assert_eq!(outcome, "success");

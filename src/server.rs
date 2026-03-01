@@ -206,7 +206,9 @@ impl ServerHandler for CodeExplorerServer {
                 ))
             })
         } else {
-            recorder.record_content(&req.name, || tool.call_content(input, &ctx)).await
+            recorder
+                .record_content(&req.name, || tool.call_content(input, &ctx))
+                .await
         };
 
         match result {
