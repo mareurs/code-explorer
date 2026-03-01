@@ -29,14 +29,22 @@ git blame, semantic search (embeddings), and project memory.
 - `find_file(pattern)` — glob-based file search (e.g. `**/*.rs`, `src/**/mod.rs`). Scope with `path=<dir>`, limit with `max_results` (default 100).
 
 **Non-source files & history:**
-- `read_file(path)` — for README, configs, TOML, JSON, YAML. Rejects source code without a line range — use symbol tools instead. For targeted source reads: provide `start_line` + `end_line`.
+- `read_file(path)` — read a file. Returns content directly for short files,
+  smart summary + `@file_*` ref for large files (>200 lines). For source code
+  files the summary includes top-level symbols. Prefer `list_symbols` /
+  `find_symbol` for source code navigation — they are more structured and
+  token-efficient.
 - `git_blame(path)` — who last changed each line and in which commit
 
 **List directory contents:**
 - `list_dir(path)` — list files and directories. Pass `recursive=true` for a full tree.
 
 **Run shell commands:**
-- `run_command(command)` — execute a shell command. **Runs from the project root automatically** — no `cd` prefix needed. Stderr is captured automatically — no `2>&1` needed. Large output is stored in a buffer with a smart summary (test pass/fail, build errors, etc.); query it in a follow-up call via `@output_id` — **do not pipe inline**.
+- `run_command(command)` — execute a shell command. Run freely even if output
+  might be large; the buffer handles it. Returns content directly for short
+  output, smart summary + `@cmd_*` ref for large output.
+  **Runs from the project root automatically** — no `cd` prefix needed.
+  Stderr is captured automatically — no `2>&1` needed.
   - `cwd` — run from a subdirectory (relative to project root)
   - `acknowledge_risk` — bypass safety check for destructive commands
   - `timeout_secs` — max execution time (default 30)
@@ -78,6 +86,20 @@ Only switch to focused AFTER identifying targets.
 Overflow produces: `{ "overflow": { "shown": N, "total": M, "hint": "...", "by_file": [{"file":"...","count":N},...] } }` — follow the hint.
 `by_file` (on `find_symbol` overflow) shows per-file match counts sorted by count descending; use `path=` to zoom into the top file.
 
+## Output Buffers
+
+Large content — whether from a command or a file read — is stored in an
+`OutputBuffer` rather than dumped into your context. You get a smart summary
+and an `@ref` handle (`@cmd_*` for commands, `@file_*` for files). The full
+content costs you nothing to hold. Query it via `run_command` + Unix tools:
+
+    run_command("grep FAILED @cmd_a1b2c3")
+    run_command("sed -n '42,80p' @file_abc123")
+    run_command("diff @cmd_a1b2c3 @file_abc123")
+
+**Be targeted:** extract what you need in one well-crafted query per buffer —
+don't probe the same `@ref` multiple times for overlapping information.
+
 ## Project Management
 
 - `onboarding` — initial project discovery: detect languages, read key files, create config. Use `force: true` to re-scan.
@@ -107,8 +129,7 @@ To clean up: `git worktree prune` from the main repo root, then start a new sess
 
 ## Rules
 
-1. **PREFER symbol tools over read_file.** `list_symbols` + `find_symbol(include_body=true)` beats reading entire files.
-2. **`read_file` rejects source code without a line range.** Use symbol tools for `.rs`, `.py`, `.ts`, etc. `read_file` is for README, configs, TOML, JSON, YAML. For targeted source reads, provide `start_line` + `end_line`.
+1. **PREFER symbol tools over `read_file` for source code.** `list_symbols` + `find_symbol(include_body=true)` beats reading entire files. `read_file` on a large source file returns a summary + `@file_*` ref, not raw content — use `start_line` + `end_line` when you need a targeted excerpt.
 3. **Semantic search for "how does X work?"** Then drill into results with symbol tools.
 4. **Exploring mode first.** Only `detail_level: "full"` after you know what you need.
 5. **Respect overflow hints.** Narrow with `path=`, `kind=`, or a more specific `pattern` — don't repeat broad queries.
