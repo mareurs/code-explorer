@@ -37,7 +37,7 @@ async fn project_with_files(files: &[(&str, &str)]) -> (tempfile::TempDir, ToolC
 
 #[tokio::test]
 async fn workflow_read_search_replace() {
-    use code_explorer::tools::file::{EditLines, ReadFile, SearchPattern};
+    use code_explorer::tools::file::{EditFile, ReadFile, SearchPattern};
     let (dir, ctx) = project_with_files(&[
         (
             "src/main.txt",
@@ -73,14 +73,13 @@ async fn workflow_read_search_replace() {
         .unwrap();
     assert!(read_result["content"].as_str().unwrap().contains("Hello"));
 
-    // Step 3: Replace line 2 containing "Hello" with "Greetings" via EditLines
-    let replace_result = EditLines
+    // Step 3: Replace the "Hello" line with "Greetings" via EditFile
+    let replace_result = EditFile
         .call(
             json!({
                 "path": &lib_path,
-                "start_line": 2,
-                "delete_count": 1,
-                "new_text": "    format!(\"Greetings, {}!\", name)\n",
+                "old_string": "    format!(\"Hello, {}!\", name)",
+                "new_string": "    format!(\"Greetings, {}!\", name)",
             }),
             &ctx,
         )

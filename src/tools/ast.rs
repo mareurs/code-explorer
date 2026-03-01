@@ -196,7 +196,7 @@ mod tests {
     #[tokio::test]
     async fn list_functions_line_numbers_are_1_indexed() {
         // Verify start_line/end_line are 1-indexed in output so they can be
-        // passed directly to edit_lines (which is also 1-indexed).
+        // passed directly to edit_file / read_file (which are also 1-indexed).
         let source = "fn hello() {}\nfn world() {}\n";
         let (dir, ctx) = project_ctx_with_file("test.rs", source).await;
         let result = ListFunctions

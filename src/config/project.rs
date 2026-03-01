@@ -92,7 +92,7 @@ pub struct SecuritySection {
     /// Enable shell command execution (default: false — disabled for safety)
     #[serde(default)]
     pub shell_enabled: bool,
-    /// Enable file write tools: create_text_file, edit_lines, symbol write tools (default: true)
+    /// Enable file write tools: create_file, edit_file, symbol write tools (default: true)
     #[serde(default = "default_true")]
     pub file_write_enabled: bool,
     /// Enable git tools: blame, log, diff (default: true)
