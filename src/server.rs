@@ -585,12 +585,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shell_tool_blocked_by_default() {
+    async fn shell_tool_allowed_by_default() {
         let (_dir, server) = make_server().await;
-        // Shell should be disabled by default — verify through security config
         let security = server.agent.security_config().await;
-        assert!(!security.shell_enabled);
-        assert!(crate::util::path_security::check_tool_access("run_command", &security).is_err());
+        assert!(security.shell_enabled);
+        assert!(crate::util::path_security::check_tool_access("run_command", &security).is_ok());
     }
 
     // ── route_tool_error ───────────────────────────────────────────────────

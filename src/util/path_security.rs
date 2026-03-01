@@ -69,7 +69,7 @@ impl Default for PathSecurityConfig {
             extra_write_roots: Vec::new(),
             shell_command_mode: "warn".into(),
             shell_output_limit_bytes: 100 * 1024,
-            shell_enabled: false,
+            shell_enabled: true,
             file_write_enabled: true,
             git_enabled: true,
             indexing_enabled: true,
@@ -700,17 +700,17 @@ mod tests {
     // ── Tool access controls ─────────────────────────────────────────────
 
     #[test]
-    fn shell_disabled_by_default() {
+    fn shell_enabled_by_default() {
         let config = PathSecurityConfig::default();
-        assert!(!config.shell_enabled);
-        assert!(check_tool_access("run_command", &config).is_err());
+        assert!(config.shell_enabled);
+        assert!(check_tool_access("run_command", &config).is_ok());
     }
 
     #[test]
-    fn shell_enabled_when_configured() {
+    fn shell_disabled_when_configured() {
         let mut config = PathSecurityConfig::default();
-        config.shell_enabled = true;
-        assert!(check_tool_access("run_command", &config).is_ok());
+        config.shell_enabled = false;
+        assert!(check_tool_access("run_command", &config).is_err());
     }
 
     #[test]
@@ -807,7 +807,8 @@ mod tests {
 
     #[test]
     fn check_tool_access_error_message_includes_config_hint() {
-        let config = PathSecurityConfig::default();
+        let mut config = PathSecurityConfig::default();
+        config.shell_enabled = false;
         let err = check_tool_access("run_command", &config).unwrap_err();
         assert!(
             err.to_string().contains("shell_enabled"),
