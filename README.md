@@ -63,7 +63,7 @@ File reads work the same way — large files are stored as `@file_id` references
 
 ## Shell Integration
 
-`run_command` executes any shell command from the project root with full Output Buffer support:
+`run_command` executes any shell command from the project root, with stderr capture, Output Buffer support, and a thin safety layer:
 
 ```bash
 run_command("cargo build")
@@ -72,11 +72,23 @@ run_command("grep FAILED @cmd_a1b2c3")   # chain into a previous result
 run_command("diff @cmd_abc @file_def")   # compose refs freely
 ```
 
-**Safety features:**
-- Dangerous commands (`rm -rf`, `git reset --hard`, etc.) require `acknowledge_risk: true` — a speed bump before destructive operations
-- Direct source file access via `cat`/`grep`/`head` on code files is blocked and redirected to symbol tools (`find_symbol`, `search_pattern`, etc.)
-- Stderr is captured automatically — no `2>&1` needed
-- Scope with `cwd` for subdirectory commands; path traversal outside the project root is rejected
+Stderr is captured automatically — no `2>&1` needed. Scope with `cwd` for subdirectory commands.
+
+### Dangerous Command Detection
+
+Commands with destructive potential (`rm -rf`, `git reset --hard`, `DROP TABLE`, force-push, etc.) are detected and blocked until the AI explicitly passes `acknowledge_risk: true`. The intent is a deliberate pause before operations that are hard to reverse.
+
+> **Honest note:** Over 6+ months of daily use, Claude has never done something genuinely dangerous unprompted. The main practical effect is pressing *Yes* on permission prompts more often than you'd like. It's still worth keeping — MCP tools run with your full user permissions, and the occasional extra confirmation costs almost nothing compared to what it could prevent.
+
+### Source File Access Blocking
+
+`cat`, `grep`, `head`, and similar commands on source files (`.rs`, `.py`, `.ts`, etc.) are blocked at the tool level and redirected toward code-explorer equivalents — `find_symbol`, `search_pattern`, `read_file`. This enforces token-efficient navigation: reading an entire file to find one function is exactly the antipattern code-explorer is designed to eliminate.
+
+Pass `acknowledge_risk: true` to bypass when you genuinely need raw access.
+
+### Path Traversal Protection
+
+The `cwd` parameter lets the AI run commands in project subdirectories, but any path that escapes the project root — via `../`, symlinks, or absolute paths — is rejected before the command runs. Output Buffer refs (`@cmd_id`, `@file_id`) are resolved within the session and never expose paths outside it.
 
 ## Platform Support
 
