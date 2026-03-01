@@ -18,10 +18,11 @@
   - [Routing Plugin](concepts/routing-plugin.md)
   - [Superpowers Workflow](concepts/superpowers.md)
 
+- [Semantic Search](concepts/semantic-search.md)
+  - [Setup Guide](semantic-search-guide.md)
+
 - [Project Configuration](configuration/project-toml.md)
   - [Embedding Backends](configuration/embedding-backends.md)
-
-- [Semantic Search Guide](semantic-search-guide.md)
 
 - [Language Support](language-support.md)
 
