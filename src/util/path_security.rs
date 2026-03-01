@@ -6,6 +6,7 @@
 //!   extra roots from configuration).
 
 use anyhow::{bail, Result};
+use regex::Regex;
 use std::path::{Path, PathBuf};
 
 /// Paths that are always denied for read access (expanded from `~`).
@@ -55,6 +56,10 @@ pub struct PathSecurityConfig {
     pub indexing_enabled: bool,
     /// Read-only library paths (registered via LibraryRegistry).
     pub library_paths: Vec<PathBuf>,
+    /// Command substrings that bypass dangerous-command detection.
+    pub shell_allow_always: Vec<String>,
+    /// Additional regex patterns to flag as dangerous commands.
+    pub shell_dangerous_patterns: Vec<String>,
 }
 
 impl Default for PathSecurityConfig {
@@ -69,6 +74,8 @@ impl Default for PathSecurityConfig {
             git_enabled: true,
             indexing_enabled: true,
             library_paths: Vec::new(),
+            shell_allow_always: Vec::new(),
+            shell_dangerous_patterns: Vec::new(),
         }
     }
 }
@@ -304,6 +311,68 @@ pub fn check_tool_access(tool_name: &str, config: &PathSecurityConfig) -> Result
         _ => {} // All other tools are always allowed
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Dangerous command detection
+// ---------------------------------------------------------------------------
+
+/// Default patterns that indicate a dangerous/destructive command.
+/// Each entry is (regex_pattern, human-readable description).
+const DEFAULT_DANGEROUS_PATTERNS: &[(&str, &str)] = &[
+    (
+        r"rm\s+(-[a-zA-Z]*f|-[a-zA-Z]*r|--force|--recursive)",
+        "rm with --force or --recursive",
+    ),
+    (r"git\s+push\s+.*--force", "git push --force"),
+    (r"git\s+reset\s+--hard", "git reset --hard"),
+    (r"git\s+branch\s+-D\b", "git branch -D (force delete)"),
+    (
+        r"git\s+checkout\s+--\s+\.",
+        "git checkout -- . (discard all changes)",
+    ),
+    (
+        r"git\s+clean\s+-[a-zA-Z]*f",
+        "git clean -f (remove untracked files)",
+    ),
+    (r"(?i)DROP\s+(TABLE|DATABASE)", "SQL DROP TABLE/DATABASE"),
+    (r"chmod\s+777", "chmod 777 (world-writable)"),
+    (r"kill\s+-9", "kill -9 (SIGKILL)"),
+    (r"\bmkfs\b", "mkfs (format filesystem)"),
+    (r"\bdd\s+if=", "dd (raw disk write)"),
+];
+
+/// Check if a command matches a dangerous pattern.
+///
+/// Returns the matched pattern description if dangerous, `None` if safe.
+/// Respects `shell_allow_always` overrides from config.
+pub fn is_dangerous_command(command: &str, config: &PathSecurityConfig) -> Option<String> {
+    // 1. Check allow-list first — if command contains any allow string, it's safe.
+    for allow in &config.shell_allow_always {
+        if command.contains(allow.as_str()) {
+            return None;
+        }
+    }
+
+    // 2. Check built-in dangerous patterns.
+    for (pattern, description) in DEFAULT_DANGEROUS_PATTERNS {
+        if let Ok(re) = Regex::new(pattern) {
+            if re.is_match(command) {
+                return Some(description.to_string());
+            }
+        }
+    }
+
+    // 3. Check user-configured dangerous patterns.
+    for pattern in &config.shell_dangerous_patterns {
+        if let Ok(re) = Regex::new(pattern) {
+            if re.is_match(command) {
+                return Some(format!("matches custom pattern: {}", pattern));
+            }
+        }
+    }
+
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -707,5 +776,45 @@ mod tests {
         let result = list_git_worktrees(dir.path());
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], wt_root.path());
+    }
+
+    // ── Dangerous command detection ──────────────────────────────────────
+
+    #[test]
+    fn dangerous_command_detected() {
+        let config = PathSecurityConfig::default();
+        assert!(is_dangerous_command("rm -rf /tmp/foo", &config).is_some());
+        assert!(is_dangerous_command("git push --force origin main", &config).is_some());
+        assert!(is_dangerous_command("git reset --hard", &config).is_some());
+        assert!(is_dangerous_command("git branch -D feature", &config).is_some());
+        assert!(is_dangerous_command("git clean -fd", &config).is_some());
+        assert!(is_dangerous_command("chmod 777 script.sh", &config).is_some());
+        assert!(is_dangerous_command("kill -9 1234", &config).is_some());
+    }
+
+    #[test]
+    fn safe_command_not_flagged() {
+        let config = PathSecurityConfig::default();
+        assert!(is_dangerous_command("cargo test", &config).is_none());
+        assert!(is_dangerous_command("git status", &config).is_none());
+        assert!(is_dangerous_command("git push origin main", &config).is_none());
+        assert!(is_dangerous_command("rm temp.txt", &config).is_none());
+        assert!(is_dangerous_command("npm run build", &config).is_none());
+    }
+
+    #[test]
+    fn allow_always_bypasses_detection() {
+        let mut config = PathSecurityConfig::default();
+        config.shell_allow_always = vec!["git push --force".to_string()];
+        assert!(is_dangerous_command("git push --force origin main", &config).is_none());
+        // Other dangerous commands still detected
+        assert!(is_dangerous_command("rm -rf /tmp", &config).is_some());
+    }
+
+    #[test]
+    fn custom_dangerous_patterns() {
+        let mut config = PathSecurityConfig::default();
+        config.shell_dangerous_patterns = vec!["kubectl delete".to_string()];
+        assert!(is_dangerous_command("kubectl delete pod nginx", &config).is_some());
     }
 }

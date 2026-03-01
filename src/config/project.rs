@@ -101,6 +101,12 @@ pub struct SecuritySection {
     /// Enable semantic search and indexing tools (default: true)
     #[serde(default = "default_true")]
     pub indexing_enabled: bool,
+    /// Command substrings that bypass dangerous-command detection.
+    #[serde(default)]
+    pub shell_allow_always: Vec<String>,
+    /// Additional regex patterns to flag as dangerous commands.
+    #[serde(default)]
+    pub shell_dangerous_patterns: Vec<String>,
 }
 
 impl Default for SecuritySection {
@@ -114,6 +120,8 @@ impl Default for SecuritySection {
             file_write_enabled: true,
             git_enabled: true,
             indexing_enabled: true,
+            shell_allow_always: Vec::new(),
+            shell_dangerous_patterns: Vec::new(),
         }
     }
 }
@@ -146,6 +154,8 @@ impl SecuritySection {
             git_enabled: self.git_enabled,
             indexing_enabled: self.indexing_enabled,
             library_paths: Vec::new(),
+            shell_allow_always: self.shell_allow_always.clone(),
+            shell_dangerous_patterns: self.shell_dangerous_patterns.clone(),
         }
     }
 }
