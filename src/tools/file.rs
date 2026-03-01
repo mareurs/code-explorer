@@ -492,13 +492,7 @@ impl Tool for CreateFile {
         let resolved = crate::util::path_security::validate_write_path(path_str, &root, &security)?;
         crate::util::fs::write_utf8(&resolved, content)?;
         ctx.lsp.notify_file_changed(&resolved).await;
-
-        let user_md = super::user_format::format_create_file(content);
-
-        Ok(vec![
-            Content::text("ok").with_audience(vec![Role::Assistant]),
-            Content::text(user_md).with_audience(vec![Role::User]),
-        ])
+        Ok(vec![Content::text("ok")])
     }
 }
 
@@ -2235,44 +2229,29 @@ mod tests {
     // ── CreateFile::call_content audience split ───────────────────────────────
 
     #[tokio::test]
-async fn create_file_call_content_returns_two_audience_blocks() {
-    use rmcp::model::Role;
-    let (dir, ctx) = project_ctx().await;
-    let file = dir.path().join("demo.rs");
+    async fn create_file_call_content_returns_two_audience_blocks() {
+        let (dir, ctx) = project_ctx().await;
+        let file = dir.path().join("demo.rs");
 
-    let blocks = CreateFile
-        .call_content(
-            json!({
-                "path": file.to_str().unwrap(),
-                "content": "fn main() {}\n"
-            }),
-            &ctx,
-        )
-        .await
-        .unwrap();
+        let blocks = CreateFile
+            .call_content(
+                json!({
+                    "path": file.to_str().unwrap(),
+                    "content": "fn main() {}\n"
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
 
-    assert_eq!(blocks.len(), 2, "expected two content blocks");
-
-    // Block 0: assistant-only "ok"
-    let llm_block = &blocks[0];
-    assert_eq!(
-        llm_block.audience(),
-        Some(&vec![Role::Assistant]),
-        "first block must be assistant-only"
-    );
-    assert!(format!("{:?}", llm_block).contains("ok"), "LLM block must be ok");
-
-    // Block 1: user-only ANSI preview
-    let user_block = &blocks[1];
-    assert_eq!(
-        user_block.audience(),
-        Some(&vec![Role::User]),
-        "second block must be user-only"
-    );
-    let text = format!("{:?}", user_block);
-    assert!(text.contains("fn main"), "user block must contain file content");
-    assert!(text.contains("\\u{1b}["), "user block must contain ANSI codes");
-}
+        // CreateFile now returns a single content block containing "ok".
+        assert_eq!(blocks.len(), 1, "expected one content block");
+        assert!(
+            format!("{:?}", blocks[0]).contains("ok"),
+            "block must be ok: {:?}",
+            blocks[0]
+        );
+    }
 
     // ── EditFile ──────────────────────────────────────────────────────────────
 

@@ -567,11 +567,16 @@ async fn run_command_inner(
         // Use resolved_command (with @refs substituted) so buffer-only grep/awk
         // commands don't get flagged for patterns in the buffer content.
         if let Some(reason) = is_dangerous_command(resolved_command, security) {
-            return Err(super::RecoverableError::with_hint(
-                format!("dangerous command blocked: {}", reason),
-                "Re-run with acknowledge_risk: true if you are certain this is safe.",
-            )
-            .into());
+            let handle = ctx.output_buffer.store_dangerous(
+                resolved_command.to_string(),
+                cwd_param.map(str::to_string),
+                timeout_secs,
+            );
+            return Ok(serde_json::json!({
+                "pending_ack": handle,
+                "reason": reason,
+                "hint": format!("run_command(\"{handle}\") to execute")
+            }));
         }
     }
 
@@ -1211,15 +1216,20 @@ mod tests {
                 json!({ "command": "rm -rf /tmp/code_explorer_test_nonexistent" }),
                 &ctx,
             )
-            .await;
-        // Should be an error (dangerous command blocked)
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
+            .await
+            .expect("dangerous command should return Ok with pending_ack");
+        // Now returns a pending_ack handle instead of an error
         assert!(
-            err_msg.contains("dangerous command blocked"),
-            "error should mention dangerous: {}",
-            err_msg
+            result.get("pending_ack").is_some(),
+            "should have pending_ack key: {:?}",
+            result
         );
+        assert!(
+            result["pending_ack"].as_str().unwrap().starts_with("@ack_"),
+            "pending_ack should start with @ack_: {:?}",
+            result["pending_ack"]
+        );
+        assert!(result.get("reason").is_some(), "should have reason key");
     }
 
     #[tokio::test]
@@ -1306,25 +1316,61 @@ mod tests {
         let (_dir, ctx) = project_ctx().await;
         let result = RunCommand
             .call(json!({"command": "rm -rf /tmp/ce_nonexistent_test"}), &ctx)
-            .await;
-        assert!(result.is_err(), "dangerous command should be rejected");
-        let err = result.unwrap_err();
-        let rec = err
-            .downcast_ref::<crate::tools::RecoverableError>()
-            .expect("should be a RecoverableError, not a fatal error");
+            .await
+            .expect("dangerous command should return Ok with pending_ack, not Err");
+        // Previously returned Err(RecoverableError); now returns Ok with a pending_ack handle.
         assert!(
-            rec.message.to_lowercase().contains("dangerous"),
-            "message should mention dangerous, got: {}",
-            rec.message
+            result.get("pending_ack").is_some(),
+            "should have pending_ack key: {:?}",
+            result
         );
         assert!(
-            rec.hint
-                .as_deref()
-                .unwrap_or("")
-                .contains("acknowledge_risk"),
-            "hint should mention acknowledge_risk, got: {:?}",
-            rec.hint
+            result["pending_ack"].as_str().unwrap().starts_with("@ack_"),
+            "pending_ack should start with @ack_: {:?}",
+            result["pending_ack"]
         );
+        assert!(
+            result.get("reason").is_some(),
+            "should have reason key: {:?}",
+            result
+        );
+        assert!(
+            result.get("hint").is_some(),
+            "should have hint key: {:?}",
+            result
+        );
+    }
+
+    #[tokio::test]
+    async fn dangerous_command_returns_ack_handle() {
+        let (dir, ctx) = project_ctx().await;
+        let root = dir.path().to_path_buf();
+        let security = Default::default();
+        let result = run_command_inner(
+            "rm -rf /dist",
+            "rm -rf /dist",
+            30,
+            false, // acknowledge_risk
+            None,  // cwd_param
+            false, // buffer_only
+            &root,
+            &security,
+            &ctx,
+        )
+        .await
+        .expect("should return Ok with pending_ack, not Err");
+
+        assert!(
+            result.get("pending_ack").is_some(),
+            "should have pending_ack key"
+        );
+        assert!(
+            result["pending_ack"].as_str().unwrap().starts_with("@ack_"),
+            "pending_ack should start with @ack_: {:?}",
+            result["pending_ack"]
+        );
+        assert!(result.get("reason").is_some(), "should have reason key");
+        assert!(result.get("hint").is_some(), "should have hint key");
     }
 
     #[tokio::test]
