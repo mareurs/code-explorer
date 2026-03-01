@@ -1926,6 +1926,7 @@ impl Point {
             end_line: 0, // degenerate — only the fn-name line
             start_col: 3,
             children: vec![],
+            detail: None,
         };
 
         let augmented = augment_body_range_from_ast(sym);
@@ -1957,6 +1958,7 @@ impl Point {
             end_line: 5, // already a real range
             start_col: 3,
             children: vec![],
+            detail: None,
         };
 
         let augmented = augment_body_range_from_ast(sym);
@@ -1988,6 +1990,7 @@ impl Point {
             end_line: 0, // degenerate
             start_col: 4,
             children: vec![],
+            detail: None,
         };
 
         let augmented = augment_body_range_from_ast(sym);
@@ -2019,6 +2022,7 @@ impl Point {
             end_line: 0, // degenerate
             start_col: 9,
             children: vec![],
+            detail: None,
         };
 
         let augmented = augment_body_range_from_ast(sym);
@@ -2051,6 +2055,7 @@ impl Point {
             end_line: 2,   // degenerate
             start_col: 5,
             children: vec![],
+            detail: None,
         };
 
         let augmented = augment_body_range_from_ast(sym);
@@ -2086,6 +2091,7 @@ impl Point {
             end_line: 1,   // degenerate
             start_col: 3,
             children: vec![],
+            detail: None,
         };
 
         let augmented = augment_body_range_from_ast(sym);
@@ -2119,6 +2125,7 @@ impl Point {
             end_line: 4, // degenerate
             start_col: 3,
             children: vec![],
+            detail: None,
         };
 
         let augmented = augment_body_range_from_ast(sym);
@@ -2142,6 +2149,7 @@ impl Point {
             end_line: 0, // degenerate, but no match in AST
             start_col: 3,
             children: vec![],
+            detail: None,
         };
 
         let augmented = augment_body_range_from_ast(sym);
@@ -2172,6 +2180,7 @@ impl Point {
             end_line: 2,   // degenerate
             start_col: 7,
             children: vec![],
+            detail: None,
         };
 
         let augmented = augment_body_range_from_ast(sym);
@@ -2503,7 +2512,9 @@ impl Point {
                 end_line: 4,
                 start_col: 4,
                 children: vec![],
+                detail: None,
             }],
+            detail: None,
         }];
 
         assert!(find_symbol_by_name_path(&symbols, "Foo").is_some());
@@ -2531,7 +2542,9 @@ impl Point {
                 end_line: 5,
                 start_col: 4,
                 children: vec![],
+                detail: None,
             }],
+            detail: None,
         }];
 
         // Exact name_path match for nested symbol
@@ -2771,7 +2784,9 @@ fn main() {
                 end_line: 5,
                 start_col: 4,
                 children: vec![],
+                detail: None,
             }],
+            detail: None,
         }];
 
         // Pattern with "/" should match via name_path
@@ -2989,7 +3004,9 @@ fn main() {
                 end_line: 5,
                 start_col: 4,
                 children: vec![],
+                detail: None,
             }],
+            detail: None,
         }];
 
         let mut results = vec![];
@@ -3052,6 +3069,7 @@ fn main() {
                 end_line: 10,
                 start_col: 0,
                 children: vec![],
+                detail: None,
             },
             SymbolInfo {
                 name: "weeklyGrid".into(),
@@ -3062,6 +3080,7 @@ fn main() {
                 end_line: 12,
                 start_col: 0,
                 children: vec![],
+                detail: None,
             },
             SymbolInfo {
                 name: "renderWeeklyGrid".into(),
@@ -3072,6 +3091,7 @@ fn main() {
                 end_line: 20,
                 start_col: 0,
                 children: vec![],
+                detail: None,
             },
         ];
 
@@ -3103,6 +3123,7 @@ fn main() {
                 end_line: 5,
                 start_col: 0,
                 children: vec![],
+                detail: None,
             },
             SymbolInfo {
                 name: "FOO".into(),
@@ -3113,6 +3134,7 @@ fn main() {
                 end_line: 7,
                 start_col: 0,
                 children: vec![],
+                detail: None,
             },
         ];
 
