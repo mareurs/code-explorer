@@ -129,7 +129,7 @@ mod tests {
     fn open_private_creates_private_memories_dir() {
         let dir = tempdir().unwrap();
         let _store = MemoryStore::open_private(dir.path()).unwrap();
-        assert!(dir.path().join(".code-explorer/private-memories").exists());
+        assert!(dir.path().join(".code-explorer/private-memories").is_dir());
     }
 
     #[test]
