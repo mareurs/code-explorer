@@ -307,7 +307,7 @@ returned 0 results instead of also timing out.
 
 **Date:** 2026-03-01
 **Severity:** High — produces uncompilable code silently
-**Status:** Open
+**Status:** ✅ FIXED — `"before"` branch now calls `scan_backwards_for_docs` after `trim_symbol_start`, walking back past `#[...]` and `///`/`//!` lines before inserting
 
 **What happened:**
 Called `insert_code(name_path="CodeExplorerServer", path="src/server.rs", position="before", code="const USER_OUTPUT_ENABLED: bool = false;\n")`.
@@ -336,6 +336,112 @@ The tool resolves the struct's first line as the `#[derive]` line (or possibly t
 **Fix ideas:**
 - In the "before" branch of `InsertCode::call`, walk _backward_ from `start_line` past any contiguous `#[…]` attribute lines and doc-comment lines (`///`, `//!`), then insert before that extended prefix.
 - Add a regression test: insert before a struct that has `#[derive]` + `///` and assert the const appears before the `///` line.
+
+---
+
+### BUG-011 — `find_symbol`: returns local variable children when `name_path` is specified
+
+**Date:** 2026-03-02
+**Severity:** Medium — significant noise; agent asks for 1 symbol, gets 15+ extra entries
+**Status:** ✅ FIXED — `collect_matching` now requires exact `name_path` equality; `Variable`-kind children filtered. Regression test: `find_symbol_name_path_does_not_return_local_variable_children`.
+
+**What happened:**
+Called `find_symbol(name_path="impl Tool for FindReferences/call", include_body=true)`.
+Expected: 1 result (the `call` method body).
+Got: 19 results — the method plus every local variable declaration inside it.
+
+**Root cause hypothesis:**
+`collect_matching` matched all symbols whose `name_path` **starts with** the given path, not just the exact match. Local variable declarations in Rust are represented as `Variable` kind child symbols.
+
+---
+
+### BUG-012 — `goto_definition`: identifier column detection uses naive `str::find()`
+
+**Date:** 2026-03-02
+**Severity:** Medium — tool near-unusable; usage stats showed 100% error rate
+**Status:** ✅ FIXED — unknown identifier now falls back to first-nonwhitespace column instead of erroring. Regression test: `goto_definition_unknown_identifier_falls_back_to_first_nonwhitespace`.
+
+**What happened:**
+`goto_definition(path="src/tools/file.rs", line=13, identifier="OutputGuard")` returned
+`RecoverableError: "identifier 'OutputGuard' not found on line 13"`. The identifier was not on
+that line (my mistake), but the 100% failure rate across all historical calls indicated a
+systematic issue with `str::find()` returning `None` for common cases.
+
+---
+
+### BUG-013 — `replace_symbol`: replaces wrong line range when LSP reports incorrect start_line
+
+**Date:** 2026-03-02
+**Severity:** High
+**Status:** ✅ FIXED — `is_declaration_line` guard rejects start lines that don't contain a Rust item keyword; returns `RecoverableError` before touching the file.
+
+**What happened:**
+Called `replace_symbol(name_path="format_get_usage_stats", path="src/tools/user_format.rs")`.
+The tool reported `"replaced_lines":"1206-1259"` but the actual function declaration was at line 1164.
+The LSP resolved the symbol to an inner `let p50` binding at line 1206 rather than the function.
+Result: duplicate function stub, deleted ANSI constants + helper functions, 29 compile errors.
+
+**Root cause hypothesis:**
+LSP sometimes resolves a `name_path` to an inner local variable binding rather than the function declaration, producing a `start_line` that points inside the body. The `trim_symbol_start` function skips `}` lines but does not validate that the resolved line contains a Rust item keyword.
+
+---
+
+### BUG-014 — `remove_symbol`: over-extends range into sibling constants
+
+**Date:** 2026-03-02
+**Severity:** High — silently deletes code that follows the target symbol
+**Status:** ✅ FIXED — `clamp_end_to_closing_brace` walks backward from the LSP end until a `}` line is found
+
+**What happened:**
+`remove_symbol` on a function that is immediately followed by `const` declarations deleted not only
+the function but also the constants. The LSP `end_line` extended past the function's closing `}` into
+the sibling items.
+
+**Reproduction hint:**
+Remove a function immediately followed by `const FOO: ... = ...;` declarations. Observe the constants
+are deleted along with the function.
+
+**Root cause hypothesis:**
+`trim_symbol_end` walks backward past blank lines and lines ending with `{`, but LSP may report an
+`end_line` that extends to include sibling constants if there is no blank line separator. The removal
+uses the un-trimmed end, consuming more lines than intended.
+
+**Fix ideas:**
+- `remove_symbol` should use `trim_symbol_end` (already exists) to trim the end range before deleting.
+- Add a guard: if the line after the trimmed end doesn't look like a closing brace or blank, emit a
+  warning or RecoverableError.
+- Regression test: remove a function preceding a sibling `const`; assert the const survives.
+
+---
+
+### BUG-015 — `edit_file`: returns `"ok"` but silently does not write the file
+
+**Date:** 2026-03-02
+**Severity:** High — data loss; agent believes changes were applied when they were not
+**Status:** Open
+
+**What happened:**
+Multiple `edit_file` calls on `.rs` and `.md` files returned `"ok"` with no error, but the changes
+were not present on disk when subsequently read back. Confirmed for at least:
+- `tests/symbol_lsp.rs`: BUG-010 test insertion returned `"ok"`, but `search_pattern` immediately
+  after confirmed the test was not in the file.
+- `docs/TODO-tool-misbehaviors.md`: BUG-011–BUG-014 entries and status updates from the previous
+  session returned `"ok"` but were absent from the file at session start.
+
+**Reproduction hint:**
+Call `edit_file(path="tests/symbol_lsp.rs", old_string="// ── BUG-004: ...", new_string=<large block>)`.
+Immediately call `search_pattern` on a unique string from the new content. Content may be absent.
+
+**Root cause hypothesis:**
+Unknown. Possibly:
+1. A code-explorer routing plugin hook intercepts the write and drops it silently.
+2. An internal check (multi-line source guard?) rejects the write but returns `"ok"` instead of an error.
+3. A file lock or concurrent write causes the edit to be lost.
+
+**Fix ideas:**
+- After every `edit_file`, verify with `search_pattern` that the unique new content is present.
+- `edit_file` should return an error (not `"ok"`) if the write fails or is blocked.
+- Investigate the routing plugin's `PreToolUse` hook for `edit_file`.
 
 ---
 

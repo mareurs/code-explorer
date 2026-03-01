@@ -6,7 +6,7 @@
 
 use code_explorer::agent::Agent;
 use code_explorer::lsp::{MockLspClient, MockLspProvider, SymbolInfo, SymbolKind};
-use code_explorer::tools::symbol::{InsertCode, ReplaceSymbol};
+use code_explorer::tools::symbol::{InsertCode, RemoveSymbol, ReplaceSymbol};
 use code_explorer::tools::{Tool, ToolContext};
 use serde_json::json;
 
@@ -223,6 +223,110 @@ async fn replace_symbol_clean_start_line() {
     );
 }
 
+// ── BUG-013: replace_symbol rejects start_line inside function body ───────────
+
+/// When LSP resolves `start_line` to a local variable binding inside a function
+/// (rather than the function declaration), `replace_symbol` must return a
+/// `RecoverableError` and leave the file unchanged.
+///
+///  0: "fn target() {"
+///  1: "    let x = 1;"  ← LSP incorrectly reports start_line=1 — BUG-013
+///  2: "    let y = 2;"
+///  3: "    x + y"
+///  4: "}"
+///  5: "const SENTINEL: &str = \"must survive\";"
+#[tokio::test]
+async fn replace_symbol_rejects_start_line_inside_body() {
+    let src = "fn target() {\n    let x = 1;\n    let y = 2;\n    x + y\n}\nconst SENTINEL: &str = \"must survive\";\n";
+
+    let (dir, ctx) = ctx_with_mock(&[("src/lib.rs", src)], |root| {
+        let file = root.join("src/lib.rs");
+        MockLspClient::new().with_symbols(
+            file.clone(),
+            // LSP incorrectly resolves start to line 1 (inside the body) — BUG-013
+            vec![sym("target", 1, 4, file)],
+        )
+    })
+    .await;
+
+    let err = ReplaceSymbol
+        .call(
+            json!({
+                "path": "src/lib.rs",
+                "name_path": "target",
+                "new_body": "fn target() {\n    replaced();\n}"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(
+        msg.contains("start line") || msg.contains("declaration"),
+        "error should mention bad start line; got: {msg}"
+    );
+
+    // File must be completely unchanged — no silent corruption
+    let on_disk = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
+    assert_eq!(on_disk, src, "file must not be modified on error");
+}
+
+// ── BUG-010: insert_code "before" must walk past #[attr] and /// doc lines ────
+
+/// `insert_code(position="before")` targeting a struct with a leading doc comment
+/// and `#[derive]` attribute must insert the code BEFORE the `///` comment, not
+/// between the attribute and the struct declaration.
+#[tokio::test]
+async fn insert_code_before_walks_past_attributes_and_doc_comments() {
+    // File layout (0-indexed):
+    //  0: "/// A useful struct."  <- doc comment
+    //  1: "#[derive(Clone)]"      <- attribute
+    //  2: "pub struct Foo {"      <- LSP start_line points here
+    //  3: "    x: u32,"
+    //  4: "}"
+    //  5: ""
+    //  6: "const SENTINEL: &str = \"survives\";"
+    let src = "/// A useful struct.\n#[derive(Clone)]\npub struct Foo {\n    x: u32,\n}\n\nconst SENTINEL: &str = \"survives\";\n";
+
+    let (dir, ctx) = ctx_with_mock(&[("src/lib.rs", src)], |root| {
+        let file = root.join("src/lib.rs");
+        // LSP reports start_line=2 (struct declaration), not 0 (doc comment) — BUG-010
+        MockLspClient::new().with_symbols(file.clone(), vec![sym("Foo", 2, 4, file)])
+    })
+    .await;
+
+    InsertCode
+        .call(
+            json!({
+                "path": "src/lib.rs",
+                "name_path": "Foo",
+                "position": "before",
+                "code": "const BEFORE: u32 = 1;\n"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let result = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
+    let before_pos = result.find("BEFORE").unwrap();
+    let doc_pos = result.find("/// A useful").unwrap();
+    let derive_pos = result.find("#[derive").unwrap();
+    assert!(
+        before_pos < doc_pos,
+        "const must be inserted before the doc comment, got:\n{result}"
+    );
+    assert!(
+        before_pos < derive_pos,
+        "const must be inserted before #[derive], got:\n{result}"
+    );
+    assert!(
+        result.contains("const SENTINEL"),
+        "sentinel must survive; got:\n{result}"
+    );
+}
+
 // ── BUG-004: insert_code "before" skips lead-in ───────────────────────────────
 
 /// When LSP reports a symbol as starting on the `}` of the preceding method,
@@ -370,5 +474,47 @@ async fn insert_code_after_skips_trail_in() {
     assert!(
         insert_pos < inside_pos,
         "insertion must not land inside following's body; got:\n{result}"
+    );
+}
+
+// ── BUG-014: remove_symbol must not delete sibling items after closing `}` ────
+
+/// When LSP over-extends `end_line` past the function's closing `}` to include a
+/// sibling `const`, `remove_symbol` must still only remove the function.
+#[tokio::test]
+async fn remove_symbol_does_not_delete_sibling_const() {
+    // File layout (0-indexed):
+    //  0: "fn target() {"
+    //  1: "    // body"
+    //  2: "}"
+    //  3: "const SENTINEL: &str = \"survives\";"  <- LSP over-extends end_line here
+    let src = "fn target() {\n    // body\n}\nconst SENTINEL: &str = \"survives\";\n";
+
+    let (dir, ctx) = ctx_with_mock(&[("src/lib.rs", src)], |root| {
+        let file = root.join("src/lib.rs");
+        // LSP incorrectly reports end_line=3 (the const line) instead of 2 — BUG-014
+        MockLspClient::new().with_symbols(file.clone(), vec![sym("target", 0, 3, file)])
+    })
+    .await;
+
+    RemoveSymbol
+        .call(
+            json!({
+                "path": "src/lib.rs",
+                "name_path": "target"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let result = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
+    assert!(
+        result.contains("SENTINEL"),
+        "sibling const must survive remove_symbol; got:\n{result}"
+    );
+    assert!(
+        !result.contains("fn target"),
+        "function must be removed; got:\n{result}"
     );
 }

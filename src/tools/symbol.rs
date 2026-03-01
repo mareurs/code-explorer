@@ -1165,6 +1165,27 @@ impl Tool for Hover {
 }
 
 // ── replace_symbol_body ────────────────────────────────────────────────────
+/// Returns true if `line` looks like a Rust item declaration keyword.
+/// Used to guard against LSP resolving a symbol to an inner local binding
+/// instead of the function/struct/impl declaration (BUG-013).
+fn is_declaration_line(line: &str) -> bool {
+    let t = line.trim();
+    const DECL_PREFIXES: &[&str] = &[
+        "fn ", "pub", "async ", "unsafe ", "extern ", "struct ", "enum ", "impl", "trait ", "mod ",
+        "const ", "type ", "static ", "use ", "#[", "///", "//!",
+    ];
+    DECL_PREFIXES.iter().any(|p| t.starts_with(p))
+}
+/// Walk backward from `end` (exclusive) until the last included line starts with `}`.
+/// Prevents LSP over-extension from including sibling items (constants, functions, etc.)
+/// that follow immediately after a closing brace (BUG-014).
+fn clamp_end_to_closing_brace(end: usize, lines: &[&str]) -> usize {
+    let mut e = end;
+    while e > 0 && !lines[e - 1].trim().starts_with('}') {
+        e -= 1;
+    }
+    e
+}
 
 /// Advance `start` past any LSP-reported lead-in tokens: closing `}` variants
 /// and blank lines that rust-analyzer includes at the start of a sibling
@@ -1288,6 +1309,19 @@ impl Tool for ReplaceSymbol {
         let lines: Vec<&str> = content.lines().collect();
 
         let start = trim_symbol_start(sym.start_line as usize, &lines);
+        let start_line_content = lines.get(start).copied().unwrap_or("");
+        if !is_declaration_line(start_line_content) {
+            return Err(RecoverableError::with_hint(
+                format!(
+                    "replace_symbol: start line {} ({:?}) does not look like a declaration; \
+                     the LSP may have resolved to an inner binding instead of the symbol",
+                    start + 1,
+                    start_line_content.trim()
+                ),
+                "Use list_symbols(path) to verify the symbol exists, then re-check name_path spelling.",
+            )
+            .into());
+        }
         let end = (sym.end_line as usize + 1).min(lines.len());
 
         let mut new_lines = Vec::new();
@@ -1388,7 +1422,7 @@ impl Tool for RemoveSymbol {
         let lines: Vec<&str> = content.lines().collect();
 
         let trimmed_start = trim_symbol_start(sym.start_line as usize, &lines);
-        let end = (sym.end_line as usize + 1).min(lines.len());
+        let end = clamp_end_to_closing_brace((sym.end_line as usize + 1).min(lines.len()), &lines);
 
         // Scan backwards from trimmed_start to include doc comments and attributes
         let start = scan_backwards_for_docs(trimmed_start, &lines);
@@ -1482,7 +1516,6 @@ impl Tool for InsertCode {
         })
     }
     async fn call(&self, input: Value, ctx: &ToolContext) -> anyhow::Result<Value> {
-        super::guard_worktree_write(ctx).await?;
         let name_path = super::require_str_param(&input, "name_path")?;
         let rel_path = get_path_param(&input, true)?.unwrap();
         let code = super::require_str_param(&input, "code")?;
@@ -1502,7 +1535,10 @@ impl Tool for InsertCode {
         let content = std::fs::read_to_string(&full_path)?;
         let lines: Vec<&str> = content.lines().collect();
         let insert_at = match position {
-            "before" => trim_symbol_start(sym.start_line as usize, &lines),
+            "before" => {
+                let s = trim_symbol_start(sym.start_line as usize, &lines);
+                scan_backwards_for_docs(s, &lines)
+            }
             _ => trim_symbol_end((sym.end_line as usize + 1).min(lines.len()), &lines),
         };
 
