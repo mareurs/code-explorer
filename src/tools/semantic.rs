@@ -375,6 +375,9 @@ mod tests {
             ToolContext {
                 agent,
                 lsp: LspManager::new_arc(),
+                output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(
+                    20,
+                )),
             },
         )
     }
@@ -396,6 +399,9 @@ mod tests {
             ToolContext {
                 agent,
                 lsp: LspManager::new_arc(),
+                output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(
+                    20,
+                )),
             },
         )
     }
@@ -438,6 +444,7 @@ mod tests {
         let ctx = ToolContext {
             agent: Agent::new(None).await.unwrap(),
             lsp: LspManager::new_arc(),
+            output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(20)),
         };
         assert!(SemanticSearch
             .call(json!({ "query": "test" }), &ctx)
@@ -607,6 +614,7 @@ mod tests {
         let ctx = ToolContext {
             agent,
             lsp: LspManager::new_arc(),
+            output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(20)),
         };
         let result = IndexStatus
             .call(json!({"threshold": 0.1}), &ctx)

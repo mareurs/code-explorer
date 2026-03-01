@@ -63,6 +63,7 @@ mod tests {
         ToolContext {
             agent,
             lsp: LspManager::new_arc(),
+            output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(20)),
         }
     }
 
@@ -83,6 +84,7 @@ mod tests {
         let ctx = ToolContext {
             agent,
             lsp: LspManager::new_arc(),
+            output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(20)),
         };
         let tool = GetUsageStats;
         let result = tool.call(serde_json::json!({}), &ctx).await;

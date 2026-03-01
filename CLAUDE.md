@@ -79,6 +79,13 @@ minimize output by default: names + locations in exploring mode, full bodies
 only in focused mode. Overflow produces actionable guidance ("showing N of M,
 narrow with..."), not truncated garbage.
 
+**No Echo in Write Responses** — Mutation tools (`create_file`, `edit_lines`,
+`replace_symbol`, etc.) must never echo back what the LLM just sent. The caller
+already knows the path, content, and size — reflecting them wastes tokens with
+zero information gain. The only new information after a write is success/failure.
+Return `json!("ok")` for writes; reserve richer responses for cases where the
+tool discovers genuinely new information (e.g. LSP diagnostics after a write).
+
 **Two Modes** — `Exploring` (default): compact, capped at 200 items. `Focused`:
 full detail, paginated via offset/limit. Enforced via `OutputGuard`
 (`src/tools/output.rs`), a project-wide pattern not per-tool logic.

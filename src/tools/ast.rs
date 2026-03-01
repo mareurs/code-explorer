@@ -164,6 +164,9 @@ mod tests {
             ToolContext {
                 agent,
                 lsp: LspManager::new_arc(),
+                output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(
+                    20,
+                )),
             },
         )
     }
@@ -236,6 +239,7 @@ mod tests {
         let ctx = ToolContext {
             agent,
             lsp: LspManager::new_arc(),
+            output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(20)),
         };
         let result = ListFunctions
             .call(json!({ "path": "nonexistent.rs" }), &ctx)

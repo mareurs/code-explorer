@@ -35,6 +35,9 @@ async fn ctx_with_mock(
     let ctx = ToolContext {
         agent,
         lsp: MockLspProvider::with_client(mock),
+        output_buffer: std::sync::Arc::new(code_explorer::tools::output_buffer::OutputBuffer::new(
+            20,
+        )),
     };
     (dir, ctx)
 }

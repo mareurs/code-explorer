@@ -24,6 +24,9 @@ async fn project_with_files(files: &[(&str, &str)]) -> (tempfile::TempDir, ToolC
     let ctx = ToolContext {
         agent,
         lsp: LspManager::new_arc(),
+        output_buffer: std::sync::Arc::new(code_explorer::tools::output_buffer::OutputBuffer::new(
+            20,
+        )),
     };
     (dir, ctx)
 }
@@ -235,6 +238,9 @@ async fn workflow_git_blame() {
     let ctx = ToolContext {
         agent,
         lsp: LspManager::new_arc(),
+        output_buffer: std::sync::Arc::new(code_explorer::tools::output_buffer::OutputBuffer::new(
+            20,
+        )),
     };
 
     // Step 1: Create a file via tool
@@ -547,6 +553,9 @@ async fn write_allowed_when_project_provided_at_startup_even_with_worktrees() {
     let ctx = ToolContext {
         agent,
         lsp: LspManager::new_arc(),
+        output_buffer: std::sync::Arc::new(code_explorer::tools::output_buffer::OutputBuffer::new(
+            20,
+        )),
     };
 
     // 3. Write should succeed — worktree guard bypassed because project was

@@ -495,7 +495,16 @@ mod tests {
         std::fs::write(dir.path().join("main.rs"), "fn main() {}").unwrap();
         std::fs::write(dir.path().join("lib.py"), "def hello(): pass").unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
-        (dir, ToolContext { agent, lsp: lsp() })
+        (
+            dir,
+            ToolContext {
+                agent,
+                lsp: lsp(),
+                output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(
+                    20,
+                )),
+            },
+        )
     }
 
     #[tokio::test]
@@ -560,6 +569,7 @@ mod tests {
         let ctx = ToolContext {
             agent: Agent::new(None).await.unwrap(),
             lsp: lsp(),
+            output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(20)),
         };
         assert!(Onboarding.call(json!({}), &ctx).await.is_err());
     }
@@ -737,7 +747,11 @@ mod tests {
         std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
         std::fs::create_dir_all(dir.path().join("tests")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
-        let ctx = ToolContext { agent, lsp: lsp() };
+        let ctx = ToolContext {
+            agent,
+            lsp: lsp(),
+            output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(20)),
+        };
         let result = Onboarding.call(json!({}), &ctx).await.unwrap();
 
         assert_eq!(result["has_readme"], true);
@@ -758,7 +772,11 @@ mod tests {
         std::fs::write(dir.path().join("README.md"), "# Test Project\nA test.").unwrap();
         std::fs::write(dir.path().join("main.py"), "print('hello')").unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
-        let ctx = ToolContext { agent, lsp: lsp() };
+        let ctx = ToolContext {
+            agent,
+            lsp: lsp(),
+            output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(20)),
+        };
         let result = Onboarding.call(json!({}), &ctx).await.unwrap();
 
         // system_prompt_draft should be present and be a string

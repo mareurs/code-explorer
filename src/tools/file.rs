@@ -440,9 +440,7 @@ impl Tool for CreateFile {
         let resolved = crate::util::path_security::validate_write_path(path, &root, &security)?;
         crate::util::fs::write_utf8(&resolved, content)?;
         ctx.lsp.notify_file_changed(&resolved).await;
-        Ok(
-            json!({ "status": "ok", "path": resolved.display().to_string(), "bytes": content.len() }),
-        )
+        Ok(json!("ok"))
     }
 }
 
@@ -678,6 +676,7 @@ mod tests {
         ToolContext {
             agent: Agent::new(None).await.unwrap(),
             lsp: LspManager::new_arc(),
+            output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(20)),
         }
     }
 
@@ -690,6 +689,9 @@ mod tests {
             ToolContext {
                 agent,
                 lsp: LspManager::new_arc(),
+                output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(
+                    20,
+                )),
             },
         )
     }
@@ -996,8 +998,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(result["status"], "ok");
-        assert_eq!(result["bytes"], 10);
+        assert_eq!(result, "ok");
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "hello file");
     }
 

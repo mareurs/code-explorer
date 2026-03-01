@@ -10,6 +10,7 @@ pub mod git;
 pub mod library;
 pub mod memory;
 pub mod output;
+pub mod output_buffer;
 pub mod semantic;
 pub mod symbol;
 pub mod usage;
@@ -32,6 +33,7 @@ use crate::lsp::LspProvider;
 pub struct ToolContext {
     pub agent: Agent,
     pub lsp: Arc<dyn LspProvider>,
+    pub output_buffer: Arc<output_buffer::OutputBuffer>,
 }
 
 /// A recoverable tool error: the LLM gave bad input and can self-correct.

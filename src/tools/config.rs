@@ -90,6 +90,7 @@ mod tests {
         let ctx = ToolContext {
             agent: Agent::new(None).await.unwrap(),
             lsp: lsp(),
+            output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(20)),
         };
 
         // No project initially
@@ -118,6 +119,7 @@ mod tests {
         let ctx = ToolContext {
             agent: Agent::new(None).await.unwrap(),
             lsp: lsp(),
+            output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(20)),
         };
         let result = ActivateProject
             .call(
@@ -140,6 +142,7 @@ mod tests {
         let ctx = ToolContext {
             agent: Agent::new(Some(dir1.path().to_path_buf())).await.unwrap(),
             lsp: lsp(),
+            output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(20)),
         };
 
         // Activate dir2

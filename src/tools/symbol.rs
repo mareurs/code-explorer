@@ -1665,6 +1665,10 @@ mod tests {
         crate::lsp::LspManager::new_arc()
     }
 
+    fn buf() -> Arc<crate::tools::output_buffer::OutputBuffer> {
+        Arc::new(crate::tools::output_buffer::OutputBuffer::new(20))
+    }
+
     /// Create a test Cargo project and return the context.
     async fn rust_project_ctx() -> Option<(tempfile::TempDir, ToolContext)> {
         if !std::process::Command::new("rust-analyzer")
@@ -1713,7 +1717,14 @@ impl Point {
         .unwrap();
 
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
-        Some((dir, ToolContext { agent, lsp: lsp() }))
+        Some((
+            dir,
+            ToolContext {
+                agent,
+                lsp: lsp(),
+                output_buffer: buf(),
+            },
+        ))
     }
 
     #[tokio::test]
@@ -2105,6 +2116,7 @@ impl Point {
         let ctx = ToolContext {
             agent: Agent::new(None).await.unwrap(),
             lsp: lsp(),
+            output_buffer: buf(),
         };
         // Should error because no project, but NOT because of unknown param
         let err = ListSymbols
@@ -2123,7 +2135,11 @@ impl Point {
         let dir = tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
-        let ctx = ToolContext { agent, lsp: lsp() };
+        let ctx = ToolContext {
+            agent,
+            lsp: lsp(),
+            output_buffer: buf(),
+        };
 
         let err = ListSymbols
             .call(json!({ "path": "nonexistent/file.py" }), &ctx)
@@ -2143,7 +2159,11 @@ impl Point {
         let dir = tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
-        let ctx = ToolContext { agent, lsp: lsp() };
+        let ctx = ToolContext {
+            agent,
+            lsp: lsp(),
+            output_buffer: buf(),
+        };
 
         let err = ListSymbols
             .call(json!({ "path": "missing.rs" }), &ctx)
@@ -2165,7 +2185,11 @@ impl Point {
         let dir = tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
-        let ctx = ToolContext { agent, lsp: lsp() };
+        let ctx = ToolContext {
+            agent,
+            lsp: lsp(),
+            output_buffer: buf(),
+        };
 
         let err = ListSymbols
             .call(json!({ "path": "src/**/*.nonexistent" }), &ctx)
@@ -2185,6 +2209,7 @@ impl Point {
         let ctx = ToolContext {
             agent: Agent::new(None).await.unwrap(),
             lsp: lsp(),
+            output_buffer: buf(),
         };
         assert!(ListSymbols.call(json!({"path": "x"}), &ctx).await.is_err());
         assert!(FindSymbol
@@ -2238,7 +2263,11 @@ impl Point {
         .unwrap();
 
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
-        let ctx = ToolContext { agent, lsp: lsp() };
+        let ctx = ToolContext {
+            agent,
+            lsp: lsp(),
+            output_buffer: buf(),
+        };
 
         // Project-wide search (no relative_path) — LSP will fail/return empty,
         // so tree-sitter fallback should find the symbol.
@@ -2288,7 +2317,11 @@ impl Point {
         std::fs::write(dir.path().join("main.rs"), "fn main() {}\n").unwrap();
 
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
-        let ctx = ToolContext { agent, lsp: lsp() };
+        let ctx = ToolContext {
+            agent,
+            lsp: lsp(),
+            output_buffer: buf(),
+        };
 
         // Project-wide (no path) — should find both root and nested files
         let result = ListSymbols.call(json!({}), &ctx).await.unwrap();
@@ -2326,7 +2359,11 @@ impl Point {
         .unwrap();
 
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
-        let ctx = ToolContext { agent, lsp: lsp() };
+        let ctx = ToolContext {
+            agent,
+            lsp: lsp(),
+            output_buffer: buf(),
+        };
 
         // Target "src" specifically — should be shallow (depth 1)
         let result = ListSymbols
@@ -2460,7 +2497,11 @@ fn main() {
         .unwrap();
 
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
-        let ctx = ToolContext { agent, lsp: lsp() };
+        let ctx = ToolContext {
+            agent,
+            lsp: lsp(),
+            output_buffer: buf(),
+        };
 
         // rust-analyzer needs time to load the Cargo project and build its index
         // before textDocument/references returns results. Retry with back-off.
@@ -2697,7 +2738,14 @@ fn main() {
         )
         .unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
-        (dir, ToolContext { agent, lsp: lsp() })
+        (
+            dir,
+            ToolContext {
+                agent,
+                lsp: lsp(),
+                output_buffer: buf(),
+            },
+        )
     }
 
     #[tokio::test]

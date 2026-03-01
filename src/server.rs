@@ -40,6 +40,7 @@ use crate::usage::UsageRecorder;
 pub struct CodeExplorerServer {
     agent: Agent,
     lsp: Arc<dyn LspProvider>,
+    output_buffer: Arc<crate::tools::output_buffer::OutputBuffer>,
     tools: Vec<Arc<dyn Tool>>,
     /// Pre-computed at construction because `get_info()` is sync.
     /// Becomes stale if project state changes mid-session (e.g. after onboarding or indexing).
@@ -100,9 +101,11 @@ impl CodeExplorerServer {
             // Usage monitoring
             Arc::new(GetUsageStats),
         ];
+        let output_buffer = Arc::new(crate::tools::output_buffer::OutputBuffer::new(20));
         Self {
             agent,
             lsp,
+            output_buffer,
             tools,
             instructions,
         }
@@ -170,6 +173,7 @@ impl ServerHandler for CodeExplorerServer {
         let ctx = ToolContext {
             agent: self.agent.clone(),
             lsp: self.lsp.clone(),
+            output_buffer: self.output_buffer.clone(),
         };
 
         // Indexing tools run embedding loops that can legitimately take minutes;

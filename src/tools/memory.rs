@@ -128,13 +128,23 @@ mod tests {
         // Create .code-explorer dir so MemoryStore::open works
         std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
-        (dir, ToolContext { agent, lsp: lsp() })
+        (
+            dir,
+            ToolContext {
+                agent,
+                lsp: lsp(),
+                output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(
+                    20,
+                )),
+            },
+        )
     }
 
     async fn test_ctx_no_project() -> ToolContext {
         ToolContext {
             agent: Agent::new(None).await.unwrap(),
             lsp: lsp(),
+            output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(20)),
         }
     }
 

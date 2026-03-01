@@ -124,6 +124,9 @@ mod tests {
             ToolContext {
                 agent,
                 lsp: LspManager::new_arc(),
+                output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(
+                    20,
+                )),
             },
         )
     }
@@ -196,6 +199,7 @@ mod tests {
         let ctx = ToolContext {
             agent: Agent::new(None).await.unwrap(),
             lsp: LspManager::new_arc(),
+            output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(20)),
         };
         assert!(GitBlame.call(json!({ "path": "x" }), &ctx).await.is_err());
     }

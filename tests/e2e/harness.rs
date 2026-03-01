@@ -40,7 +40,11 @@ async fn fixture_context(language: &str) -> Arc<ToolContext> {
         .unwrap_or_else(|e| panic!("Failed to create Agent for {language}: {e}"));
 
     let lsp = LspManager::new_arc();
-    Arc::new(ToolContext { agent, lsp })
+    Arc::new(ToolContext {
+        agent,
+        lsp,
+        output_buffer: Arc::new(code_explorer::tools::output_buffer::OutputBuffer::new(20)),
+    })
 }
 
 /// Run expectations from multiple TOML files for a language, sharing one LSP context.

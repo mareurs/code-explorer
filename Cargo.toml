@@ -81,6 +81,9 @@ tree-sitter-java = "0.23.5"
 tree-sitter-kotlin-ng = "1.1.0"
 libc = "0.2.182"
 
+# Temp files (buffer reference resolution in run_command)
+tempfile = "3"
+
 # Dashboard web server (behind "dashboard" feature)
 axum = { version = "0.8", features = ["json"], optional = true }
 tower-http = { version = "0.6", features = ["cors"], optional = true }
