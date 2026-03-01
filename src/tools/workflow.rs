@@ -1,6 +1,6 @@
 //! Workflow and onboarding tools.
 
-use std::path::PathBuf;
+use std::path::Path;
 
 use super::{Tool, ToolContext};
 use serde_json::{json, Value};
@@ -426,7 +426,7 @@ async fn run_command_inner(
     acknowledge_risk: bool,
     cwd_param: Option<&str>,
     buffer_only: bool,
-    root: &PathBuf,
+    root: &Path,
     security: &crate::util::path_security::PathSecurityConfig,
     ctx: &ToolContext,
 ) -> anyhow::Result<Value> {
@@ -438,6 +438,8 @@ async fn run_command_inner(
 
     // --- Step 2: Dangerous command speed bump ---
     if !buffer_only && !acknowledge_risk {
+        // Use resolved_command (with @refs substituted) so buffer-only grep/awk
+        // commands don't get flagged for patterns in the buffer content.
         if let Some(reason) = is_dangerous_command(resolved_command, security) {
             return Err(super::RecoverableError::with_hint(
                 format!("dangerous command blocked: {}", reason),
@@ -476,7 +478,8 @@ async fn run_command_inner(
                 "Provide a relative path to an existing subdirectory of the project.",
             )
         })?;
-        if !canonical.starts_with(root) {
+        let canonical_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        if !canonical.starts_with(canonical_root.as_path()) {
             return Err(super::RecoverableError::with_hint(
                 format!("cwd '{}' escapes project root", rel),
                 "The cwd must be a subdirectory within the project.",
@@ -485,7 +488,7 @@ async fn run_command_inner(
         }
         canonical
     } else {
-        root.clone()
+        root.to_path_buf()
     };
 
     // --- Step 5: Execute command ---
@@ -1113,40 +1116,87 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_command_cwd_rejects_path_traversal() {
+    async fn run_command_cwd_rejects_nonexistent_path() {
         let (_dir, ctx) = project_ctx().await;
         let result = RunCommand
-            .call(json!({"command": "ls", "cwd": "../../etc"}), &ctx)
+            .call(
+                json!({"command": "ls", "cwd": "definitely_nonexistent_subdir_xyz"}),
+                &ctx,
+            )
             .await;
-        assert!(result.is_err(), "path traversal should be rejected");
-        let err_msg = result.unwrap_err().to_string();
+        assert!(result.is_err(), "nonexistent cwd should be rejected");
+        let err = result.unwrap_err();
+        let rec = err
+            .downcast_ref::<crate::tools::RecoverableError>()
+            .expect("should be RecoverableError");
         assert!(
-            err_msg.contains("escapes project root") || err_msg.contains("not a valid directory"),
-            "should report traversal rejection: {}",
-            err_msg
+            rec.message.contains("not accessible") || rec.message.contains("not a valid"),
+            "got: {}",
+            rec.message
+        );
+    }
+
+    #[tokio::test]
+    async fn run_command_cwd_rejects_path_escaping_root() {
+        let (_dir, ctx) = project_ctx().await;
+        // Use /tmp directly — it always exists and is outside any temp project root.
+        // On Linux, PathBuf::join("/tmp") ignores the existing path and gives /tmp,
+        // so root.join("/tmp") canonicalizes to /tmp, which fails starts_with(root).
+        let result = RunCommand
+            .call(json!({"command": "ls", "cwd": "/tmp"}), &ctx)
+            .await;
+        assert!(
+            result.is_err(),
+            "absolute cwd outside root should be rejected"
+        );
+        let err = result.unwrap_err();
+        let rec = err
+            .downcast_ref::<crate::tools::RecoverableError>()
+            .expect("should be RecoverableError");
+        assert!(
+            rec.message.contains("escapes project root"),
+            "got: {}",
+            rec.message
         );
     }
 
     #[tokio::test]
     async fn run_command_buffer_only_skips_speed_bump() {
         let (_dir, ctx) = project_ctx().await;
-        // First store something in the buffer
-        let buf_result = RunCommand
-            .call(json!({"command": "seq 1 200", "timeout_secs": 5}), &ctx)
-            .await
-            .unwrap();
-        let output_id = buf_result["output_id"].as_str().unwrap();
-        // "rm" appears in the pattern string but the whole command is buffer-only —
-        // it should NOT trigger the dangerous-command speed bump.
-        let query = format!("grep rm {}", output_id);
+        // Store directly in buffer — no need to run a command that may or may not buffer
+        // depending on the current buffering threshold.
+        let id = ctx
+            .output_buffer
+            .store("test_cmd".into(), "rm -rf data\n".into(), "".into(), 0);
+        // "rm" appears in the buffer content, but the query command is buffer-only.
+        // It should NOT be rejected as dangerous.
         let result = RunCommand
-            .call(json!({"command": query, "timeout_secs": 5}), &ctx)
+            .call(json!({"command": format!("grep rm {}", id)}), &ctx)
             .await;
-        assert!(
-            result.is_ok(),
-            "buffer-only command should not be flagged as dangerous: {:?}",
-            result
-        );
+        // Should succeed (or fail with grep exit 1 "not found") — but NOT as a RecoverableError
+        // about dangerous commands.
+        match result {
+            Ok(v) => {
+                assert!(
+                    v.get("error")
+                        .map(|e| !e
+                            .as_str()
+                            .unwrap_or("")
+                            .to_lowercase()
+                            .contains("dangerous"))
+                        .unwrap_or(true),
+                    "buffer-only grep should not be flagged as dangerous"
+                );
+            }
+            Err(e) => {
+                let rec = e.downcast_ref::<crate::tools::RecoverableError>();
+                assert!(
+                    rec.map(|r| !r.message.to_lowercase().contains("dangerous"))
+                        .unwrap_or(false),
+                    "buffer-only should not fail with dangerous error"
+                );
+            }
+        }
     }
 
     #[test]
