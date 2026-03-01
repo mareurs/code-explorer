@@ -49,8 +49,14 @@ pub struct EmbeddingsSection {
     pub model: String,
     #[serde(default = "default_chunk_size")]
     pub chunk_size: usize,
-    #[serde(default = "default_chunk_overlap")]
-    pub chunk_overlap: usize,
+    /// Ignored — kept for backwards-compatible deserialisation of existing
+    /// `project.toml` files that include a `chunk_overlap` key.
+    ///
+    /// Overlap is meaningless for AST-aware chunking (clean semantic boundaries)
+    /// and was removed from the public API. The plain-text fallback paths also
+    /// use 0 overlap so each sub-chunk is distinct.
+    #[serde(default, skip_serializing, rename = "chunk_overlap")]
+    pub _chunk_overlap_ignored: Option<usize>,
     /// Enable semantic drift detection during index builds (default: true).
     ///
     /// When enabled, `index_project` compares old and new chunk embeddings to
@@ -169,7 +175,7 @@ impl Default for EmbeddingsSection {
         Self {
             model: default_embed_model(),
             chunk_size: default_chunk_size(),
-            chunk_overlap: default_chunk_overlap(),
+            _chunk_overlap_ignored: None,
             drift_detection_enabled: default_drift_detection_enabled(),
         }
     }
@@ -186,9 +192,6 @@ fn default_embed_model() -> String {
 }
 fn default_chunk_size() -> usize {
     1200
-}
-fn default_chunk_overlap() -> usize {
-    200
 }
 fn default_ignored_patterns() -> Vec<String> {
     vec![

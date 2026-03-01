@@ -747,12 +747,8 @@ pub async fn build_index(project_root: &Path, force: bool) -> Result<IndexReport
             Ok(s) => s,
             Err(_) => continue,
         };
-        let chunks = super::ast_chunker::split_file(
-            &source,
-            lang,
-            &path,
-            config.embeddings.chunk_size,
-        );
+        let chunks =
+            super::ast_chunker::split_file(&source, lang, &path, config.embeddings.chunk_size);
         if chunks.is_empty() {
             continue;
         }
@@ -971,12 +967,8 @@ pub async fn build_library_index(
             Ok(s) => s,
             Err(_) => continue,
         };
-        let chunks = super::ast_chunker::split_file(
-            &file_source,
-            lang,
-            path,
-            config.embeddings.chunk_size,
-        );
+        let chunks =
+            super::ast_chunker::split_file(&file_source, lang, path, config.embeddings.chunk_size);
         if chunks.is_empty() {
             continue;
         }
