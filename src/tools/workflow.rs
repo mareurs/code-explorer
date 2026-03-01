@@ -503,7 +503,7 @@ async fn run_command_inner(
 ) -> anyhow::Result<Value> {
     use super::command_summary::{
         count_lines, detect_command_type, needs_summary, summarize_build_output, summarize_generic,
-        summarize_test_output, CommandType, SUMMARY_LINE_THRESHOLD,
+        summarize_test_output, truncate_lines, CommandType, SUMMARY_LINE_THRESHOLD,
     };
     use crate::util::path_security::is_dangerous_command;
 
@@ -602,21 +602,66 @@ async fn run_command_inner(
                 // Break the cycle by returning an error that guides the agent
                 // toward a more targeted query instead.
                 if buffer_only {
-                    let total_lines = count_lines(&raw_stdout) + count_lines(&raw_stderr);
-                    return Err(super::RecoverableError::with_hint(
-                        format!(
-                            "Command output is still {total_lines} lines — too large to return inline."
-                        ),
-                        format!(
-                            "Your query didn't filter enough. Use a targeted command that produces \
-                             fewer than {SUMMARY_LINE_THRESHOLD} lines, e.g.:\n\
-                             • grep 'keyword' @ref\n\
-                             • sed -n '1,{}p' @ref\n\
-                             • head -{0} @ref  /  tail -{0} @ref",
-                            SUMMARY_LINE_THRESHOLD - 1
-                        ),
-                    )
-                    .into());
+                    // Truncate to SUMMARY_LINE_THRESHOLD lines total (stderr priority: up to 20,
+                    // remainder goes to stdout) and return inline. Do NOT create a new buffer
+                    // ref — that would cause an infinite query loop.
+                    const STDERR_BUDGET: usize = 20;
+                    // For buffer-only commands (e.g. `cat @cmd_A`), the shell command
+                    // produces empty stderr. Augment with the original buffer entry's
+                    // stored stderr so the agent gets the full picture on replay.
+                    let buffer_stderr: String = if raw_stderr.is_empty() {
+                        original_command
+                            .find("@cmd_")
+                            .or_else(|| original_command.find("@file_"))
+                            .and_then(|pos| {
+                                original_command[pos..]
+                                    .split_whitespace()
+                                    .next()
+                                    .and_then(|tok| ctx.output_buffer.get(tok))
+                            })
+                            .map(|e| e.stderr)
+                            .unwrap_or_default()
+                    } else {
+                        raw_stderr.clone()
+                    };
+                    let stderr_budget = STDERR_BUDGET.min(count_lines(&buffer_stderr));
+                    let stdout_budget = SUMMARY_LINE_THRESHOLD - stderr_budget;
+
+                    let (stdout_out, stdout_shown, stdout_total) =
+                        truncate_lines(&raw_stdout, stdout_budget);
+                    let (stderr_out, stderr_shown, stderr_total) =
+                        truncate_lines(&buffer_stderr, STDERR_BUDGET);
+
+                    let was_truncated =
+                        stdout_shown < stdout_total || stderr_shown < stderr_total;
+
+                    let mut result = json!({
+                        "stdout": stdout_out,
+                        "stderr": stderr_out,
+                        "exit_code": exit_code,
+                    });
+                    if was_truncated {
+                        result["truncated"] = json!(true);
+                        result["stdout_shown"] = json!(stdout_shown);
+                        result["stdout_total"] = json!(stdout_total);
+                        if stderr_total > 0 {
+                            result["stderr_shown"] = json!(stderr_shown);
+                            result["stderr_total"] = json!(stderr_total);
+                        }
+                        let stderr_note = if stderr_total > 0 {
+                            format!(", stderr {stderr_shown}/{stderr_total}")
+                        } else {
+                            String::new()
+                        };
+                        result["hint"] = json!(format!(
+                            "Output capped at {SUMMARY_LINE_THRESHOLD} lines \
+                             (stdout {stdout_shown}/{stdout_total}{stderr_note}). \
+                             Narrow with: grep 'keyword' @ref, \
+                             sed -n '1,{}p' @ref",
+                            SUMMARY_LINE_THRESHOLD - 1,
+                        ));
+                    }
+                    return Ok(result);
                 }
 
                 let output_id = ctx.output_buffer.store(
@@ -1416,8 +1461,9 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn run_command_buffer_only_above_threshold_returns_error() {
-        // SUMMARY_LINE_THRESHOLD + 1 lines — strictly above the limit, must error.
+    async fn run_command_buffer_only_above_threshold_truncates_inline() {
+        // SUMMARY_LINE_THRESHOLD + 1 lines — strictly above the limit.
+        // Must now return Ok with truncated content, NOT an error.
         let (_dir, ctx) = project_ctx().await;
         let content: String = (1..=SUMMARY_LINE_THRESHOLD + 1)
             .map(|i| format!("{i}\n"))
@@ -1425,12 +1471,15 @@ mod tests {
         let id = ctx.output_buffer.store("cmd".into(), content, "".into(), 0);
         let result = RunCommand
             .call(json!({ "command": format!("cat {}", id) }), &ctx)
-            .await;
-        assert!(
-            result.is_err(),
-            "expected error above threshold, got Ok: {:?}",
-            result.ok()
-        );
+            .await
+            .expect("expected Ok with truncated inline output");
+        assert_eq!(result["truncated"], true, "should be truncated: {:?}", result);
+        assert_eq!(result["stdout_shown"], SUMMARY_LINE_THRESHOLD,
+            "stdout_shown should equal threshold: {:?}", result);
+        assert_eq!(result["stdout_total"], SUMMARY_LINE_THRESHOLD + 1,
+            "stdout_total should be full count: {:?}", result);
+        assert!(result.get("output_id").is_none(),
+            "must not create a new buffer ref: {:?}", result);
     }
 
     #[cfg(unix)]
@@ -1461,39 +1510,87 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn run_command_buffer_only_large_output_returns_error_not_new_ref() {
-        // Regression test: `sed @cmd_A` that reproduces the full large buffer must
-        // return a RecoverableError rather than a new @cmd_B reference.  The old
-        // behaviour caused an infinite loop where the agent kept querying new refs
-        // that were identical copies of the original buffer.
+    async fn run_command_buffer_only_large_output_no_new_ref() {
+        // Regression: `sed @cmd_A` that reproduces the full large buffer must
+        // return truncated inline content, NOT a new @cmd_B reference.
         let (_dir, ctx) = project_ctx().await;
 
-        // Seed the buffer with 100 lines (above the 50-line threshold).
         let large_content: String = (1..=100).map(|i| format!("{i}\n")).collect();
         let id = ctx
             .output_buffer
             .store("original_cmd".into(), large_content, "".into(), 0);
 
-        // Pass-through query — reproduces all 100 lines, still above threshold.
         let result = RunCommand
             .call(
                 json!({ "command": format!("sed -n '1,100p' {}", id) }),
                 &ctx,
             )
-            .await;
+            .await
+            .expect("expected Ok with truncated inline output");
 
-        // Must be an Err wrapping a RecoverableError, not Ok with a new output_id.
         assert!(
-            result.is_err(),
-            "expected RecoverableError for buffer-only large output, got Ok: {:?}",
-            result.ok()
+            result.get("output_id").is_none(),
+            "must not create a new buffer ref: {:?}",
+            result
         );
-        let err = result.unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("too large to return inline"),
-            "error should explain the output is too large: {msg}"
-        );
+        assert_eq!(result["truncated"], true, "should be truncated: {:?}", result);
+        assert_eq!(result["stdout_total"], 100usize, "stdout_total: {:?}", result);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_command_buffer_only_stderr_gets_priority() {
+        // stderr = 25 lines (> 20 cap) + stdout = 60 lines.
+        // Expected: stderr_shown = 20, stdout_shown = 30 (50 - 20).
+        let (_dir, ctx) = project_ctx().await;
+        let stdout: String = (1..=60).map(|i| format!("out{i}\n")).collect();
+        let stderr: String = (1..=25).map(|i| format!("err{i}\n")).collect();
+        let id = ctx.output_buffer.store("cmd".into(), stdout, stderr, 0);
+        let result = RunCommand
+            .call(json!({ "command": format!("cat {}", id) }), &ctx)
+            .await
+            .expect("expected Ok");
+        assert_eq!(result["stderr_shown"], 20usize, "stderr_shown: {:?}", result);
+        assert_eq!(result["stderr_total"], 25usize, "stderr_total: {:?}", result);
+        assert_eq!(result["stdout_shown"], 30usize, "stdout_shown: {:?}", result);
+        assert_eq!(result["stdout_total"], 60usize, "stdout_total: {:?}", result);
+        assert_eq!(result["truncated"], true);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_command_buffer_only_short_stderr_gives_budget_to_stdout() {
+        // stderr = 10 lines (< 20 cap) + stdout = 60 lines.
+        // Expected: stderr_shown = 10, stdout_shown = 40 (50 - 10).
+        let (_dir, ctx) = project_ctx().await;
+        let stdout: String = (1..=60).map(|i| format!("out{i}\n")).collect();
+        let stderr: String = (1..=10).map(|i| format!("err{i}\n")).collect();
+        let id = ctx.output_buffer.store("cmd".into(), stdout, stderr, 0);
+        let result = RunCommand
+            .call(json!({ "command": format!("cat {}", id) }), &ctx)
+            .await
+            .expect("expected Ok");
+        assert_eq!(result["stdout_shown"], 40usize, "stdout_shown: {:?}", result);
+        assert_eq!(result["stdout_total"], 60usize, "stdout_total: {:?}", result);
+        assert_eq!(result["truncated"], true);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_command_buffer_only_within_limit_no_truncation_fields() {
+        // combined = 45 lines (< 50 threshold) — must NOT add truncated/shown/total fields.
+        // needs_summary returns false, so we fall through to the short-output branch.
+        let (_dir, ctx) = project_ctx().await;
+        let stdout: String = (1..=30).map(|i| format!("out{i}\n")).collect();
+        let stderr: String = (1..=15).map(|i| format!("err{i}\n")).collect();
+        let id = ctx.output_buffer.store("cmd".into(), stdout, stderr, 0);
+        let result = RunCommand
+            .call(json!({ "command": format!("cat {}", id) }), &ctx)
+            .await
+            .expect("expected Ok");
+        assert!(result.get("truncated").is_none(), "no truncated field: {:?}", result);
+        assert!(result.get("stdout_shown").is_none(), "no stdout_shown: {:?}", result);
+        assert!(result.get("output_id").is_none(), "no buffer ref: {:?}", result);
     }
 
     #[test]
