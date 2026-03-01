@@ -253,6 +253,34 @@ Understanding the consumer is essential for designing good tool output. Key beha
 
 ---
 
+## Human-Facing Output
+
+The `format_for_user()` method produces output shown to the human watching Claude work in
+the Claude Code terminal. This is separate from the JSON returned to the LLM.
+
+**The rule:** If a tool fetches data, its `format_for_user()` must show at least a compact
+preview of that data — not just a count.
+
+**Why:** Counts are metadata. The human cannot tell from `"7 topics"` whether Claude found
+the right topic, or from `"12 refs"` where those references are. Showing data lets the
+human verify Claude is on the right track without inspecting the LLM's full conversation
+context.
+
+**What "compact preview" means:**
+- Collections (topics, libraries, references): first 5–8 items, then `… +N more`
+- Memory content: full content (it's already fetched; hiding it helps nobody)
+- Stats tables: cap at 10 rows, sort by most-relevant metric descending
+- Author breakdowns: cap at 5 entries sorted by line count descending
+
+**Anti-pattern:** Count-only output when data is available.
+```
+Bad: `"7 topics"` — count with no names
+Bad: `"12 refs"` — count with no locations
+Good: `"7 topics\n  architecture\n  conventions\n  …"`
+```
+
+---
+
 ## Checklist for New Tools
 
 When adding a tool that returns variable-length data:
@@ -266,6 +294,9 @@ When adding a tool that returns variable-length data:
 - [ ] Test: result over cap → overflow has correct `shown`, `total`, actionable `hint`
 - [ ] Test: the tool never exceeds ~25K tokens of output in any realistic scenario
 - [ ] Add the overflow→refine pattern to `server_instructions.md` if this is a new tool category
+- [ ] If the tool fetches data, does `format_for_user()` preview that data (not just count it)?
+- [ ] Is the preview capped (5–8 items) to avoid verbosity?
+- [ ] Is there a `… +N more` trailer when items are omitted?
 
 ---
 
