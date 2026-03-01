@@ -1077,6 +1077,67 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn run_command_dangerous_rejected_without_ack() {
+        let (_dir, ctx) = project_ctx().await;
+        let result = RunCommand
+            .call(json!({"command": "rm -rf /tmp/ce_nonexistent_test"}), &ctx)
+            .await;
+        assert!(result.is_err(), "dangerous command should be rejected");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("dangerous command blocked"),
+            "error should mention dangerous command blocked, got: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn run_command_safe_command_not_blocked() {
+        let (_dir, ctx) = project_ctx().await;
+        let result = RunCommand
+            .call(json!({"command": "echo hello"}), &ctx)
+            .await;
+        assert!(result.is_ok(), "echo should not be blocked: {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn run_command_cwd_rejects_path_traversal() {
+        let (_dir, ctx) = project_ctx().await;
+        let result = RunCommand
+            .call(json!({"command": "ls", "cwd": "../../etc"}), &ctx)
+            .await;
+        assert!(result.is_err(), "path traversal should be rejected");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("escapes project root") || err_msg.contains("not a valid directory"),
+            "should report traversal rejection: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn run_command_buffer_only_skips_speed_bump() {
+        let (_dir, ctx) = project_ctx().await;
+        // First store something in the buffer
+        let buf_result = RunCommand
+            .call(json!({"command": "seq 1 200", "timeout_secs": 5}), &ctx)
+            .await
+            .unwrap();
+        let output_id = buf_result["output_id"].as_str().unwrap();
+        // "rm" appears in the pattern string but the whole command is buffer-only —
+        // it should NOT trigger the dangerous-command speed bump.
+        let query = format!("grep rm {}", output_id);
+        let result = RunCommand
+            .call(json!({"command": query, "timeout_secs": 5}), &ctx)
+            .await;
+        assert!(
+            result.is_ok(),
+            "buffer-only command should not be flagged as dangerous: {:?}",
+            result
+        );
+    }
+
     #[test]
     fn run_command_schema_has_cwd_and_acknowledge_risk() {
         let schema = RunCommand.input_schema();
