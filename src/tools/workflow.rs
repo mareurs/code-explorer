@@ -367,7 +367,11 @@ impl Tool for RunCommand {
                     "type": "string",
                     "description": "Shell command to execute. May reference stored output buffers with @output_id syntax (e.g. grep FAILED @cmd_a1b2c3)."
                 },
-                "timeout_secs": { "type": "integer", "default": 30 },
+                "timeout_secs": {
+                    "type": "integer",
+                    "default": 30,
+                    "description": "Max execution time in seconds (default: 30)."
+                },
                 "cwd": {
                     "type": "string",
                     "description": "Subdirectory relative to project root. Validated to stay within project."
@@ -1076,11 +1080,25 @@ mod tests {
     #[test]
     fn run_command_schema_has_cwd_and_acknowledge_risk() {
         let schema = RunCommand.input_schema();
-        let props = &schema["properties"];
-        assert!(props.get("cwd").is_some(), "missing cwd");
+
+        let cwd = &schema["properties"]["cwd"];
+        assert!(cwd.is_object(), "cwd should be a schema object");
+        assert_eq!(cwd["type"], "string", "cwd type should be string");
+
+        let ack = &schema["properties"]["acknowledge_risk"];
         assert!(
-            props.get("acknowledge_risk").is_some(),
-            "missing acknowledge_risk"
+            ack.is_object(),
+            "acknowledge_risk should be a schema object"
+        );
+        assert_eq!(
+            ack["type"], "boolean",
+            "acknowledge_risk type should be boolean"
+        );
+
+        let required = schema["required"].as_array().unwrap();
+        assert!(
+            required.iter().any(|v| v == "command"),
+            "command must remain required"
         );
     }
 }
