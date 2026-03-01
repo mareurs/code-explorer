@@ -1082,7 +1082,7 @@ pub struct IndexStats {
     pub embedding_count: usize,
     /// Model string stored at index time, if any.
     pub model: Option<String>,
-    /// RFC 3339 timestamp of the last completed index run, if any.
+    /// Human-readable UTC timestamp of the last completed index run (e.g. "2026-03-01 14:22 UTC"), if any.
     pub indexed_at: Option<String>,
 }
 

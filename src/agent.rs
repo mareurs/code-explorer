@@ -87,8 +87,6 @@ impl Agent {
     }
 
     /// Activate a project by path, replacing the current active project.
-    /// Activate a project by path, replacing the current active project.
-    /// Activate a project by path, replacing the current active project.
     pub async fn activate(&self, root: PathBuf) -> Result<()> {
         let config = ProjectConfig::load_or_default(&root)?;
         let memory = MemoryStore::open(&root)?;
