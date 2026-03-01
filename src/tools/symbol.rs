@@ -1183,7 +1183,14 @@ impl Tool for ReplaceSymbol {
 
         write_lines(&full_path, &new_lines, content.ends_with('\n'))?;
         ctx.lsp.notify_file_changed(&full_path).await;
-        Ok(json!({ "status": "ok", "replaced_lines": format!("{}-{}", start + 1, end) }))
+        let root = ctx.agent.require_project_root().await?;
+        let hint = crate::util::path_security::worktree_hint(&root);
+        let mut resp =
+            json!({ "status": "ok", "replaced_lines": format!("{}-{}", start + 1, end) });
+        if let Some(h) = hint {
+            resp["worktree_hint"] = json!(h);
+        }
+        Ok(resp)
     }
 }
 
@@ -1247,7 +1254,12 @@ impl Tool for RemoveSymbol {
 
         write_lines(&full_path, &new_lines, content.ends_with('\n'))?;
         ctx.lsp.notify_file_changed(&full_path).await;
-        Ok(json!("ok"))
+        let root = ctx.agent.require_project_root().await?;
+        let hint = crate::util::path_security::worktree_hint(&root);
+        Ok(match hint {
+            None => json!("ok"),
+            Some(h) => json!({ "worktree_hint": h }),
+        })
     }
 }
 
@@ -1311,7 +1323,14 @@ impl Tool for InsertCode {
 
         write_lines(&full_path, &new_lines, content.ends_with('\n'))?;
         ctx.lsp.notify_file_changed(&full_path).await;
-        Ok(json!({ "status": "ok", "inserted_at_line": insert_at + 1, "position": position }))
+        let root = ctx.agent.require_project_root().await?;
+        let hint = crate::util::path_security::worktree_hint(&root);
+        let mut resp =
+            json!({ "status": "ok", "inserted_at_line": insert_at + 1, "position": position });
+        if let Some(h) = hint {
+            resp["worktree_hint"] = json!(h);
+        }
+        Ok(resp)
     }
 }
 
@@ -1611,6 +1630,9 @@ impl Tool for RenameSymbol {
         });
         if let Some(reason) = sweep_skip_reason {
             result["sweep_skip_reason"] = json!(reason);
+        }
+        if let Some(h) = crate::util::path_security::worktree_hint(&rename_root) {
+            result["worktree_hint"] = json!(h);
         }
         Ok(result)
     }
