@@ -9,7 +9,7 @@ use anyhow::Result;
 use rmcp::{
     model::{
         CallToolRequestParam, CallToolResult, Content, ListToolsResult, PaginatedRequestParam,
-        Role, ServerCapabilities, ServerInfo, Tool as McpTool,
+        ServerCapabilities, ServerInfo, Tool as McpTool,
     },
     service::RequestContext,
     Error as McpError, RoleServer, ServerHandler, ServiceExt,
@@ -35,11 +35,6 @@ use crate::tools::{
     Tool, ToolContext,
 };
 use crate::usage::UsageRecorder;
-
-/// When false, user-audience content blocks are stripped before sending to the
-/// MCP client. Flip to `true` once Claude Code implements proper audience
-/// filtering (i.e. LLM context no longer receives Role::User-only blocks).
-const USER_OUTPUT_ENABLED: bool = false;
 
 #[derive(Clone)]
 pub struct CodeExplorerServer {
@@ -230,12 +225,7 @@ impl ServerHandler for CodeExplorerServer {
         };
 
         match result {
-            Ok(mut blocks) => {
-                if !USER_OUTPUT_ENABLED {
-                    blocks.retain(|b| b.audience() != Some(&vec![Role::User]));
-                }
-                Ok(CallToolResult::success(blocks))
-            }
+            Ok(blocks) => Ok(CallToolResult::success(blocks)),
             Err(e) => Ok(route_tool_error(e)),
         }
     }
