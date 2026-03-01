@@ -593,6 +593,52 @@ impl Tool for FindFile {
     }
 }
 
+/// Infers which symbol-aware tool to suggest when `edit_file` is blocked on a source file.
+/// Priority: delete (empty new_string) → structural definition keyword → insertion (new > old) → fallback.
+#[allow(dead_code)]
+pub(crate) fn infer_edit_hint(old_string: &str, new_string: &str) -> &'static str {
+    if new_string.is_empty() {
+        return "remove_symbol(name_path, path) — deletes the symbol and its doc comments/attributes";
+    }
+
+    // Detect structural definition keywords across all supported languages:
+    // Rust: fn, async fn, impl, struct, trait, enum
+    // Python: def, async def, class
+    // Go: func, type
+    // JS/TS: function, async function, class, interface, type
+    // Java/Kotlin/C#/Swift: class, interface, enum, fun, func
+    let def_keywords = [
+        "fn ",
+        "def ",
+        "func ",
+        "fun ",
+        "function ",
+        "async fn ",
+        "async def ",
+        "async function ",
+        "class ",
+        "struct ",
+        "impl ",
+        "trait ",
+        "interface ",
+        "enum ",
+        "type ",
+    ];
+    if def_keywords.iter().any(|kw| old_string.contains(kw)) {
+        return "replace_symbol(name_path, path, new_body) — replaces the symbol body via LSP";
+    }
+
+    if new_string.len() > old_string.len() {
+        return "insert_code(name_path, path, code, position) — inserts before or after a named symbol";
+    }
+
+    // Fallback: show all options
+    "use a symbol-aware tool instead:\n  \
+     replace_symbol(name_path, path, new_body) — replace a symbol body\n  \
+     insert_code(name_path, path, code, position) — insert before/after a symbol\n  \
+     remove_symbol(name_path, path) — delete a symbol entirely"
+}
+
 pub struct EditFile;
 
 #[async_trait::async_trait]
@@ -2473,6 +2519,50 @@ mod tests {
         assert!(
             !user_text.contains("\\u001b"),
             "unexpected ANSI in: {user_text}"
+        );
+    }
+
+    #[test]
+    fn infer_edit_hint_remove_when_new_string_empty() {
+        let hint = infer_edit_hint("fn foo() {\n    bar();\n}", "");
+        assert!(hint.contains("remove_symbol"), "got: {hint}");
+    }
+
+    #[test]
+    fn infer_edit_hint_replace_symbol_for_rust_fn() {
+        let hint = infer_edit_hint("fn foo() {\n    old();\n}", "fn foo() {\n    new();\n}");
+        assert!(hint.contains("replace_symbol"), "got: {hint}");
+    }
+
+    #[test]
+    fn infer_edit_hint_replace_symbol_for_python_def() {
+        let hint = infer_edit_hint(
+            "def process(x):\n    return x",
+            "def process(x):\n    return x * 2",
+        );
+        assert!(hint.contains("replace_symbol"), "got: {hint}");
+    }
+
+    #[test]
+    fn infer_edit_hint_replace_symbol_for_class() {
+        let hint = infer_edit_hint("class Foo {\n    x: i32\n}", "class Foo {\n    y: i32\n}");
+        assert!(hint.contains("replace_symbol"), "got: {hint}");
+    }
+
+    #[test]
+    fn infer_edit_hint_insert_code_when_new_is_longer() {
+        let hint = infer_edit_hint("placeholder", "fn extra() {\n    todo!();\n}\nplaceholder");
+        assert!(hint.contains("insert_code"), "got: {hint}");
+    }
+
+    #[test]
+    fn infer_edit_hint_fallback_lists_all_tools() {
+        let hint = infer_edit_hint("old line\nother line", "new line\nother line");
+        assert!(
+            hint.contains("replace_symbol")
+                && hint.contains("insert_code")
+                && hint.contains("remove_symbol"),
+            "got: {hint}"
         );
     }
 }
