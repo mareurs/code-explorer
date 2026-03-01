@@ -2350,6 +2350,28 @@ mod tests {
         assert!(!result.contains("Headings:"));
         assert!(result.contains("Buffer: @file_md"));
     }
+
+    #[test]
+    fn find_references_basic() {
+        let result = serde_json::json!({
+            "references": [
+                {"file": "src/foo.rs", "line": 10, "kind": "usage"},
+                {"file": "src/bar.rs", "line": 20, "kind": "usage"},
+                {"file": "src/foo.rs", "line": 30, "kind": "usage"}
+            ],
+            "total": 3
+        });
+        let text = format_find_references(&result);
+        assert!(text.contains("3"), "should mention count");
+        assert!(text.contains("refs") || text.contains("reference"), "should say refs or reference(s)");
+    }
+
+    #[test]
+    fn find_references_empty() {
+        let result = serde_json::json!({ "references": [], "total": 0 });
+        let text = format_find_references(&result);
+        assert!(text.contains("0") || text.contains("No"), "should indicate no refs");
+    }
 }
 
 #[cfg(test)]
