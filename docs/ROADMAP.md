@@ -33,7 +33,8 @@ See [`FEATURES.md`](FEATURES.md) for the full feature reference. Summary:
 - **Project customization** — `.code-explorer/system-prompt.md` injects project-specific agent guidance
 - **Onboarding** — language-specific nav hints, system-prompt draft generation
 - **RecoverableError** — non-fatal tool failures don't abort sibling parallel calls
-- **Dashboard** — `code-explorer dashboard` web UI with tool stats and project health
+- **Dashboard** — `code-explorer dashboard` web UI with tool stats and project health ([concept page](manual/src/concepts/dashboard.md))
+- **Companion Claude Code plugin** — `code-explorer-routing` for tool routing guidance (live at [mareurs/claude-plugins](https://github.com/mareurs/claude-plugins))
 - **Usage monitor** — per-tool call stats in `usage.db`, surfaced via `get_usage_stats`
 - **Git blame** via git2; persistent memory store (markdown topics)
 - **MCP over stdio** (rmcp); 733 tests passing
@@ -44,7 +45,6 @@ See [`FEATURES.md`](FEATURES.md) for the full feature reference. Summary:
 - Additional LSP server configurations
 - sqlite-vec integration for vector similarity (currently pure-Rust cosine — see [Semantic Search](manual/src/concepts/semantic-search.md))
 - HTTP/SSE transport for non-Claude Code agents
-- Companion Claude Code plugin: `code-explorer-routing` (live at [mareurs/claude-plugins](https://github.com/mareurs/claude-plugins))
 
 ## Future Improvements
 
@@ -178,7 +178,7 @@ Three Claude Code skills living in `.claude/skills/` within this repo. Contribut
 |---|---|---|
 | `project-management` | Navigate sprint status, roadmap, open PRs and issues | Planned |
 | `debugging` | Systematic debugging workflow for the Rust codebase | Planned |
-| `log-stat-analyzer` | Analyze `usage.db` for call pattern drift and latency regressions | Blocked on Tool Usage Monitor |
+| `log-stat-analyzer` | Analyze `usage.db` for call pattern drift and latency regressions | Ready |
 
 ### `project-management`
 
@@ -190,4 +190,4 @@ Systematic workflow from symptom to fix to verification — covering build failu
 
 ### `log-stat-analyzer`
 
-Structured workflow for interpreting Tool Usage Monitor data: per-tool call counts, error rates, p50/p99 latency, overflow rates, and time-bucketed drift detection. Produces actionable summaries (e.g. "semantic_search error rate up 3× in last 24h"). **Blocked** until the Tool Usage Monitor (`get_usage_stats` tool) is implemented.
+Structured workflow for interpreting Tool Usage Monitor data: per-tool call counts, error rates, p50/p99 latency, overflow rates, and time-bucketed drift detection. Produces actionable summaries (e.g. "semantic_search error rate up 3× in last 24h"). Uses the `get_usage_stats` tool.

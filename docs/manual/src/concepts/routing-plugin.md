@@ -94,3 +94,10 @@ requiring a manual `index_project` call.
 
 See the [Routing Plugin setup guide](../getting-started/routing-plugin.md) for
 configuration options.
+
+## Further Reading
+
+- [Routing Plugin Setup Guide](../getting-started/routing-plugin.md) — installation
+  steps, configuration options, and verification
+- [Superpowers Workflow](superpowers.md) — the Superpowers plugin that pairs
+  with the routing plugin for full lifecycle development

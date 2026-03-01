@@ -4,6 +4,10 @@ The `git_blame` tool gives you read access to the repository history of the acti
 
 `git_blame` requires an active project that is inside a git repository. It respects the project's path security settings: passing paths outside the project root is rejected.
 
+> **See also:** [Progressive Disclosure](../concepts/progressive-disclosure.md) —
+> `git_blame` in Exploring mode returns the first 200 lines; use Focused mode
+> with `offset`/`limit` for longer files.
+
 ---
 
 ## `git_blame`

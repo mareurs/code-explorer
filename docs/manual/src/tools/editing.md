@@ -7,6 +7,9 @@ code-explorer provides two categories of editing tools:
 
 All write operations are restricted to the active project root. Attempts to write outside the project root, or to paths on the security deny-list, are rejected with an error.
 
+> **See also:** [Git Worktrees](../concepts/worktrees.md) — the worktree write
+> guard that protects against silent edits to the wrong repository tree.
+
 ---
 
 ## When to use which editing tool

@@ -182,3 +182,10 @@ over 300 results.
 If you see `next_offset` in Focused mode and you need all the results, page
 through sequentially. Do not try to read all pages in a single pass unless you
 need the full picture; often the first one or two pages contain the answer.
+
+## Further Reading
+
+- [Progressive Disclosure](progressive-disclosure.md) — the design principle
+  behind the two-mode system and how `OutputGuard` enforces it
+- [Symbol Navigation Tools](../tools/symbol-navigation.md) — the tools where
+  `detail_level` has the most impact

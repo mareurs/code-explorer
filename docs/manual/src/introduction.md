@@ -198,6 +198,17 @@ Oriented toward contributors and operators debugging unexpected behavior.
 
 ---
 
+## Get Started
+
+- [Installation](getting-started/installation.md) — build the binary, register
+  the MCP server, install LSP servers
+- [Your First Project](getting-started/first-project.md) — onboarding, indexing,
+  and your first tool calls
+- [Routing Plugin](getting-started/routing-plugin.md) — the plugin that ensures
+  Claude always reaches for code-explorer tools
+
+---
+
 ## A Quick Example
 
 Here is what a concrete agent interaction looks like with code-explorer versus

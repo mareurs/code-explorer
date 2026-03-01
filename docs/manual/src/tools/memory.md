@@ -172,3 +172,7 @@ Memory persists indefinitely across sessions. The recommended workflow is:
 4. If you correct an earlier misunderstanding, overwrite the old entry with updated content.
 
 The `onboarding` tool writes a summary entry under the topic `"onboarding"` automatically. You can write all other entries manually as you explore the codebase.
+
+> **See also:** [Dashboard](../concepts/dashboard.md) — the Memories page lets
+> you browse, create, and delete topics directly in a browser UI without writing
+> tool calls.

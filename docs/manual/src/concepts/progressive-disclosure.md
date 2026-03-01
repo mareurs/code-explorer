@@ -158,3 +158,10 @@ identified, not for every symbol in the file.
 
 This workflow minimizes context usage at every step. The broad exploration is
 cheap; the focused read is exact.
+
+## Further Reading
+
+- [Output Modes](output-modes.md) — the `detail_level`, `offset`, and `limit`
+  parameters in full detail, with examples for every tool
+- [Tool Selection](tool-selection.md) — matching your level of knowledge to the
+  right tool, including the anti-patterns that cause context bloat

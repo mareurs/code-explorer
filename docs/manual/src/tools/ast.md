@@ -6,6 +6,9 @@ language server needs to be running, and no active project is required.
 
 **Supported languages:** Rust, Python, TypeScript, Go.
 
+> **See also:** [Tool Selection](../concepts/tool-selection.md) — when to use
+> AST tools (`list_functions`, `list_docs`) vs LSP-backed symbol tools.
+
 ---
 
 ## AST Tools vs LSP Tools

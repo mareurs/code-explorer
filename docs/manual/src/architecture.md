@@ -315,5 +315,7 @@ team members share the same configuration. See
   Ollama, OpenAI, or local embeddings.
 - [Semantic Search Concepts](concepts/semantic-search.md) — how the embedding
   pipeline works, similarity scoring, and when to reach for semantic vs symbol search
+- [Dashboard](concepts/dashboard.md) — visual UI for project health, tool usage
+  stats, index status, and memory browsing
 - The full internal architecture with contributor-level detail is in
   `docs/ARCHITECTURE.md` in the repository root.

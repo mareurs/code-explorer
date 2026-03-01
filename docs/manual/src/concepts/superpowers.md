@@ -106,3 +106,10 @@ clears the stale entry cleanly. `git worktree remove` cannot do this.
 if cleanup fails, exit back to the main repo and run `git worktree prune`
 manually. The branch itself may need a separate `git branch -d my-feature` if
 you want it gone entirely.
+
+## Further Reading
+
+- [Git Worktrees](worktrees.md) — the three-layer protection system (write guard,
+  worktree hint, navigation exclusions) that prevents silent cross-worktree edits
+- [Routing Plugin](routing-plugin.md) — how the plugin's `worktree-activate.sh`
+  hook auto-calls `activate_project` when `EnterWorktree` fires

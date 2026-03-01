@@ -75,3 +75,10 @@ git worktree prune
 ```
 
 Run this from the main repo root, not from inside the (now-deleted) worktree.
+
+## Further Reading
+
+- [Superpowers Workflow](superpowers.md) — how the Superpowers plugin integrates
+  worktrees into a full TDD + parallel-agent development workflow
+- [Workflow & Config Tools](../tools/workflow-and-config.md) — `activate_project`
+  reference: the required call after entering a worktree

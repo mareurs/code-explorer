@@ -110,11 +110,6 @@ no bodies:
 Sample output (Rust project):
 
 ```
-```
-
-Sample output (Rust project):
-
-```
 src/main.rs
   fn main                    src/main.rs:12
   fn parse_args              src/main.rs:28
@@ -182,8 +177,13 @@ A practical sequence for exploring an unfamiliar codebase:
 5. `semantic_search("entry point")` or `find_symbol("main")` — find where execution starts.
 6. From there, use `find_references` to trace callers and `list_symbols` to
    navigate deeper into subsystems.
-   navigate deeper into subsystems.
 
 After the first session, onboarding memories persist in `.code-explorer/memories/` and the
 embedding index stays in `.code-explorer/embeddings.db`. Both are checked into `.gitignore`
 by default so team members build their own local copies.
+
+## Next Steps
+
+- [Routing Plugin](routing-plugin.md) — install the plugin that ensures subagents also use code-explorer
+- [Tool Selection](../concepts/tool-selection.md) — when to use symbol tools vs semantic search vs text search
+- [Progressive Disclosure](../concepts/progressive-disclosure.md) — how tools manage output size automatically

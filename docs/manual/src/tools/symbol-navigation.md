@@ -13,6 +13,9 @@ tree-sitter for basic results.
 
 **Scope parameter:** `find_symbol`, `list_symbols`, `find_references`, and `list_functions` accept an optional `scope` string to search library code as well as project code. See [Library Navigation](library-navigation.md) for the full scope reference.
 
+> **See also:** [Tool Selection](../concepts/tool-selection.md) — when to reach
+> for symbol tools vs semantic search vs text search. [Progressive Disclosure](../concepts/progressive-disclosure.md) — how `detail_level` controls output volume for these tools.
+
 ---
 
 ## `list_symbols`

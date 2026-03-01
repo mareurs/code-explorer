@@ -6,6 +6,9 @@ the project.
 
 All library access is **read-only**. Editing tools operate only on project code.
 
+> **See also:** [Library Navigation](../concepts/library-navigation.md) — how
+> auto-discovery works, the scope parameter, and when to navigate library source.
+
 ---
 
 ## Auto-discovery

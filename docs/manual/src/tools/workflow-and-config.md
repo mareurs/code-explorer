@@ -262,4 +262,8 @@ The tool returns an error if the path does not exist or is not a directory.
 - Compare error rates across windows to spot regressions after changes to the project or config.
 - The stats are read from `.code-explorer/usage.db` which is populated by the usage recorder built into the MCP server. The database is created automatically on the first tool call.
 - Stats are only available for the active project. Switch projects with `activate_project` before calling `get_usage_stats`.
+
+> **See also:** [Dashboard](../concepts/dashboard.md) — the Tool Stats page
+> shows the same data as `get_usage_stats` with charts, time-window filtering,
+> and per-error inspection, without writing a tool call.
 **Tips:** Use this to verify which project is active and to check security settings before attempting shell commands or indexing. If you need to change configuration, edit `.code-explorer/project.toml` directly — the config is re-read on each tool call, so changes take effect immediately without restarting the server.

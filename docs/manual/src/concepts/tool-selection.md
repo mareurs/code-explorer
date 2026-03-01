@@ -166,3 +166,10 @@ tracing usages of a known symbol.
 | A concept or behaviour | `semantic_search(query)` |
 | Nothing (unfamiliar area) | `list_dir` → `list_symbols` → `semantic_search` |
 | Exact string or import | `search_pattern(regex)` |
+
+## Further Reading
+
+- [Progressive Disclosure](progressive-disclosure.md) — how output volume is
+  controlled once you've selected the right tool
+- [Semantic Search](semantic-search.md) — deeper explanation of when and how
+  semantic search finds code you can't name

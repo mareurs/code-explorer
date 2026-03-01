@@ -4,6 +4,9 @@ These tools cover reading, listing, searching, and locating files. They are read
 
 All paths are relative to the active project root unless you supply an absolute path. Reads are subject to the project's security deny-list (e.g. SSH keys and credential files are blocked by default).
 
+> **See also:** [Output Buffers](../concepts/output-buffers.md) — how large
+> file reads are stored as `@file_id` refs rather than dumped into context.
+
 ---
 
 ## `read_file`

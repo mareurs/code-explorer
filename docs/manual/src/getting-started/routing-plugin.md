@@ -53,8 +53,9 @@ job is to steer Claude toward the right tools at the right moment.
 
 ### Option 1: Claude Code Plugin Command
 
-```bash
-claude /plugin install code-explorer-routing@sdd-misc-plugins
+```
+/plugin marketplace add mareurs/sdd-misc-plugins
+/plugin install code-explorer-routing@sdd-misc-plugins
 ```
 
 This downloads and enables the plugin immediately. It persists across sessions.
@@ -146,3 +147,7 @@ Or uninstall it entirely:
 ```bash
 claude /plugin uninstall code-explorer-routing@sdd-misc-plugins
 ```
+
+## Further Reading
+
+- [Routing Plugin (concepts)](../concepts/routing-plugin.md) — how the plugin works, why hard blocks beat soft warnings, the subagent coverage problem

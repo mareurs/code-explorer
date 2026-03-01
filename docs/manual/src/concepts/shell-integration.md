@@ -69,3 +69,10 @@ paths outside the tree — is rejected with an error naming the violation.
 Output Buffer refs (`@cmd_id`, `@file_id`) are resolved within the session
 and are read-only when materialised as temporary files for Unix tool access.
 They never expose raw filesystem paths outside the buffer system.
+
+## Further Reading
+
+- [Output Buffers](output-buffers.md) — how large command output is stored and
+  queried with `@cmd_id` refs rather than dumped into context
+- [Workflow & Config Tools](../tools/workflow-and-config.md) — full `run_command`
+  reference including all parameters

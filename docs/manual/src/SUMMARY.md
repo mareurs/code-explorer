@@ -9,17 +9,24 @@
   - [Routing Plugin](getting-started/routing-plugin.md)
 
 - [Progressive Disclosure](concepts/progressive-disclosure.md)
-  - [Tool Selection](concepts/tool-selection.md)
   - [Output Modes](concepts/output-modes.md)
-  - [Dashboard](concepts/dashboard.md)
+  - [Tool Selection](concepts/tool-selection.md)
+
+- [Shell Integration](concepts/shell-integration.md)
   - [Output Buffers](concepts/output-buffers.md)
-  - [Shell Integration](concepts/shell-integration.md)
-  - [Git Worktrees](concepts/worktrees.md)
-  - [Routing Plugin](concepts/routing-plugin.md)
-  - [Superpowers Workflow](concepts/superpowers.md)
 
 - [Semantic Search](concepts/semantic-search.md)
   - [Setup Guide](semantic-search-guide.md)
+
+- [Library Navigation](concepts/library-navigation.md)
+
+- [Memory](concepts/memory.md)
+
+- [Dashboard](concepts/dashboard.md)
+- [Git Worktrees](concepts/worktrees.md)
+
+- [Routing Plugin](concepts/routing-plugin.md)
+  - [Superpowers Workflow](concepts/superpowers.md)
 
 - [Project Configuration](configuration/project-toml.md)
   - [Embedding Backends](configuration/embedding-backends.md)

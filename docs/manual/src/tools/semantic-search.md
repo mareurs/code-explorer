@@ -283,3 +283,7 @@ drift_detection_enabled = false
   `index_project`.
 - Use `index_status` with `threshold: 0.1` after re-indexing to surface which files changed semantically, not just syntactically. A whitespace-only reformat will have `avg_drift ≈ 0.0`; a full function rewrite will approach `1.0`.
 
+> **See also:** [Dashboard](../concepts/dashboard.md) — the Overview page
+> surfaces index staleness and per-file drift scores visually, without a tool
+> call.
+

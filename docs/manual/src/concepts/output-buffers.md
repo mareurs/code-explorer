@@ -76,3 +76,11 @@ the least-recently-accessed entry is dropped. Accessing a buffer (even to query
 it) refreshes its position in the eviction order.
 
 Buffers are not persisted to disk. Restarting the server clears them.
+
+## Further Reading
+
+- [Shell Integration](shell-integration.md) — `run_command` in full detail:
+  safety layer, dangerous command detection, and source file access blocking
+- [Workflow & Config Tools](../tools/workflow-and-config.md) — full reference
+  for `run_command` including the `cwd`, `acknowledge_risk`, and `timeout_secs`
+  parameters

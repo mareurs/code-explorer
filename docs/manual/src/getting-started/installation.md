@@ -99,7 +99,7 @@ After registering, confirm Claude Code sees the server and all its tools:
 claude mcp list
 ```
 
-You should see `code-explorer` listed with 33 tools. If it does not appear, make sure the
+You should see `code-explorer` listed with 31 tools. If it does not appear, make sure the
 `code-explorer` binary is on your PATH:
 
 ```bash
@@ -110,6 +110,9 @@ code-explorer --version
 ## Feature Flags
 
 code-explorer has three embedding modes, controlled at compile time via Cargo features:
+
+> **See also:** [Embedding Backends](../configuration/embedding-backends.md) —
+> full backend comparison, recommended models, and per-backend configuration.
 
 | Feature | What it does | When to use it |
 |---|---|---|
@@ -147,3 +150,8 @@ cargo install code-explorer --no-default-features
 
 Semantic search tools (`semantic_search`, `index_project`) will return a clear error if called
 without an embedding backend compiled in.
+
+## Next Steps
+
+- [Your First Project](first-project.md) — open a project, run onboarding, and try the basic tools
+- [Routing Plugin](routing-plugin.md) — install the plugin that steers Claude toward code-explorer tools automatically
