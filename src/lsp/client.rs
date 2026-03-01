@@ -74,7 +74,7 @@ fn convert_document_symbols(
                 end_line: ds.range.end.line,
                 start_col: ds.selection_range.start.character,
                 children,
-                detail: None,
+                detail: ds.detail.clone().filter(|s| !s.is_empty()),
             }
         })
         .collect()
@@ -1060,6 +1060,71 @@ struct Point {
         assert_eq!(
             result[0].end_line, 10,
             "end_line should use range for body extent"
+        );
+    }
+
+    #[test]
+    fn convert_document_symbols_captures_detail() {
+        use lsp_types::{DocumentSymbol, Position, Range, SymbolKind as LspSymbolKind};
+
+        let symbols = vec![DocumentSymbol {
+            name: "my_func".to_string(),
+            detail: Some("(x: i32) -> bool".to_string()),
+            kind: LspSymbolKind::FUNCTION,
+            tags: None,
+            #[allow(deprecated)]
+            deprecated: None,
+            range: Range {
+                start: Position { line: 0, character: 0 },
+                end: Position { line: 5, character: 1 },
+            },
+            selection_range: Range {
+                start: Position { line: 0, character: 3 },
+                end: Position { line: 0, character: 10 },
+            },
+            children: None,
+        }];
+
+        let path = std::env::temp_dir().join("test_detail_capture.rs");
+        let result = convert_document_symbols(&symbols, &path, "");
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result[0].detail,
+            Some("(x: i32) -> bool".to_string()),
+            "detail should be captured from DocumentSymbol"
+        );
+    }
+
+    #[test]
+    fn convert_document_symbols_collapses_empty_detail() {
+        use lsp_types::{DocumentSymbol, Position, Range, SymbolKind as LspSymbolKind};
+
+        let symbols = vec![DocumentSymbol {
+            name: "my_func".to_string(),
+            detail: Some("".to_string()),
+            kind: LspSymbolKind::FUNCTION,
+            tags: None,
+            #[allow(deprecated)]
+            deprecated: None,
+            range: Range {
+                start: Position { line: 0, character: 0 },
+                end: Position { line: 5, character: 1 },
+            },
+            selection_range: Range {
+                start: Position { line: 0, character: 3 },
+                end: Position { line: 0, character: 10 },
+            },
+            children: None,
+        }];
+
+        let path = std::env::temp_dir().join("test_detail_empty.rs");
+        let result = convert_document_symbols(&symbols, &path, "");
+
+        assert_eq!(
+            result[0].detail,
+            None,
+            "empty string detail should collapse to None"
         );
     }
 
