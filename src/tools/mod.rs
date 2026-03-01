@@ -30,6 +30,9 @@ use serde_json::Value;
 use crate::agent::Agent;
 use crate::lsp::LspProvider;
 
+/// Compact JSON size above which tool output is routed through OutputBuffer.
+const TOOL_OUTPUT_BUFFER_THRESHOLD: usize = 10_000;
+
 /// Shared context passed to every tool invocation.
 ///
 /// Holds references to all shared resources (agent state, LSP manager,
@@ -197,14 +200,24 @@ pub trait Tool: Send + Sync {
     /// Override directly for full control over content blocks.
     async fn call_content(&self, input: Value, ctx: &ToolContext) -> Result<Vec<Content>> {
         let val = self.call(input, ctx).await?;
+        let json = serde_json::to_string(&val).unwrap_or_else(|_| val.to_string());
+
+        if json.len() > TOOL_OUTPUT_BUFFER_THRESHOLD {
+            let ref_id = ctx.output_buffer.store_tool(self.name(), json.clone());
+            let summary = self
+                .format_for_user(&val)
+                .unwrap_or_else(|| format!("Result stored in {} ({} bytes)", ref_id, json.len()));
+            return Ok(vec![Content::text(format!(
+                "{}\nFull result: {}",
+                summary, ref_id
+            ))]);
+        }
+
         match self.format_for_user(&val) {
-            Some(user_text) => {
-                let json = serde_json::to_string(&val).unwrap_or_else(|_| val.to_string());
-                Ok(vec![
-                    Content::text(json).with_audience(vec![Role::Assistant]),
-                    Content::text(user_text).with_audience(vec![Role::User]),
-                ])
-            }
+            Some(user_text) => Ok(vec![
+                Content::text(json).with_audience(vec![Role::Assistant]),
+                Content::text(user_text).with_audience(vec![Role::User]),
+            ]),
             None => Ok(vec![Content::text(
                 serde_json::to_string_pretty(&val).unwrap_or_else(|_| val.to_string()),
             )]),
@@ -275,5 +288,145 @@ mod tests {
             e.downcast_ref::<RecoverableError>().is_some(),
             "must be recoverable via downcast"
         );
+    }
+
+    // ---- call_content auto-buffering tests ----
+
+    async fn bare_ctx() -> ToolContext {
+        ToolContext {
+            agent: crate::agent::Agent::new(None).await.unwrap(),
+            lsp: crate::lsp::LspManager::new_arc(),
+            output_buffer: std::sync::Arc::new(output_buffer::OutputBuffer::new(20)),
+            progress: None,
+        }
+    }
+
+    struct EchoTool {
+        result: Value,
+        user_summary: Option<String>,
+    }
+
+    #[async_trait::async_trait]
+    impl Tool for EchoTool {
+        fn name(&self) -> &str {
+            "echo_tool"
+        }
+        fn description(&self) -> &str {
+            "test"
+        }
+        fn input_schema(&self) -> Value {
+            serde_json::json!({})
+        }
+        async fn call(&self, _input: Value, _ctx: &ToolContext) -> anyhow::Result<Value> {
+            Ok(self.result.clone())
+        }
+        fn format_for_user(&self, _result: &Value) -> Option<String> {
+            self.user_summary.clone()
+        }
+    }
+
+    #[tokio::test]
+    async fn call_content_passthrough_small_output() {
+        let ctx = bare_ctx().await;
+        let result = serde_json::json!({"key": "value"});
+        let tool = EchoTool {
+            result: result.clone(),
+            user_summary: None,
+        };
+        let content = tool
+            .call_content(serde_json::json!({}), &ctx)
+            .await
+            .unwrap();
+        // Small output: no buffering — content should contain the JSON
+        let text = content[0].as_text().map(|t| t.text.as_str()).unwrap_or("");
+        assert!(text.contains("key"));
+    }
+
+    #[tokio::test]
+    async fn call_content_buffers_large_output() {
+        let ctx = bare_ctx().await;
+        // Build a Value that serializes to > 10_000 bytes
+        let big_array: Vec<Value> = (0..500)
+            .map(|i| {
+                serde_json::json!({
+                    "index": i,
+                    "name": format!("symbol_{}", i),
+                    "file": "src/tools/symbol.rs"
+                })
+            })
+            .collect();
+        let result = serde_json::json!({ "symbols": big_array });
+        let tool = EchoTool {
+            result,
+            user_summary: None,
+        };
+        let content = tool
+            .call_content(serde_json::json!({}), &ctx)
+            .await
+            .unwrap();
+        // Must return exactly 1 Content item
+        assert_eq!(content.len(), 1);
+        let text = content[0].as_text().map(|t| t.text.as_str()).unwrap_or("");
+        // Contains a @tool_ ref handle
+        assert!(text.contains("@tool_"), "expected @tool_ ref in: {}", text);
+    }
+
+    #[tokio::test]
+    async fn call_content_uses_format_for_user_in_compact_text() {
+        let ctx = bare_ctx().await;
+        let big_array: Vec<Value> = (0..500)
+            .map(|i| {
+                serde_json::json!({
+                    "index": i,
+                    "name": format!("symbol_{}", i)
+                })
+            })
+            .collect();
+        let result = serde_json::json!({ "symbols": big_array });
+        let tool = EchoTool {
+            result,
+            user_summary: Some("Found 500 symbols".to_string()),
+        };
+        let content = tool
+            .call_content(serde_json::json!({}), &ctx)
+            .await
+            .unwrap();
+        let text = content[0].as_text().map(|t| t.text.as_str()).unwrap_or("");
+        assert!(
+            text.contains("Found 500 symbols"),
+            "expected summary in: {}",
+            text
+        );
+        assert!(text.contains("@tool_"), "expected ref handle in: {}", text);
+    }
+
+    #[tokio::test]
+    async fn call_content_generic_fallback_without_format_for_user() {
+        let ctx = bare_ctx().await;
+        let big_array: Vec<Value> = (0..500)
+            .map(|i| {
+                serde_json::json!({
+                    "index": i,
+                    "name": format!("symbol_{}", i)
+                })
+            })
+            .collect();
+        let result = serde_json::json!({ "symbols": big_array });
+        let tool = EchoTool {
+            result,
+            user_summary: None,
+        };
+        let content = tool
+            .call_content(serde_json::json!({}), &ctx)
+            .await
+            .unwrap();
+        let text = content[0].as_text().map(|t| t.text.as_str()).unwrap_or("");
+        // No format_for_user → generic fallback message with byte count and ref
+        assert!(
+            text.contains("bytes") || text.contains("stored"),
+            "expected fallback in: {}",
+            text
+        );
+        assert!(text.contains("@tool_"), "expected ref handle in: {}", text);
     }
 }
