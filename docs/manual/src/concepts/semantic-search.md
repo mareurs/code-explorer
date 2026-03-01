@@ -20,8 +20,10 @@ exact source locations.
 
 **2. Embedding** — Each chunk is converted to a vector (a list of floating-point
 numbers) by the configured embedding model. Semantically similar text produces
-vectors that point in similar directions in high-dimensional space. The vectors
-are stored in `.code-explorer/embeddings.db`.
+vectors that point in similar directions in high-dimensional space.
+The default model is `ollama:mxbai-embed-large`; see
+[Embedding Backends](../configuration/embedding-backends.md) to change it.
+The vectors are stored in `.code-explorer/embeddings.db`.
 
 **3. Search** — Your query is embedded with the same model and compared to every
 stored chunk using cosine similarity. The closest chunks are returned, ranked by
@@ -35,12 +37,12 @@ mtime, then SHA-256 as a fallback chain.
 
 Results include a score between 0 and 1:
 
-| Score | Meaning |
-|---|---|
-| > 0.85 | Almost certainly what you're looking for |
-| 0.70 – 0.85 | Likely relevant — worth inspecting |
-| 0.50 – 0.70 | Tangentially related |
-| < 0.50 | Probably noise |
+| Score     | Meaning                                |
+|-----------|----------------------------------------|
+| > 0.85    | Almost certainly what you're looking for |
+| 0.70 – 0.85 | Likely relevant — worth inspecting   |
+| 0.50 – 0.70 | Tangentially related                 |
+| < 0.50    | Probably noise                         |
 
 Code embeddings score lower than prose embeddings for the same conceptual
 similarity — a score of 0.75 in a code search is strong. Do not compare
@@ -48,13 +50,13 @@ scores across different embedding models; they are not on the same scale.
 
 ## When to Use Semantic Search
 
-| You know... | Use |
-|---|---|
-| The exact name | `find_symbol(pattern)` |
-| The file it's in | `list_symbols(path)` |
-| A text fragment | `search_pattern(regex)` |
-| The concept, not the name | `semantic_search(query)` |
-| The concept, inside a library | `semantic_search(query, scope: "lib:<name>")` |
+| You know...                    | Use                                              |
+|--------------------------------|--------------------------------------------------|
+| The exact name                 | `find_symbol(pattern)`                           |
+| The file it's in               | `list_symbols(path)`                             |
+| A text fragment                | `search_pattern(regex)`                          |
+| The concept, not the name      | `semantic_search(query)`                         |
+| The concept, inside a library  | `semantic_search(query, scope: "lib:<name>")`    |
 
 Semantic search is slowest of these options (it embeds your query at call time
 and scans all stored vectors). Prefer symbol tools when you know the name.
@@ -64,13 +66,13 @@ and scans all stored vectors). Prefer symbol tools when you know the name.
 Build the index once before first use:
 
 ```json
-{ "name": "index_project", "arguments": {} }
+{ "tool": "index_project", "arguments": {} }
 ```
 
 Check its health:
 
 ```json
-{ "name": "index_status", "arguments": {} }
+{ "tool": "index_status", "arguments": {} }
 ```
 
 The index is stored in `.code-explorer/embeddings.db` and excluded from version
@@ -81,7 +83,7 @@ of how much file content has changed since it was last indexed. Pass `threshold`
 to surface files with high drift:
 
 ```json
-{ "name": "index_status", "arguments": { "threshold": 0.3 } }
+{ "tool": "index_status", "arguments": { "threshold": 0.3 } }
 ```
 
 Switching embedding models invalidates the entire index — all chunks must be
