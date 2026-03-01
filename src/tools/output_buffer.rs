@@ -24,6 +24,14 @@ pub struct BufferEntry {
     pub timestamp: u64,
 }
 
+/// A dangerous command held pending agent acknowledgment.
+#[derive(Debug, Clone)]
+pub struct PendingAckCommand {
+    pub command: String,
+    pub cwd: Option<String>,
+    pub timeout_secs: u64,
+}
+
 /// Thread-safe LRU buffer for command output.
 ///
 /// `store()` inserts an entry and returns an opaque `@cmd_<8hex>` handle.
@@ -39,6 +47,10 @@ struct BufferInner {
     order: Vec<String>,
     max_entries: usize,
     counter: u64,
+    // --- pending-ack store ---
+    pending_acks: HashMap<String, PendingAckCommand>,
+    pending_order: Vec<String>,
+    max_pending: usize,
 }
 
 impl OutputBuffer {
@@ -50,6 +62,9 @@ impl OutputBuffer {
                 order: Vec::new(),
                 max_entries,
                 counter: 0,
+                pending_acks: HashMap::new(),
+                pending_order: Vec::new(),
+                max_pending: 20,
             }),
         }
     }
