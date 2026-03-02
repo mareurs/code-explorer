@@ -127,68 +127,7 @@ impl OutputBuffer {
     /// Supports a `.err` suffix on the handle (e.g. `@cmd_xxx.err`),
     /// which returns the same entry (caller decides what to extract).
     pub fn get(&self, id: &str) -> Option<BufferEntry> {
-        let canonical = id.strip_suffix(".err").unwrap_or(id);
-        let mut inner = self.inner.lock().unwrap();
-
-        if !inner.entries.contains_key(canonical) {
-            return None;
-        }
-
-        // For file-backed entries: check mtime and refresh if stale.
-        let needs_refresh = if let Some(entry) = inner.entries.get(canonical) {
-            if let Some(ref path) = entry.source_path {
-                match std::fs::metadata(path) {
-                    Err(_) => {
-                        // File gone or unreadable — evict and return None.
-                        inner.order.retain(|k| k != canonical);
-                        inner.entries.remove(canonical);
-                        return None;
-                    }
-                    Ok(meta) => {
-                        let mtime_ms = meta
-                            .modified()
-                            .ok()
-                            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                            .map(|d| d.as_millis() as u64)
-                            .unwrap_or(0);
-                        mtime_ms > entry.timestamp
-                    }
-                }
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-
-        if needs_refresh {
-            let path = inner.entries[canonical].source_path.clone().unwrap();
-            match std::fs::read_to_string(&path) {
-                Ok(content) => {
-                    let now = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as u64;
-                    if let Some(entry) = inner.entries.get_mut(canonical) {
-                        entry.stdout = content;
-                        entry.timestamp = now;
-                    }
-                }
-                Err(_) => {
-                    // Became unreadable between stat and read — evict.
-                    inner.order.retain(|k| k != canonical);
-                    inner.entries.remove(canonical);
-                    return None;
-                }
-            }
-        }
-
-        // Refresh LRU order: move to end.
-        if let Some(pos) = inner.order.iter().position(|k| k == canonical) {
-            inner.order.remove(pos);
-            inner.order.push(canonical.to_string());
-        }
-        inner.entries.get(canonical).cloned()
+        self.get_with_refresh_flag(id).map(|(entry, _)| entry)
     }
 
     /// Like [`get`], but also returns whether the entry was refreshed from disk.
@@ -575,7 +514,6 @@ fn shell_words(s: &str) -> Vec<String> {
     words
 }
 
-#[cfg(test)]
 #[cfg(test)]
 mod tests {
     use super::*;
