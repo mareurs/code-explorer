@@ -1728,7 +1728,7 @@ mod tests {
     async fn run_command_buffer_only_large_output_no_new_ref() {
         // Regression: `sed @cmd_A` that reproduces a large buffer must
         // return truncated inline content, NOT a new @cmd_B reference.
-        // Use 250 lines (> BUFFER_QUERY_INLINE_CAP=200) to trigger truncation.
+        // Use 150 lines (> BUFFER_QUERY_INLINE_CAP=100) to trigger truncation.
         let (_dir, ctx) = project_ctx().await;
 
         let large_content: String = (1..=250).map(|i| format!("{i}\n")).collect();
@@ -1765,7 +1765,7 @@ mod tests {
     #[tokio::test]
     async fn run_command_buffer_only_stderr_gets_priority() {
         // stderr = 25 lines (> 20 cap) + stdout = 250 lines (> remaining budget).
-        // Expected: stderr_shown = 20, stdout_shown = 180 (BUFFER_QUERY_INLINE_CAP - 20).
+        // Expected: stderr_shown = 20, stdout_shown = 80 (BUFFER_QUERY_INLINE_CAP - 20).
         let (_dir, ctx) = project_ctx().await;
         let stdout: String = (1..=250).map(|i| format!("out{i}\n")).collect();
         let stderr: String = (1..=25).map(|i| format!("err{i}\n")).collect();
@@ -1802,7 +1802,7 @@ mod tests {
     #[tokio::test]
     async fn run_command_buffer_only_short_stderr_gives_budget_to_stdout() {
         // stderr = 10 lines (< 20 cap) + stdout = 250 lines (> remaining budget).
-        // Expected: stderr_shown = 10, stdout_shown = 190 (BUFFER_QUERY_INLINE_CAP - 10).
+        // Expected: stderr_shown = 10, stdout_shown = 90 (BUFFER_QUERY_INLINE_CAP - 10).
         let (_dir, ctx) = project_ctx().await;
         let stdout: String = (1..=250).map(|i| format!("out{i}\n")).collect();
         let stderr: String = (1..=10).map(|i| format!("err{i}\n")).collect();
@@ -2007,24 +2007,24 @@ mod tests {
     #[tokio::test]
     async fn buffer_query_truncation_hint_shows_next_page() {
         let (_dir, ctx) = project_ctx().await;
-        // Create a buffer with 300 lines (> BUFFER_QUERY_INLINE_CAP=200)
+        // Create a buffer with 150 lines (> BUFFER_QUERY_INLINE_CAP=100)
         let result = RunCommand
             .call(json!({ "command": "seq 1 300", "timeout_secs": 5 }), &ctx)
             .await
             .unwrap();
         let output_id = result["output_id"].as_str().unwrap().to_string();
 
-        // Query it — output exceeds 200-line cap, so hint should show next-page command
+        // Query it — output exceeds 100-line cap, so hint should show next-page command
         let query = format!("cat {output_id}");
         let result2 = RunCommand
             .call(json!({ "command": query, "timeout_secs": 5 }), &ctx)
             .await
             .unwrap();
         let hint = result2["hint"].as_str().unwrap_or("");
-        // Hint must guide to the NEXT page (line 201 onwards), not back to line 1
+        // Hint must guide to the NEXT page (line 101 onwards), not back to line 1
         assert!(
-            hint.contains("201"),
-            "hint should show next-page start (201), got: {hint}"
+            hint.contains("101"),
+            "hint should show next-page start (101), got: {hint}"
         );
         assert!(
             !hint.contains("'1,"),

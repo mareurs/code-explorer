@@ -60,9 +60,9 @@ Instead of one undifferentiated wall of text, the user sees the AI making
 targeted, reviewable queries — `grep FAILED`, then `sed -n '42,80p'`, then
 `grep -A5 'panicked'`. The exploration is transparent and auditable.
 
-**When a buffer query still returns too much, you get 200 lines inline.**
-If `grep @ref` or `jq @tool_ref` produces more than 200 lines, code-explorer
-returns the first 200 lines inline with truncation metadata rather than
+**When a buffer query still returns too much, you get 100 lines inline.**
+If `grep @ref` or `jq @tool_ref` produces more than 100 lines, code-explorer
+returns the first 100 lines inline with truncation metadata rather than
 creating another `@ref` handle (which would cause an infinite loop).
 The response includes `truncated: true`, `stdout_shown`/`stdout_total`
 (and `stderr_shown`/`stderr_total` when stderr is non-empty) so the AI

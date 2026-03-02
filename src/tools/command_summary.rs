@@ -16,7 +16,7 @@ pub(crate) const SUMMARY_LINE_THRESHOLD: usize = 50;
 /// Inline line cap for buffer-only queries (e.g. `grep/sed @cmd_xxx`).
 /// Kept separate from SUMMARY_LINE_THRESHOLD so "when to buffer" and "how much
 /// to return from a buffer query" can be tuned independently.
-pub(crate) const BUFFER_QUERY_INLINE_CAP: usize = 200;
+pub(crate) const BUFFER_QUERY_INLINE_CAP: usize = 100;
 
 /// Number of lines to keep from the top in generic summaries.
 const HEAD_LINES: usize = 20;
