@@ -501,6 +501,75 @@ async fn insert_code_after_trusts_lsp_end() {
     );
 }
 
+/// BUG-016 regression: insert_code(after) on a nested `mod tests` function
+/// where LSP reports end_line as a line *inside* the body (truncated range).
+/// validate_symbol_range catches ast_end > sym.end_line and returns
+/// RecoverableError — the file is never corrupted.
+#[tokio::test]
+async fn insert_code_after_rejects_truncated_end_in_nested_fn() {
+    // File layout (0-indexed):
+    //  0: "#[cfg(test)]"
+    //  1: "mod tests {"
+    //  2: "    #[test]"
+    //  3: "    fn target_test() {"
+    //  4: "        let x = 1;"         <- LSP (wrongly) reports end_line here
+    //  5: "        assert_eq!(x, 1);"
+    //  6: "    }"                       <- true end (AST knows this)
+    //  7: "}"
+    let src =
+        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn target_test() {\n        let x = 1;\n        assert_eq!(x, 1);\n    }\n}\n";
+
+    let (_dir, ctx) = ctx_with_mock(&[("src/lib.rs", src)], |root| {
+        let file = root.join("src/lib.rs");
+        // LSP reports end_line=4 (inside the body), not 6 (closing `}`)
+        let inner = SymbolInfo {
+            name: "target_test".to_string(),
+            name_path: "tests/target_test".to_string(),
+            kind: SymbolKind::Function,
+            file: file.clone(),
+            start_line: 3,
+            end_line: 4, // truncated — true end is line 6
+            start_col: 4,
+            children: vec![],
+            detail: None,
+        };
+        let module = SymbolInfo {
+            name: "tests".to_string(),
+            name_path: "tests".to_string(),
+            kind: SymbolKind::Module,
+            file: file.clone(),
+            start_line: 1,
+            end_line: 7,
+            start_col: 0,
+            children: vec![inner],
+            detail: None,
+        };
+        MockLspClient::new().with_symbols(file, vec![module])
+    })
+    .await;
+
+    let result = InsertCode
+        .call(
+            json!({
+                "path": "src/lib.rs",
+                "name_path": "tests/target_test",
+                "position": "after",
+                "code": "    #[test]\n    fn new_test() {}\n"
+            }),
+            &ctx,
+        )
+        .await;
+
+    // validate_symbol_range must catch ast_end (6) > sym.end_line (4)
+    // and return RecoverableError — not silently insert mid-body
+    let err = result.expect_err("should fail with RecoverableError for truncated end_line");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("suspicious range"),
+        "error should mention suspicious range; got: {msg}"
+    );
+}
+
 // ── remove_symbol: trust LSP ranges ──────────────────────────────────────────
 
 /// With "trust LSP" design, when LSP over-extends `end_line` to include a

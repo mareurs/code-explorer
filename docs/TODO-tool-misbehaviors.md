@@ -558,7 +558,10 @@ project root to get the correct repo-relative path for the tree lookup.
 
 **Date:** 2026-03-02
 **Severity:** High
-**Status:** Open
+**Status:** ✅ FIXED — `validate_symbol_range` now catches `ast_end > sym.end_line` (BUG-018
+fix). When LSP reports a truncated `end_line` inside the function body, tree-sitter detects the
+discrepancy and `insert_code` returns `RecoverableError` instead of corrupting the file.
+Regression test: `insert_code_after_rejects_truncated_end_in_nested_fn` in `tests/symbol_lsp.rs`.
 
 **What happened:**
 Called `insert_code(name_path="tests/other_tools_do_not_skip_server_timeout", position="after", ...)`.
@@ -577,16 +580,11 @@ insert_code(
 # → code lands mid-function body, not after closing brace
 ```
 
-**Root cause hypothesis:**
-`insert_code` resolves "after" to the line reported by the LSP symbol range's `end_line`, but
-that value appears to be off or pointing to the wrong position for nested symbols (functions
-inside a `mod tests` block). The insertion point is the symbol's declaration/open line rather
-than its end.
-
-**Fix ideas:**
-- Use `end_line` from the LSP symbol range correctly (off-by-one or wrong field).
-- As a workaround: use `run_command` with a Python/sed script to append text before the
-  module's closing `}` when `insert_code` placement would be inside a nested context.
+**Root cause:** `insert_code` used `sym.end_line + 1` as the insertion point, trusting the LSP.
+For nested functions inside `mod tests`, rust-analyzer sometimes reports a truncated `end_line`
+(a line inside the function body rather than the closing `}`). The BUG-018 fix to
+`validate_symbol_range` extended the check from `start == end` to `ast_end > sym.end_line`,
+which now catches this case. The insertion fails loudly rather than silently corrupting the file.
 
 ---
 
