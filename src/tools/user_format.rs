@@ -1258,19 +1258,6 @@ pub fn format_get_usage_stats(result: &Value) -> String {
     out
 }
 
-// ─── ANSI diff helpers ────────────────────────────────────────────────────────
-
-
-
-/// Format a separator header line:  ─── tool_name: path ──────
-
-/// Render a unified-style diff between old_string and new_string.
-/// start_line is the 1-indexed line where old_string begins in the file (optional).
-
-/// Render a diff showing removed symbol (all lines red).
-
-/// Render a diff showing inserted code (all lines green).
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2688,8 +2675,6 @@ mod tests {
         );
     }
 }
-
-/// ANSI-formatted header + 5-line numbered preview for create_file user output.
 
 #[cfg(test)]
 mod diff_tests {
