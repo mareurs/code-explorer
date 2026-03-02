@@ -112,8 +112,8 @@ impl CodeExplorerServer {
         }
     }
 
-    fn find_tool(&self, name: &str) -> Option<&Arc<dyn Tool>> {
-        self.tools.iter().find(|t| t.name() == name)
+    fn find_tool(&self, name: &str) -> Option<Arc<dyn Tool>> {
+        self.tools.iter().find(|t| t.name() == name).cloned()
     }
 
     /// Core tool dispatch, separated from the MCP trait method so tests can

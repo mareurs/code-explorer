@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use super::user_format;
 use super::{RecoverableError, Tool, ToolContext};
 use crate::util::text::extract_lines;
-use rmcp::model::{Content, Role};
+
 
 // ── read_file ────────────────────────────────────────────────────────────────
 
@@ -762,47 +762,6 @@ impl Tool for EditFile {
         })
     }
 
-    async fn call_content(&self, input: Value, ctx: &ToolContext) -> Result<Vec<Content>> {
-        let path = super::require_str_param(&input, "path")?.to_owned();
-
-        // Execute the write
-        let result = self.call(input, ctx).await?;
-        let assistant_json = serde_json::to_string(&result).unwrap_or_else(|_| "\"ok\"".into());
-
-        // Run `git diff HEAD -- <path>` and store in output buffer
-        let diff_id: Option<String> = async {
-            let root = ctx.agent.require_project_root().await.ok()?;
-            let output = tokio::process::Command::new("git")
-                .args(["diff", "HEAD", "--", &path])
-                .current_dir(&root)
-                .output()
-                .await
-                .ok()?;
-            let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-            let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-            if stdout.is_empty() && stderr.is_empty() {
-                return None;
-            }
-            let exit_code = output.status.code().unwrap_or(0);
-            Some(ctx.output_buffer.store(
-                format!("git diff HEAD -- {path}"),
-                stdout,
-                stderr,
-                exit_code,
-            ))
-        }
-        .await;
-
-        let user_text = match &diff_id {
-            Some(id) => format!("{path}  (diff {id})"),
-            None => path.clone(),
-        };
-
-        Ok(vec![
-            Content::text(assistant_json).with_audience(vec![Role::Assistant]),
-            Content::text(user_text).with_audience(vec![Role::User]),
-        ])
-    }
 }
 
 #[cfg(test)]
@@ -2246,32 +2205,7 @@ mod tests {
         );
     }
 
-    // ── CreateFile::call_content audience split ───────────────────────────────
 
-    #[tokio::test]
-    async fn create_file_call_content_returns_two_audience_blocks() {
-        let (dir, ctx) = project_ctx().await;
-        let file = dir.path().join("demo.rs");
-
-        let blocks = CreateFile
-            .call_content(
-                json!({
-                    "path": file.to_str().unwrap(),
-                    "content": "fn main() {}\n"
-                }),
-                &ctx,
-            )
-            .await
-            .unwrap();
-
-        // CreateFile now returns a single content block containing "ok".
-        assert_eq!(blocks.len(), 1, "expected one content block");
-        assert!(
-            format!("{:?}", blocks[0]).contains("ok"),
-            "block must be ok: {:?}",
-            blocks[0]
-        );
-    }
 
     // ── EditFile ──────────────────────────────────────────────────────────────
 
@@ -2505,42 +2439,6 @@ mod tests {
         let result = json!({ "files": ["src/a.rs", "src/b.rs"], "total": 2 });
         let text = tool.format_compact(&result).unwrap();
         assert!(text.contains("2 files"), "got: {text}");
-    }
-
-    #[tokio::test]
-    async fn edit_file_call_content_shows_path_no_inline_diff() {
-        let (dir, ctx) = project_ctx().await;
-        let file = dir.path().join("edit_me.txt");
-        std::fs::write(&file, "hello\nworld\n").unwrap();
-
-        let blocks = EditFile
-            .call_content(
-                json!({
-                    "path": file.to_str().unwrap(),
-                    "old_string": "hello",
-                    "new_string": "goodbye"
-                }),
-                &ctx,
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(blocks.len(), 2, "expected two content blocks");
-
-        let user_block = &blocks[1];
-        assert_eq!(user_block.audience(), Some(&vec![Role::User]));
-        let user_text = format!("{:?}", user_block);
-        // Must contain the file name
-        assert!(user_text.contains("edit_me.txt"), "got: {user_text}");
-        // Must NOT contain ANSI escape codes (no inline diff)
-        assert!(
-            !user_text.contains("\\x1b["),
-            "unexpected ANSI in: {user_text}"
-        );
-        assert!(
-            !user_text.contains("\\u001b"),
-            "unexpected ANSI in: {user_text}"
-        );
     }
 
     #[test]

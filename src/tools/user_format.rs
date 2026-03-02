@@ -1260,102 +1260,16 @@ pub fn format_get_usage_stats(result: &Value) -> String {
 
 // ─── ANSI diff helpers ────────────────────────────────────────────────────────
 
-const BOLD_CYAN: &str = "\x1b[1;36m";
-const BOLD_GREEN: &str = "\x1b[1;32m";
-const BOLD_RED: &str = "\x1b[1;31m";
-const GREEN: &str = "\x1b[32m";
-const RED: &str = "\x1b[31m";
-const DIM: &str = "\x1b[2m";
-const RESET: &str = "\x1b[0m";
 
-const DIFF_PREVIEW_LINES: usize = 8;
 
 /// Format a separator header line:  ─── tool_name: path ──────
-pub fn render_diff_header(tool_name: &str, path: &str) -> String {
-    let title = format!(" {tool_name}: {path} ");
-    let pad = "─".repeat((60usize).saturating_sub(title.len()));
-    format!("{BOLD_CYAN}───{title}{pad}{RESET}")
-}
 
 /// Render a unified-style diff between old_string and new_string.
 /// start_line is the 1-indexed line where old_string begins in the file (optional).
-pub fn render_edit_diff(
-    _path: &str,
-    old_string: &str,
-    new_string: &str,
-    start_line: Option<usize>,
-) -> String {
-    let mut out = String::new();
-    let old_lines: Vec<&str> = old_string.lines().collect();
-    let new_lines: Vec<&str> = new_string.lines().collect();
-    let hunk_start = start_line.unwrap_or(1);
-    let hunk = format!(
-        "@@ -{hunk_start},{} +{hunk_start},{} @@",
-        old_lines.len(),
-        new_lines.len()
-    );
-    out.push_str(&format!("{DIM}{hunk}{RESET}\n"));
-    for line in &old_lines {
-        out.push_str(&format!("{RED}-{line}{RESET}\n"));
-    }
-    for line in &new_lines {
-        out.push_str(&format!("{GREEN}+{line}{RESET}\n"));
-    }
-    out
-}
 
 /// Render a diff showing removed symbol (all lines red).
-pub fn render_removal_diff(
-    _path: &str,
-    removed_content: &str,
-    start_line: Option<usize>,
-    name: &str,
-) -> String {
-    let lines: Vec<&str> = removed_content.lines().collect();
-    let total = lines.len();
-    let preview_count = DIFF_PREVIEW_LINES.min(total);
-    let hunk_start = start_line.unwrap_or(1);
-    let mut out = String::new();
-    out.push_str(&format!(
-        "{BOLD_RED}--- removed · {name} · {total} lines{RESET}\n"
-    ));
-    out.push_str(&format!("{DIM}@@ -{hunk_start},{total} @@{RESET}\n"));
-    for line in &lines[..preview_count] {
-        out.push_str(&format!("{RED}-{line}{RESET}\n"));
-    }
-    if total > preview_count {
-        let remaining = total - preview_count;
-        out.push_str(&format!("{DIM}···  ({remaining} more lines){RESET}\n"));
-    }
-    out
-}
 
 /// Render a diff showing inserted code (all lines green).
-pub fn render_insert_diff(
-    _path: &str,
-    code: &str,
-    at_line: Option<usize>,
-    position: &str,
-    near_symbol: &str,
-) -> String {
-    let lines: Vec<&str> = code.lines().collect();
-    let total = lines.len();
-    let preview_count = DIFF_PREVIEW_LINES.min(total);
-    let insert_line = at_line.unwrap_or(1);
-    let mut out = String::new();
-    out.push_str(&format!(
-        "{BOLD_GREEN}+++ inserted {position} {near_symbol} · {total} lines{RESET}\n"
-    ));
-    out.push_str(&format!("{DIM}@@ +{insert_line},{total} @@{RESET}\n"));
-    for line in &lines[..preview_count] {
-        out.push_str(&format!("{GREEN}+{line}{RESET}\n"));
-    }
-    if total > preview_count {
-        let remaining = total - preview_count;
-        out.push_str(&format!("{DIM}···  ({remaining} more lines){RESET}\n"));
-    }
-    out
-}
 
 #[cfg(test)]
 mod tests {
@@ -2776,68 +2690,10 @@ mod tests {
 }
 
 /// ANSI-formatted header + 5-line numbered preview for create_file user output.
-pub fn format_create_file(content: &str) -> String {
-    const PREVIEW_LINES: usize = 5;
-    let line_count = content.lines().count();
-
-    let mut out = String::new();
-    let lines: Vec<&str> = content.lines().take(PREVIEW_LINES).collect();
-    let lineno_width = line_count.to_string().len();
-    for (i, line) in lines.iter().enumerate() {
-        out.push_str(&format!(
-            "{DIM}{:>width$}{RESET}| {line}\n",
-            i + 1,
-            width = lineno_width
-        ));
-    }
-    if line_count > PREVIEW_LINES {
-        let remaining = line_count - PREVIEW_LINES;
-        out.push_str(&format!("{DIM}···  ({remaining} more lines){RESET}\n"));
-    }
-    out
-}
 
 #[cfg(test)]
 mod diff_tests {
     use super::*;
-
-    #[test]
-    fn render_diff_header_contains_path() {
-        let h = render_diff_header("edit_file", "src/server.rs");
-        assert!(h.contains("edit_file"), "got: {h}");
-        assert!(h.contains("src/server.rs"), "got: {h}");
-        assert!(h.contains("\x1b[0m"), "no reset: {h}");
-    }
-
-    #[test]
-    fn render_edit_diff_shows_minus_plus_lines() {
-        let diff = render_edit_diff(
-            "src/a.rs",
-            "let old = 1;\nlet also_old = 2;",
-            "let new = 3;",
-            Some(88),
-        );
-        assert!(diff.contains("old"), "got: {diff}");
-        assert!(diff.contains("new"), "got: {diff}");
-        assert!(
-            diff.contains("\x1b[31m") || diff.contains("\x1b[32m"),
-            "no colors: {diff}"
-        );
-    }
-
-    #[test]
-    fn render_removal_diff_marks_all_lines_red() {
-        let diff = render_removal_diff("src/a.rs", "fn old() {\n    1\n}", Some(10), "old");
-        assert!(diff.contains("old"), "got: {diff}");
-        assert!(diff.contains("\x1b[31m"), "no red: {diff}");
-    }
-
-    #[test]
-    fn render_insert_diff_marks_all_lines_green() {
-        let diff = render_insert_diff("src/a.rs", "fn new() {}", Some(42), "after", "my_sym");
-        assert!(diff.contains("new"), "got: {diff}");
-        assert!(diff.contains("\x1b[32m"), "no green: {diff}");
-    }
 
     #[test]
     fn format_list_memories_shows_topic_names() {

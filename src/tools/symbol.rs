@@ -1301,36 +1301,6 @@ impl Tool for ReplaceSymbol {
         Some(user_format::format_replace_symbol(result))
     }
 
-    async fn call_content(
-        &self,
-        input: Value,
-        ctx: &ToolContext,
-    ) -> anyhow::Result<Vec<rmcp::model::Content>> {
-        use rmcp::model::Role;
-
-        let path = input["path"].as_str().unwrap_or("?").to_owned();
-        let name_path = input["name_path"].as_str().unwrap_or("?").to_owned();
-        let new_body = input["new_body"].as_str().unwrap_or("").to_owned();
-
-        let result = self.call(input, ctx).await?;
-
-        let replaced_range = result["replaced_lines"].as_str().unwrap_or("?");
-        let summary = format!("{path} · {name_path} → L{replaced_range}");
-
-        let header = user_format::render_diff_header("replace_symbol", &path);
-        let insert_note = format!(
-            "\x1b[1;32m+++ {} lines at L{}\x1b[0m\n",
-            new_body.lines().count(),
-            replaced_range.split('-').next().unwrap_or("?"),
-        );
-        let user_text = format!("{summary}\n\n{header}\n{insert_note}");
-
-        let json_str = serde_json::to_string(&result).unwrap_or_else(|_| "\"ok\"".into());
-        Ok(vec![
-            rmcp::model::Content::text(json_str).with_audience(vec![Role::Assistant]),
-            rmcp::model::Content::text(user_text).with_audience(vec![Role::User]),
-        ])
-    }
 }
 
 // ── remove_symbol ──────────────────────────────────────────────────────────
@@ -1420,35 +1390,6 @@ impl Tool for RemoveSymbol {
         Some(user_format::format_remove_symbol(result))
     }
 
-    async fn call_content(
-        &self,
-        input: Value,
-        ctx: &ToolContext,
-    ) -> anyhow::Result<Vec<rmcp::model::Content>> {
-        use rmcp::model::Role;
-
-        let path = input["path"].as_str().unwrap_or("?").to_owned();
-        let name_path = input["name_path"].as_str().unwrap_or("?").to_owned();
-
-        let result = self.call(input, ctx).await?;
-
-        let removed_range = result["removed_lines"].as_str().unwrap_or("?");
-        let line_count = result["line_count"].as_u64().unwrap_or(0);
-        let summary = format!("{path} · {name_path} → L{removed_range}");
-
-        let header = user_format::render_diff_header("remove_symbol", &path);
-        let remove_note = format!(
-            "\x1b[1;31m--- {line_count} lines at L{}\x1b[0m\n",
-            removed_range.split('-').next().unwrap_or("?"),
-        );
-        let user_text = format!("{summary}\n\n{header}\n{remove_note}");
-
-        let json_str = serde_json::to_string(&result).unwrap_or_else(|_| "\"ok\"".into());
-        Ok(vec![
-            rmcp::model::Content::text(json_str).with_audience(vec![Role::Assistant]),
-            rmcp::model::Content::text(user_text).with_audience(vec![Role::User]),
-        ])
-    }
 }
 
 // ── insert_code (before/after a symbol) ────────────────────────────────────
@@ -1534,36 +1475,6 @@ impl Tool for InsertCode {
         Some(user_format::format_insert_code(result))
     }
 
-    async fn call_content(
-        &self,
-        input: Value,
-        ctx: &ToolContext,
-    ) -> anyhow::Result<Vec<rmcp::model::Content>> {
-        use rmcp::model::Role;
-
-        let path = input["path"].as_str().unwrap_or("?").to_owned();
-        let name_path = input["name_path"].as_str().unwrap_or("?").to_owned();
-        let code = input["code"].as_str().unwrap_or("").to_owned();
-        let position = input["position"].as_str().unwrap_or("after").to_owned();
-
-        let result = self.call(input, ctx).await?;
-
-        let insert_line = result["inserted_at_line"].as_u64().unwrap_or(0);
-        let line_count = code.lines().count();
-        let summary = format!("{path} · {name_path} ({position}) → L{insert_line}");
-
-        let header = user_format::render_diff_header("insert_code", &path);
-        let insert_note = format!(
-            "\x1b[1;32m+++ {line_count} lines at L{insert_line} ({position} {name_path})\x1b[0m\n",
-        );
-        let user_text = format!("{summary}\n\n{header}\n{insert_note}");
-
-        let json_str = serde_json::to_string(&result).unwrap_or_else(|_| "\"ok\"".into());
-        Ok(vec![
-            rmcp::model::Content::text(json_str).with_audience(vec![Role::Assistant]),
-            rmcp::model::Content::text(user_text).with_audience(vec![Role::User]),
-        ])
-    }
 }
 
 /// A textual match found during post-rename sweep.
@@ -1922,46 +1833,6 @@ impl Tool for RenameSymbol {
         Some(user_format::format_rename_symbol(result))
     }
 
-    async fn call_content(
-        &self,
-        input: Value,
-        ctx: &ToolContext,
-    ) -> anyhow::Result<Vec<rmcp::model::Content>> {
-        use rmcp::model::Role;
-
-        let path = input["path"].as_str().unwrap_or("?").to_owned();
-        let name_path = input["name_path"].as_str().unwrap_or("?").to_owned();
-        let new_name = input["new_name"].as_str().unwrap_or("?").to_owned();
-
-        let result = self.call(input, ctx).await?;
-
-        let old_name = result["old_name"].as_str().unwrap_or(name_path.as_str());
-        let files_changed = result["files_changed"].as_u64().unwrap_or(0);
-        let total_edits = result["total_edits"].as_u64().unwrap_or(0);
-        let textual_count = result["textual_match_count"].as_u64().unwrap_or(0);
-        let summary =
-            format!("{old_name} → {new_name} · {files_changed} files, {total_edits} edits");
-
-        let header = user_format::render_diff_header("rename_symbol", &path);
-        let mut details = String::new();
-        if textual_count > 0 {
-            details.push_str(&format!(
-                "\x1b[1;33m⚠ {textual_count} textual occurrence(s) may still reference the old name\x1b[0m\n"
-            ));
-        }
-        if result.get("corruption_warning").is_some() {
-            details.push_str(
-                "\x1b[1;31m✗ possible corruption detected — run cargo check / tsc --noEmit\x1b[0m\n",
-            );
-        }
-        let user_text = format!("{summary}\n\n{header}\n{details}");
-
-        let json_str = serde_json::to_string(&result).unwrap_or_else(|_| "\"ok\"".into());
-        Ok(vec![
-            rmcp::model::Content::text(json_str).with_audience(vec![Role::Assistant]),
-            rmcp::model::Content::text(user_text).with_audience(vec![Role::User]),
-        ])
-    }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
