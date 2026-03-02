@@ -475,11 +475,7 @@ impl Tool for CreateFile {
         let resolved = crate::util::path_security::validate_write_path(path, &root, &security)?;
         crate::util::fs::write_utf8(&resolved, content)?;
         ctx.lsp.notify_file_changed(&resolved).await;
-        let hint = crate::util::path_security::worktree_hint(&root);
-        Ok(match hint {
-            None => json!("ok"),
-            Some(h) => json!({ "worktree_hint": h }),
-        })
+        Ok(json!("ok"))
     }
 }
 
@@ -1047,11 +1043,7 @@ impl Tool for EditFile {
             };
             std::fs::write(&resolved, &new_content)?;
             ctx.lsp.notify_file_changed(&resolved).await;
-            let hint = crate::util::path_security::worktree_hint(&root);
-            return Ok(match hint {
-                None => json!("ok"),
-                Some(h) => json!({ "worktree_hint": h }),
-            });
+            return Ok(json!("ok"));
         }
 
         let old_string = super::require_str_param(&input, "old_string")?;
@@ -1134,11 +1126,7 @@ async fn perform_edit(
     std::fs::write(&resolved, &new_content)?;
     ctx.lsp.notify_file_changed(&resolved).await;
 
-    let hint = crate::util::path_security::worktree_hint(&root);
-    Ok(match hint {
-        None => json!("ok"),
-        Some(h) => json!({ "worktree_hint": h }),
-    })
+    Ok(json!("ok"))
 }
 
 #[cfg(test)]

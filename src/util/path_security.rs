@@ -303,27 +303,6 @@ pub fn list_git_worktrees(project_root: &Path) -> Vec<PathBuf> {
     paths
 }
 
-/// Returns an advisory hint string if git linked worktrees exist under
-/// `project_root`. Intended to be included in write-tool responses so an
-/// agent knows it may have written to the main repo instead of a worktree.
-///
-/// Returns `None` if no worktrees exist (zero-overhead fast path).
-pub fn worktree_hint(project_root: &Path) -> Option<String> {
-    let worktrees = list_git_worktrees(project_root);
-    if worktrees.is_empty() {
-        return None;
-    }
-    let wt_list = worktrees
-        .iter()
-        .map(|p| format!("  - {}", p.display()))
-        .collect::<Vec<_>>()
-        .join("\n");
-    Some(format!(
-        "This repo has linked worktrees:\n{wt_list}\n\
-         If you meant to edit a worktree, call activate_project first.",
-    ))
-}
-
 // ---------------------------------------------------------------------------
 // Tool access controls
 // ---------------------------------------------------------------------------
@@ -930,35 +909,6 @@ mod tests {
         let result = list_git_worktrees(dir.path());
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], wt_root.path());
-    }
-
-    #[test]
-    fn worktree_hint_none_when_no_worktrees() {
-        let dir = tempfile::tempdir().unwrap();
-        let hint = worktree_hint(dir.path());
-        assert!(hint.is_none());
-    }
-
-    #[test]
-    fn worktree_hint_some_when_worktrees_exist() {
-        let dir = tempfile::tempdir().unwrap();
-        let wt_root = tempfile::tempdir().unwrap();
-        let wt_entry = dir.path().join(".git").join("worktrees").join("feat");
-        std::fs::create_dir_all(&wt_entry).unwrap();
-        let gitdir_content = format!("{}/.git\n", wt_root.path().display());
-        std::fs::write(wt_entry.join("gitdir"), &gitdir_content).unwrap();
-
-        let hint = worktree_hint(dir.path());
-        assert!(hint.is_some(), "should return hint when worktrees exist");
-        let msg = hint.unwrap();
-        assert!(
-            msg.contains(wt_root.path().to_str().unwrap()),
-            "hint should contain the worktree path"
-        );
-        assert!(
-            msg.contains("activate_project"),
-            "hint should mention activate_project"
-        );
     }
 
     // ── Dangerous command detection ──────────────────────────────────────

@@ -1347,14 +1347,7 @@ impl Tool for ReplaceSymbol {
 
         write_lines(&full_path, &new_lines, content.ends_with('\n'))?;
         ctx.lsp.notify_file_changed(&full_path).await;
-        let root = ctx.agent.require_project_root().await?;
-        let hint = crate::util::path_security::worktree_hint(&root);
-        let mut resp =
-            json!({ "status": "ok", "replaced_lines": format!("{}-{}", start + 1, end) });
-        if let Some(h) = hint {
-            resp["worktree_hint"] = json!(h);
-        }
-        Ok(resp)
+        Ok(json!({ "status": "ok", "replaced_lines": format!("{}-{}", start + 1, end) }))
     }
 
     fn format_compact(&self, result: &Value) -> Option<String> {
@@ -1430,19 +1423,13 @@ impl Tool for RemoveSymbol {
 
         write_lines(&full_path, &new_lines, content.ends_with('\n'))?;
         ctx.lsp.notify_file_changed(&full_path).await;
-        let root = ctx.agent.require_project_root().await?;
-        let hint = crate::util::path_security::worktree_hint(&root);
         let line_count = end - start;
         let removed_range = format!("{}-{}", start + 1, end);
-        let mut resp = json!({
+        Ok(json!({
             "status": "ok",
             "removed_lines": removed_range,
             "line_count": line_count,
-        });
-        if let Some(h) = hint {
-            resp["worktree_hint"] = json!(h);
-        }
-        Ok(resp)
+        }))
     }
 
     fn format_compact(&self, result: &Value) -> Option<String> {
@@ -1519,14 +1506,7 @@ impl Tool for InsertCode {
 
         write_lines(&full_path, &new_lines, content.ends_with('\n'))?;
         ctx.lsp.notify_file_changed(&full_path).await;
-        let root = ctx.agent.require_project_root().await?;
-        let hint = crate::util::path_security::worktree_hint(&root);
-        let mut resp =
-            json!({ "status": "ok", "inserted_at_line": insert_at + 1, "position": position });
-        if let Some(h) = hint {
-            resp["worktree_hint"] = json!(h);
-        }
-        Ok(resp)
+        Ok(json!({ "status": "ok", "inserted_at_line": insert_at + 1, "position": position }))
     }
 
     fn format_compact(&self, result: &Value) -> Option<String> {
@@ -1879,9 +1859,6 @@ impl Tool for RenameSymbol {
         }
         if let Some(reason) = sweep_skip_reason {
             result["sweep_skip_reason"] = json!(reason);
-        }
-        if let Some(h) = crate::util::path_security::worktree_hint(&rename_root) {
-            result["worktree_hint"] = json!(h);
         }
         Ok(result)
     }
