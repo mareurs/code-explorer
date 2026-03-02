@@ -91,6 +91,8 @@ broad and matched a partial occurrence the tool incorrectly reported as 0.
 `tests/symbol_lsp.rs::replace_symbol_preserves_preceding_close_brace`,
 `tests/symbol_lsp.rs::replace_symbol_preserves_paren_close_brace`.
 
+> **Resolved by design (2026-03-02):** Symbol range redesign removed all range-manipulation heuristics. We now trust LSP ranges directly. See `docs/plans/2026-03-02-symbol-range-redesign-design.md`.
+
 **What happened:**
 Called `replace_symbol` on `impl Tool for EditLines/input_schema`. The LSP's symbol range
 for `input_schema` apparently included the closing `    }` and blank line of the *preceding*
@@ -127,6 +129,8 @@ Applied in both `replace_symbol::call` and `insert_code::call` ("before" case).
 **Status:** ✅ FIXED — `trim_symbol_start` for "before"; `trim_symbol_end` for "after".
 Regression tests: `tests/symbol_lsp.rs::insert_code_before_skips_lead_in`,
 `tests/symbol_lsp.rs::insert_code_after_skips_trail_in`.
+
+> **Resolved by design (2026-03-02):** Symbol range redesign removed all range-manipulation heuristics. We now trust LSP ranges directly. See `docs/plans/2026-03-02-symbol-range-redesign-design.md`.
 
 **What happened:**
 Called `insert_code(name_path="tests/edit_lines_missing_params_errors", position="after")`.
@@ -309,6 +313,8 @@ returned 0 results instead of also timing out.
 **Severity:** High — produces uncompilable code silently
 **Status:** ✅ FIXED — `"before"` branch now calls `scan_backwards_for_docs` after `trim_symbol_start`, walking back past `#[...]` and `///`/`//!` lines before inserting
 
+> **Resolved by design (2026-03-02):** Symbol range redesign removed all range-manipulation heuristics. We now trust LSP ranges directly. See `docs/plans/2026-03-02-symbol-range-redesign-design.md`.
+
 **What happened:**
 Called `insert_code(name_path="CodeExplorerServer", path="src/server.rs", position="before", code="const USER_OUTPUT_ENABLED: bool = false;\n")`.
 Expected the const to land _before_ the doc comment `/// The MCP server handler` that precedes the struct.
@@ -375,6 +381,8 @@ systematic issue with `str::find()` returning `None` for common cases.
 **Severity:** High
 **Status:** ✅ FIXED — `is_declaration_line` guard rejects start lines that don't contain a Rust item keyword; returns `RecoverableError` before touching the file.
 
+> **Resolved by design (2026-03-02):** Symbol range redesign removed all range-manipulation heuristics. We now trust LSP ranges directly. See `docs/plans/2026-03-02-symbol-range-redesign-design.md`.
+
 **What happened:**
 Called `replace_symbol(name_path="format_get_usage_stats", path="src/tools/user_format.rs")`.
 The tool reported `"replaced_lines":"1206-1259"` but the actual function declaration was at line 1164.
@@ -391,6 +399,8 @@ LSP sometimes resolves a `name_path` to an inner local variable binding rather t
 **Date:** 2026-03-02
 **Severity:** High — silently deletes code that follows the target symbol
 **Status:** ✅ FIXED — `clamp_end_to_closing_brace` walks backward from the LSP end until a `}` line is found
+
+> **Resolved by design (2026-03-02):** Symbol range redesign removed all range-manipulation heuristics. We now trust LSP ranges directly. See `docs/plans/2026-03-02-symbol-range-redesign-design.md`.
 
 **What happened:**
 `remove_symbol` on a function that is immediately followed by `const` declarations deleted not only
@@ -508,6 +518,42 @@ blocked waiting for an LSP notification or response that never came.
 ## Template for new entries
 
 ```
+### BUG-017 — `git_blame`: fails with "path does not exist in given tree" when project root is a git subdirectory
+
+**Date:** 2026-03-02
+**Severity:** Medium — tool unusable when active project ≠ git root
+**Status:** Open
+
+**What happened:**
+Activated `tests/fixtures/kotlin-library` as the project root (a subdirectory inside the
+code-explorer git repo). Called `git_blame` on `src/main/kotlin/library/models/Book.kt`.
+Got error: `the path 'main' does not exist in the given tree; class=Tree (14); code=NotFound (-3)`.
+
+The tool correctly discovers the parent `.git` at the code-explorer root, but then tries to
+resolve the file path (`src/main/kotlin/...`) relative to the git root instead of relative to
+the active project root — so the git tree lookup fails.
+
+Switching active project to the actual git root (`/home/marius/work/claude/code-explorer`) and
+calling with the full path (`tests/fixtures/kotlin-library/src/main/kotlin/library/models/Book.kt`)
+works correctly.
+
+**Reproduction hint:**
+```
+activate_project("/some/git-repo/subdir")
+git_blame("path/to/file.kt")  # fails
+```
+
+**Root cause hypothesis:**
+`git_blame` opens the git repo by traversing up from the project root (correct), then builds
+the path to look up in the git tree using the project-root-relative path instead of the
+repo-root-relative path.
+
+**Fix ideas:**
+Strip the project root from the file path, then prepend the git-repo-relative prefix of the
+project root to get the correct repo-relative path for the tree lookup.
+
+---
+
 ### BUG-XXX — <tool name>: <one-line description>
 
 **Date:** YYYY-MM-DD

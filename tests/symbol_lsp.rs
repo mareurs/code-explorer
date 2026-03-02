@@ -1,8 +1,8 @@
 //! Regression tests for LSP-backed symbol tools using a mock LSP client.
 //!
-//! These tests verify the file-splice logic (trim_symbol_start fix for BUG-003/004)
-//! without requiring a live language server. The mock returns pre-configured
-//! symbol positions that reproduce the exact LSP range quirk rust-analyzer exhibits.
+//! These tests verify the "trust LSP" file-splice logic without requiring a live
+//! language server. The mock returns pre-configured symbol positions that reproduce
+//! LSP range quirks (over-extension, degenerate ranges, lead-in artifacts).
 
 use code_explorer::agent::Agent;
 use code_explorer::lsp::{MockLspClient, MockLspProvider, SymbolInfo, SymbolKind};
@@ -63,15 +63,15 @@ fn sym(
     }
 }
 
-// ── BUG-003: replace_symbol preserves the preceding method's closing `}` ──────
+// ── replace_symbol: trust LSP start_line ─────────────────────────────────────
 
-/// When rust-analyzer reports a symbol as starting at the `}` line of the
-/// preceding method, `replace_symbol` must skip that lead-in and start the
-/// replacement at the actual `fn` keyword — not silently delete the `}`.
+/// With "trust LSP" design, when LSP says start_line=0 (the `}` of a preceding
+/// method), we replace from line 0. The preceding `}` is replaced along with the
+/// old body — there is no lead-in skipping.
 #[tokio::test]
-async fn replace_symbol_preserves_preceding_close_brace() {
+async fn replace_symbol_trusts_lsp_start_line() {
     // File layout (0-indexed):
-    //  0: "    }"          ← closing brace of a preceding method (LSP lead-in)
+    //  0: "    }"          ← closing brace of a preceding method (LSP start_line=0)
     //  1: ""               ← blank line
     //  2: "    fn target() {"
     //  3: "        old_body();"
@@ -82,7 +82,7 @@ async fn replace_symbol_preserves_preceding_close_brace() {
         let file = root.join("src/lib.rs");
         MockLspClient::new().with_symbols(
             file.clone(),
-            // LSP reports start_line=0 (the `}` line) — the BUG-003 scenario
+            // LSP reports start_line=0 (the `}` line) — trust LSP, replace from there
             vec![sym("target", 0, 4, file)],
         )
     })
@@ -101,10 +101,7 @@ async fn replace_symbol_preserves_preceding_close_brace() {
         .unwrap();
 
     let result = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
-    assert!(
-        result.contains("    }"),
-        "preceding close brace must be preserved; got:\n{result}"
-    );
+    // With "trust LSP", the preceding `}` is within the LSP range and is replaced
     assert!(
         result.contains("new_body()"),
         "replacement body must be applied; got:\n{result}"
@@ -113,21 +110,13 @@ async fn replace_symbol_preserves_preceding_close_brace() {
         !result.contains("old_body()"),
         "old body must be gone; got:\n{result}"
     );
-    // The `}` must come before the new fn body
-    let brace_pos = result.find("    }").unwrap();
-    let fn_pos = result.find("fn target").unwrap();
-    assert!(
-        brace_pos < fn_pos,
-        "preceding `}}` must appear before fn target; got:\n{result}"
-    );
 }
 
+/// With "trust LSP" design, when LSP says start_line=0 (the `})` of a preceding
+/// method), we replace from line 0. The `})` and `}` lines are gone — no lead-in
+/// skipping.
 #[tokio::test]
-async fn replace_symbol_preserves_paren_close_brace() {
-    // BUG-003 blind spot: `trim_symbol_start` didn't handle `})` patterns (e.g. the closing
-    // of a `json!({...})` macro in a preceding method). The LSP sometimes reports start_line
-    // at the `})` line, which trim previously stopped at rather than skipping.
-    //
+async fn replace_symbol_trusts_lsp_start_with_paren_close() {
     // File layout (0-indexed):
     //  0: "        })"     ← closing `)` of json! macro in the preceding method
     //  1: "    }"          ← closing brace of the preceding method
@@ -141,7 +130,7 @@ async fn replace_symbol_preserves_paren_close_brace() {
         let file = root.join("src/lib.rs");
         MockLspClient::new().with_symbols(
             file.clone(),
-            // LSP reports start_line=0 (the `})` line) — the BUG-003 blind-spot scenario
+            // LSP reports start_line=0 (the `})` line) — trust LSP, replace from there
             vec![sym("target", 0, 5, file)],
         )
     })
@@ -160,14 +149,7 @@ async fn replace_symbol_preserves_paren_close_brace() {
         .unwrap();
 
     let result = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
-    assert!(
-        result.contains("        })"),
-        "preceding `}})` must be preserved; got:\n{result}"
-    );
-    assert!(
-        result.contains("    }"),
-        "preceding method close brace must be preserved; got:\n{result}"
-    );
+    // With "trust LSP", lines 0-5 are replaced — `})` and `}` are gone
     assert!(
         result.contains("new_body()"),
         "replacement body must be applied; got:\n{result}"
@@ -175,13 +157,6 @@ async fn replace_symbol_preserves_paren_close_brace() {
     assert!(
         !result.contains("old_body()"),
         "old body must be gone; got:\n{result}"
-    );
-    // The `})` must come before the new fn body
-    let paren_brace_pos = result.find("        })").unwrap();
-    let fn_pos = result.find("fn target").unwrap();
-    assert!(
-        paren_brace_pos < fn_pos,
-        "preceding `}})` must appear before fn target; got:\n{result}"
     );
 }
 
@@ -221,55 +196,6 @@ async fn replace_symbol_clean_start_line() {
         !result.contains("old()"),
         "old body must be gone; got:\n{result}"
     );
-}
-
-// ── BUG-013: replace_symbol rejects start_line inside function body ───────────
-
-/// When LSP resolves `start_line` to a local variable binding inside a function
-/// (rather than the function declaration), `replace_symbol` must return a
-/// `RecoverableError` and leave the file unchanged.
-///
-///  0: "fn target() {"
-///  1: "    let x = 1;"  ← LSP incorrectly reports start_line=1 — BUG-013
-///  2: "    let y = 2;"
-///  3: "    x + y"
-///  4: "}"
-///  5: "const SENTINEL: &str = \"must survive\";"
-#[tokio::test]
-async fn replace_symbol_rejects_start_line_inside_body() {
-    let src = "fn target() {\n    let x = 1;\n    let y = 2;\n    x + y\n}\nconst SENTINEL: &str = \"must survive\";\n";
-
-    let (dir, ctx) = ctx_with_mock(&[("src/lib.rs", src)], |root| {
-        let file = root.join("src/lib.rs");
-        MockLspClient::new().with_symbols(
-            file.clone(),
-            // LSP incorrectly resolves start to line 1 (inside the body) — BUG-013
-            vec![sym("target", 1, 4, file)],
-        )
-    })
-    .await;
-
-    let err = ReplaceSymbol
-        .call(
-            json!({
-                "path": "src/lib.rs",
-                "name_path": "target",
-                "new_body": "fn target() {\n    replaced();\n}"
-            }),
-            &ctx,
-        )
-        .await
-        .unwrap_err();
-
-    let msg = err.to_string();
-    assert!(
-        msg.contains("start line") || msg.contains("declaration"),
-        "error should mention bad start line; got: {msg}"
-    );
-
-    // File must be completely unchanged — no silent corruption
-    let on_disk = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
-    assert_eq!(on_disk, src, "file must not be modified on error");
 }
 
 // ── BUG-010: insert_code "before" must walk past #[attr] and /// doc lines ────
@@ -327,14 +253,15 @@ async fn insert_code_before_walks_past_attributes_and_doc_comments() {
     );
 }
 
-// ── BUG-004: insert_code "before" skips lead-in ───────────────────────────────
+// ── insert_code: trust LSP start/end ─────────────────────────────────────────
 
-/// When LSP reports a symbol as starting on the `}` of the preceding method,
-/// `insert_code(position="before")` must land AFTER that `}`, not before it.
+/// With "trust LSP", start_line=0 means insert_code(before) inserts at line 0.
+/// No lead-in skipping — find_insert_before_line starts from sym.start_line directly.
+/// The `}` at line 0 is NOT skipped; insertion lands before everything.
 #[tokio::test]
-async fn insert_code_before_skips_lead_in() {
+async fn insert_code_before_trusts_lsp_start() {
     // File layout (0-indexed):
-    //  0: "    }"          ← closing brace of preceding method (LSP lead-in)
+    //  0: "    }"          ← LSP says start_line=0 — trust it, insert before line 0
     //  1: ""               ← blank line
     //  2: "    fn target() {"
     //  3: "    }"
@@ -364,19 +291,12 @@ async fn insert_code_before_skips_lead_in() {
         result.contains("// inserted"),
         "insertion must be present; got:\n{result}"
     );
-    // The `}` at position 0 must remain on its own line
-    let lines: Vec<&str> = result.lines().collect();
-    assert_eq!(
-        lines[0].trim(),
-        "}",
-        "preceding brace must remain on line 0; got:\n{result}"
-    );
-    // Insertion must come AFTER the `}`
-    let brace_pos = result.find("    }").unwrap();
+    // With "trust LSP", insertion at sym.start_line=0 lands before the `}`
     let insert_pos = result.find("// inserted").unwrap();
+    let brace_pos = result.find("    }").unwrap();
     assert!(
-        insert_pos > brace_pos,
-        "insertion must land after the preceding `}}`; got:\n{result}"
+        insert_pos < brace_pos,
+        "with trust LSP, insertion at sym.start_line=0 lands before `}}`; got:\n{result}"
     );
 }
 
@@ -421,13 +341,10 @@ async fn insert_code_after_lands_past_symbol() {
     );
 }
 
-// ── BUG-004: insert_code "after" skips trail-in ─────────────────────────────
-
-/// When LSP over-extends `target`'s `end_line` to include the opening line of
-/// the following symbol (`fn following() {`), `insert_code(position="after")`
-/// must NOT land inside `following`'s body.
+/// With "trust LSP", end_line=3 means insert_code(after) inserts at line 4.
+/// If LSP over-extends, the insertion lands after the overextended range.
 #[tokio::test]
-async fn insert_code_after_skips_trail_in() {
+async fn insert_code_after_trusts_lsp_end() {
     // File layout (0-indexed):
     //  0: "    fn target() {"
     //  1: "        body();"
@@ -440,7 +357,7 @@ async fn insert_code_after_skips_trail_in() {
 
     let (dir, ctx) = ctx_with_mock(&[("src/lib.rs", src)], |root| {
         let file = root.join("src/lib.rs");
-        // LSP reports end_line=3 (the `fn following() {` line) — BUG-004 scenario
+        // LSP reports end_line=3 (the `fn following() {` line) — trust LSP, insert after line 3
         MockLspClient::new().with_symbols(file.clone(), vec![sym("target", 0, 3, file)])
     })
     .await;
@@ -463,26 +380,24 @@ async fn insert_code_after_skips_trail_in() {
         result.contains("// inserted"),
         "insertion must be present; got:\n{result}"
     );
-    // Insertion must land BEFORE `fn following()`, not inside its body
+    // With "trust LSP", insert after line 3 (end_line+1=4)
+    // Insertion lands after `fn following() {` — past the overextended end
     let insert_pos = result.find("// inserted").unwrap();
     let following_fn = result.find("fn following()").unwrap();
-    let inside_pos = result.find("inside()").unwrap();
     assert!(
-        insert_pos < following_fn,
-        "insertion must land before fn following(); got:\n{result}"
-    );
-    assert!(
-        insert_pos < inside_pos,
-        "insertion must not land inside following's body; got:\n{result}"
+        insert_pos > following_fn,
+        "with trust LSP, insertion after overextended end lands past fn following; got:\n{result}"
     );
 }
 
-// ── BUG-014: remove_symbol must not delete sibling items after closing `}` ────
+// ── remove_symbol: trust LSP ranges ──────────────────────────────────────────
 
-/// When LSP over-extends `end_line` past the function's closing `}` to include a
-/// sibling `const`, `remove_symbol` must still only remove the function.
+/// With "trust LSP" design, when LSP over-extends `end_line` to include a
+/// sibling `const`, we trust it — the const is removed along with the function.
+/// This is an LSP inaccuracy, not a bug in remove_symbol. The agent can verify
+/// via find_symbol(include_body=true) to see the same overextended range.
 #[tokio::test]
-async fn remove_symbol_does_not_delete_sibling_const() {
+async fn remove_symbol_trusts_lsp_range_even_when_overextended() {
     // File layout (0-indexed):
     //  0: "fn target() {"
     //  1: "    // body"
@@ -492,7 +407,7 @@ async fn remove_symbol_does_not_delete_sibling_const() {
 
     let (dir, ctx) = ctx_with_mock(&[("src/lib.rs", src)], |root| {
         let file = root.join("src/lib.rs");
-        // LSP incorrectly reports end_line=3 (the const line) instead of 2 — BUG-014
+        // LSP reports end_line=3 (the const line) — trust LSP, remove lines 0-3
         MockLspClient::new().with_symbols(file.clone(), vec![sym("target", 0, 3, file)])
     })
     .await;
@@ -509,23 +424,22 @@ async fn remove_symbol_does_not_delete_sibling_const() {
         .unwrap();
 
     let result = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
-    assert!(
-        result.contains("SENTINEL"),
-        "sibling const must survive remove_symbol; got:\n{result}"
-    );
+    // With "trust LSP", the const is within the LSP range and is removed too
     assert!(
         !result.contains("fn target"),
         "function must be removed; got:\n{result}"
     );
+    assert!(
+        !result.contains("SENTINEL"),
+        "const is within LSP range — removed too (trust LSP); got:\n{result}"
+    );
 }
 
-// ── BUG-016: remove_symbol must handle symbols without closing `}` ────────────
-
-/// A `const` item has no closing `}`. `clamp_end_to_closing_brace` must not
-/// walk backward past the symbol's own range, which would corrupt the file
-/// by producing an inverted range (end < start → content duplication).
+/// With "trust LSP", a `const` item is removed using the raw LSP range (line 6 only).
+/// Doc comments are NOT removed unless the LSP includes them in the range.
+/// No more panic/corruption risk from missing closing brace.
 #[tokio::test]
-async fn remove_symbol_handles_const_without_closing_brace() {
+async fn remove_symbol_const_trusts_lsp_range() {
     // File layout (0-indexed):
     //  0: "fn preceding() {"
     //  1: "    // body"
@@ -560,8 +474,8 @@ async fn remove_symbol_handles_const_without_closing_brace() {
         "const must be removed; got:\n{result}"
     );
     assert!(
-        !result.contains("A constant"),
-        "doc comment must be removed; got:\n{result}"
+        result.contains("A constant"),
+        "doc comment is outside LSP range — survives (trust LSP); got:\n{result}"
     );
     assert!(
         result.contains("fn preceding()"),

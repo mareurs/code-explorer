@@ -65,7 +65,7 @@ Shell access to source files (`.rs`, `.py`, `.ts`, `.go`, etc.) is blocked — u
 - `replace_symbol(name_path, path, new_body)` — replace entire symbol body (preferred for code)
 - `insert_code(name_path, path, code, position)` — insert before or after a named symbol
 - `edit_file(path, old_string, new_string, replace_all?)` — find-and-replace: locates old_string in the file and replaces it with new_string. Must match exactly (whitespace-sensitive). Fails if not found; fails if multiple matches unless replace_all is true. Empty new_string deletes the match. Alternatively, use insert: "prepend" or "append" to add text at the start or end of the file without a string match.
-- `remove_symbol(name_path, path)` — delete a symbol entirely, including its doc comments and attributes
+- `remove_symbol(name_path, path)` — delete a symbol entirely (removes the lines covered by the LSP symbol range)
 - `create_file(path, content)` — create or overwrite a file
 
 **Prefer symbol tools over `edit_file` for source code:**

@@ -245,17 +245,31 @@ fn symbol_to_json(
 /// (`start_line == end_line`, i.e. only the name position), look up the
 /// true declaration end from tree-sitter and return an updated `SymbolInfo`.
 /// If `start_line != end_line` the symbol is returned unchanged.
-fn augment_body_range_from_ast(mut sym: SymbolInfo) -> SymbolInfo {
+/// Detect degenerate LSP ranges where start_line == end_line but tree-sitter
+/// shows the symbol spans multiple lines. Returns RecoverableError instead of
+/// silently fixing — consistent with "trust LSP, validate, fail loudly".
+fn validate_symbol_range(sym: &SymbolInfo) -> anyhow::Result<()> {
     if sym.start_line != sym.end_line {
-        return sym;
+        return Ok(());
     }
     let Ok(ast_syms) = crate::ast::extract_symbols(&sym.file) else {
-        return sym;
+        return Ok(());
     };
-    if let Some(end_line) = find_ast_end_line_in(&ast_syms, &sym.name, sym.start_line) {
-        sym.end_line = end_line;
+    if let Some(ast_end) = find_ast_end_line_in(&ast_syms, &sym.name, sym.start_line) {
+        if ast_end > sym.start_line + 1 {
+            anyhow::bail!(RecoverableError::with_hint(
+                format!(
+                    "LSP returned suspicious range for '{}' (line {}, but AST shows it spans to line {})",
+                    sym.name,
+                    sym.start_line + 1,
+                    ast_end + 1,
+                ),
+                "The LSP server may have returned a selection range instead of the full symbol range. \
+                 Try edit_file for this symbol, or check list_symbols to verify the range.",
+            ));
+        }
     }
-    sym
+    Ok(())
 }
 
 /// Recursively search `symbols` for a symbol with the given name whose
@@ -718,15 +732,11 @@ impl Tool for FindSymbol {
                         || sym.name_path.to_lowercase().contains(&pattern_lower);
                     let kind_ok = kind_filter.map_or(true, |f| matches_kind_filter(&sym.kind, f));
                     if name_ok && kind_ok {
-                        // workspace/symbol returns SymbolInformation whose
-                        // location.range covers only the identifier (start == end).
-                        // Augment with the true declaration range from tree-sitter
-                        // so that include_body returns the full function body.
-                        let sym = if include_body {
-                            augment_body_range_from_ast(sym)
-                        } else {
-                            sym
-                        };
+                        // Validate range but don't silently fix — if degenerate, the agent
+                        // sees the error and can fall back to edit_file.
+                        if include_body {
+                            validate_symbol_range(&sym)?;
+                        }
                         let source = if include_body {
                             std::fs::read_to_string(&sym.file).ok()
                         } else {
@@ -1164,119 +1174,33 @@ impl Tool for Hover {
     }
 }
 
-// ── replace_symbol_body ────────────────────────────────────────────────────
-/// Returns true if `line` looks like a Rust item declaration keyword.
-/// Used to guard against LSP resolving a symbol to an inner local binding
-/// instead of the function/struct/impl declaration (BUG-013).
-fn is_declaration_line(line: &str) -> bool {
-    let t = line.trim();
-    const DECL_PREFIXES: &[&str] = &[
-        "fn ", "pub", "async ", "unsafe ", "extern ", "struct ", "enum ", "impl", "trait ", "mod ",
-        "const ", "type ", "static ", "use ", "#[", "///", "//!",
-    ];
-    DECL_PREFIXES.iter().any(|p| t.starts_with(p))
-}
-/// Walk backward from `end` (exclusive) until the last included line starts with `}`.
-/// Prevents LSP over-extension from including sibling items (constants, functions, etc.)
-/// that follow immediately after a closing brace (BUG-014).
-/// Walk backward from `end` (exclusive) until the last included line starts with `}`.
-/// Prevents LSP over-extension from including sibling items (constants, functions, etc.)
-/// that follow immediately after a closing brace (BUG-014).
+/// Walk upward from a symbol’s start line to find the insertion point that
+/// lands before any doc comments and attributes. Used ONLY for insert_code(before)
+/// positioning — never for modifying a symbol’s own range.
 ///
-/// `floor` prevents walking past the symbol's own start — critical for items that
-/// have no closing `}` (const, static, type aliases, imports). Without a floor,
-/// the walk escapes into unrelated preceding code (BUG-016).
-fn clamp_end_to_closing_brace(end: usize, floor: usize, lines: &[&str]) -> usize {
-    let mut e = end;
-    while e > floor && !lines[e - 1].trim().starts_with('}') {
-        e -= 1;
-    }
-    if e <= floor {
-        // No closing brace found within the symbol's range — trust the LSP end.
-        end
-    } else {
-        e
-    }
-}
-
-/// Advance `start` past any LSP-reported lead-in tokens: closing `}` variants
-/// and blank lines that rust-analyzer includes at the start of a sibling
-/// symbol's range from the preceding declaration.
-///
-/// # BUG-003 / BUG-004
-/// rust-analyzer reports the symbol range for a method as including the closing
-/// `}` (and optional blank line) of the *previous* method. Without this trim,
-/// `replace_symbol` and `insert_code("before")` would silently delete that `}`.
-/// Skip leading lines that belong to the *preceding* symbol's close token or blank
-/// separators, landing on the actual first line of the target declaration.
-///
-/// The LSP sometimes includes the preceding method's closing tokens in the reported
-/// `start_line` (range or selection_range). We skip any line whose trimmed content is
-/// blank or starts with `}` — this catches plain `}`, `})`, `};`, `} // comment`, etc.
-/// No function declaration in any supported language starts with `}`, so this is safe.
-fn trim_symbol_start(start: usize, lines: &[&str]) -> usize {
-    let mut s = start;
-    while s < lines.len() {
-        let t = lines[s].trim();
-        if t.is_empty() || t.starts_with('}') {
-            s += 1;
+/// Krait-style: language-agnostic, recognizes doc comments and attributes from
+/// Rust (#[...]), Python/Java/TS (@decorator), JSDoc/JavaDoc (/** ... */),
+/// and Rust module-level doc comments (//!). Does NOT consume blank lines —
+/// blank lines are structural separators and are left in place.
+fn find_insert_before_line(lines: &[&str], symbol_start: usize) -> usize {
+    let mut cursor = symbol_start;
+    while cursor > 0 {
+        let trimmed = lines[cursor - 1].trim();
+        let is_attr_or_doc = trimmed.starts_with("#[")
+            || trimmed.starts_with('@')
+            || trimmed.starts_with("///")
+            || trimmed.starts_with("//!")
+            || trimmed.starts_with("/**")
+            || trimmed.starts_with("* ")
+            || trimmed == "*/"
+            || trimmed.starts_with("/*");
+        if is_attr_or_doc {
+            cursor -= 1;
         } else {
             break;
         }
     }
-    s
-}
-
-/// Walk backward from an exclusive `end` past any lines that look like the
-/// opening of a *following* symbol (lines that end with `{`) or blank lines.
-/// LSP sometimes extends a symbol's `end_line` past its own closing `}` to
-/// include the first line of the next symbol — the same "lead-in" artifact
-/// that `trim_symbol_start` handles on the other side of the boundary.
-fn trim_symbol_end(end: usize, lines: &[&str]) -> usize {
-    let mut e = end;
-    while e > 0 {
-        let t = lines[e - 1].trim();
-        if t.is_empty() || t.ends_with('{') {
-            e -= 1;
-        } else {
-            break;
-        }
-    }
-    e
-}
-
-/// Scan backwards from `start` to include contiguous doc comments (`///`, `//!`),
-/// attributes (`#[...]`), and blank lines between them. Stops at the first line
-/// that doesn't match these patterns.
-fn scan_backwards_for_docs(start: usize, lines: &[&str]) -> usize {
-    let mut s = start;
-    while s > 0 {
-        let t = lines[s - 1].trim();
-        if t.is_empty() || t.starts_with("///") || t.starts_with("//!") || t.starts_with("#[") {
-            s -= 1;
-        } else {
-            break;
-        }
-    }
-    s
-}
-
-/// Collapse runs of 3+ consecutive blank lines down to 1 blank line.
-fn collapse_blank_lines<'a>(lines: &[&'a str]) -> Vec<&'a str> {
-    let mut result: Vec<&'a str> = Vec::new();
-    let mut blank_run = 0;
-    for &line in lines {
-        if line.trim().is_empty() {
-            blank_run += 1;
-            if blank_run <= 1 {
-                result.push(line);
-            }
-        } else {
-            blank_run = 0;
-            result.push(line);
-        }
-    }
-    result
+    cursor
 }
 
 pub struct ReplaceSymbol;
@@ -1317,24 +1241,26 @@ impl Tool for ReplaceSymbol {
             )
         })?;
 
+        // Validate: catch degenerate LSP ranges (start == end for multi-line symbols)
+        validate_symbol_range(sym)?;
+
         let content = std::fs::read_to_string(&full_path)?;
         let lines: Vec<&str> = content.lines().collect();
 
-        let start = trim_symbol_start(sym.start_line as usize, &lines);
-        let start_line_content = lines.get(start).copied().unwrap_or("");
-        if !is_declaration_line(start_line_content) {
+        let start = sym.start_line as usize;
+        let end = (sym.end_line as usize + 1).min(lines.len());
+
+        if start >= lines.len() {
             return Err(RecoverableError::with_hint(
                 format!(
-                    "replace_symbol: start line {} ({:?}) does not look like a declaration; \
-                     the LSP may have resolved to an inner binding instead of the symbol",
+                    "symbol range out of bounds: start line {} but file has {} lines",
                     start + 1,
-                    start_line_content.trim()
+                    lines.len(),
                 ),
-                "Use list_symbols(path) to verify the symbol exists, then re-check name_path spelling.",
+                "The LSP may have stale data. Try list_symbols(path) to refresh.",
             )
             .into());
         }
-        let end = (sym.end_line as usize + 1).min(lines.len());
 
         let mut new_lines = Vec::new();
         new_lines.extend_from_slice(&lines[..start]);
@@ -1400,7 +1326,7 @@ impl Tool for RemoveSymbol {
     }
 
     fn description(&self) -> &str {
-        "Delete a symbol (function, struct, impl block, test, etc.) by name. Removes the entire declaration including doc comments and attributes."
+        "Delete a symbol (function, struct, impl block, test, etc.) by name. Removes the lines covered by the LSP symbol range."
     }
 
     fn input_schema(&self) -> Value {
@@ -1430,39 +1356,30 @@ impl Tool for RemoveSymbol {
             )
         })?;
 
+        // Validate: catch degenerate LSP ranges
+        validate_symbol_range(sym)?;
+
         let content = std::fs::read_to_string(&full_path)?;
         let lines: Vec<&str> = content.lines().collect();
 
-        let trimmed_start = trim_symbol_start(sym.start_line as usize, &lines);
-        let end = clamp_end_to_closing_brace(
-            (sym.end_line as usize + 1).min(lines.len()),
-            trimmed_start,
-            &lines,
-        );
+        let start = sym.start_line as usize;
+        let end = (sym.end_line as usize + 1).min(lines.len());
 
-        // Scan backwards from trimmed_start to include doc comments and attributes
-        let start = scan_backwards_for_docs(trimmed_start, &lines);
-
-        // Defense-in-depth: inverted range would corrupt the file (BUG-016).
-        if end <= start {
-            anyhow::bail!(RecoverableError::with_hint(
+        if start >= lines.len() {
+            return Err(RecoverableError::with_hint(
                 format!(
-                    "remove_symbol: empty/inverted range (start={}, end={}).                      LSP may have reported an incorrect symbol range for '{}'",
+                    "symbol range out of bounds: start line {} but file has {} lines",
                     start + 1,
-                    end,
-                    name_path,
+                    lines.len(),
                 ),
-                "Try list_symbols(path) to verify the symbol exists with the expected location.",
-            ));
+                "The LSP may have stale data. Try list_symbols(path) to refresh.",
+            )
+            .into());
         }
 
-        // Build new lines: everything before + everything after
         let mut new_lines: Vec<&str> = Vec::new();
         new_lines.extend_from_slice(&lines[..start]);
         new_lines.extend_from_slice(&lines[end..]);
-
-        // Collapse runs of 3+ blank lines down to 1
-        let new_lines = collapse_blank_lines(&new_lines);
 
         write_lines(&full_path, &new_lines, content.ends_with('\n'))?;
         ctx.lsp.notify_file_changed(&full_path).await;
@@ -1561,19 +1478,26 @@ impl Tool for InsertCode {
             )
         })?;
 
+        validate_symbol_range(sym)?;
         let content = std::fs::read_to_string(&full_path)?;
         let lines: Vec<&str> = content.lines().collect();
+        let code_lines: Vec<&str> = code.lines().collect();
         let insert_at = match position {
-            "before" => {
-                let s = trim_symbol_start(sym.start_line as usize, &lines);
-                scan_backwards_for_docs(s, &lines)
-            }
-            _ => trim_symbol_end((sym.end_line as usize + 1).min(lines.len()), &lines),
+            "before" => find_insert_before_line(&lines, sym.start_line as usize),
+            _ => (sym.end_line as usize + 1).min(lines.len()),
         };
 
         let mut new_lines = Vec::new();
         new_lines.extend_from_slice(&lines[..insert_at]);
-        new_lines.extend(code.lines());
+        new_lines.extend(code_lines.iter().copied());
+        if position == "before" {
+            new_lines.push("");
+        } else {
+            let needs_blank = lines.get(insert_at).is_some_and(|l| !l.trim().is_empty());
+            if needs_blank {
+                new_lines.push("");
+            }
+        }
         new_lines.extend_from_slice(&lines[insert_at..]);
 
         write_lines(&full_path, &new_lines, content.ends_with('\n'))?;
@@ -2324,22 +2248,18 @@ impl Point {
         ctx.lsp.shutdown_all().await;
     }
 
-    /// Unit test for the body-range fix — no LSP required.
-    ///
-    /// Simulates what `workspace/symbol` returns for a multi-line function:
-    /// a `SymbolInfo` with `start_line == end_line` (name-only location).
-    /// `augment_body_range_from_ast` must replace end_line with the true
-    /// declaration end from tree-sitter.
+    // ── validate_symbol_range tests ──────────────────────────────────────────
+
+    /// Degenerate range (start == end) where tree-sitter confirms multi-line →
+    /// validate_symbol_range must return Err with "suspicious range".
     #[test]
-    fn augment_body_range_from_ast_fixes_degenerate_range() {
+    fn validate_symbol_range_rejects_degenerate_range() {
         use crate::lsp::SymbolKind;
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.rs");
-        // 4-line function: signature + body + closing brace (0-indexed lines 0..3)
+        // 3-line function (0-indexed lines 0..2)
         std::fs::write(&file, "fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n").unwrap();
 
-        // Simulate the degenerate SymbolInfo that workspace/symbol produces:
-        // start_line == end_line (only the name position was returned).
         let sym = SymbolInfo {
             name: "add".to_string(),
             name_path: "add".to_string(),
@@ -2352,26 +2272,24 @@ impl Point {
             detail: None,
         };
 
-        let augmented = augment_body_range_from_ast(sym);
-
+        let result = validate_symbol_range(&sym);
+        assert!(result.is_err(), "degenerate range should be rejected");
+        let msg = result.unwrap_err().to_string();
         assert!(
-            augmented.end_line > augmented.start_line,
-            "end_line ({}) should be > start_line ({}) after augmentation",
-            augmented.end_line,
-            augmented.start_line
+            msg.contains("suspicious range"),
+            "error should mention suspicious range; got: {msg}"
         );
-        // tree-sitter returns 0-indexed; closing brace is line 2
-        assert_eq!(augmented.end_line, 2);
     }
 
+    /// Non-degenerate range (start != end) → validate_symbol_range accepts it.
     #[test]
-    fn augment_body_range_from_ast_leaves_good_range_unchanged() {
+    fn validate_symbol_range_accepts_good_range() {
         use crate::lsp::SymbolKind;
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.rs");
         std::fs::write(&file, "fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n").unwrap();
 
-        // When start != end (LSP returned a real range), leave it alone.
+        // When start != end (LSP returned a real range), accept it.
         let sym = SymbolInfo {
             name: "add".to_string(),
             name_path: "add".to_string(),
@@ -2384,17 +2302,14 @@ impl Point {
             detail: None,
         };
 
-        let augmented = augment_body_range_from_ast(sym);
-        assert_eq!(
-            augmented.end_line, 5,
-            "should not touch an already-good range"
-        );
+        let result = validate_symbol_range(&sym);
+        assert!(result.is_ok(), "good range should be accepted");
     }
 
-    // ── augment_body_range_from_ast: multi-language coverage ─────────────────
+    // ── validate_symbol_range: multi-language coverage ────────────────────────
 
     #[test]
-    fn augment_body_range_from_ast_python() {
+    fn validate_symbol_range_rejects_degenerate_python() {
         use crate::lsp::SymbolKind;
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.py");
@@ -2416,17 +2331,17 @@ impl Point {
             detail: None,
         };
 
-        let augmented = augment_body_range_from_ast(sym);
+        let result = validate_symbol_range(&sym);
         assert!(
-            augmented.end_line > augmented.start_line,
-            "Python: end_line ({}) should be > start_line ({})",
-            augmented.end_line,
-            augmented.start_line
+            result.is_err(),
+            "Python degenerate range should be rejected"
         );
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("suspicious range"), "got: {msg}");
     }
 
     #[test]
-    fn augment_body_range_from_ast_typescript() {
+    fn validate_symbol_range_rejects_degenerate_typescript() {
         use crate::lsp::SymbolKind;
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.ts");
@@ -2448,18 +2363,17 @@ impl Point {
             detail: None,
         };
 
-        let augmented = augment_body_range_from_ast(sym);
+        let result = validate_symbol_range(&sym);
         assert!(
-            augmented.end_line > augmented.start_line,
-            "TypeScript: end_line ({}) should be > start_line ({})",
-            augmented.end_line,
-            augmented.start_line
+            result.is_err(),
+            "TypeScript degenerate range should be rejected"
         );
-        assert_eq!(augmented.end_line, 3);
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("suspicious range"), "got: {msg}");
     }
 
     #[test]
-    fn augment_body_range_from_ast_go() {
+    fn validate_symbol_range_rejects_degenerate_go() {
         use crate::lsp::SymbolKind;
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.go");
@@ -2481,24 +2395,18 @@ impl Point {
             detail: None,
         };
 
-        let augmented = augment_body_range_from_ast(sym);
-        assert!(
-            augmented.end_line > augmented.start_line,
-            "Go: end_line ({}) should be > start_line ({})",
-            augmented.end_line,
-            augmented.start_line
-        );
-        assert_eq!(augmented.end_line, 5);
+        let result = validate_symbol_range(&sym);
+        assert!(result.is_err(), "Go degenerate range should be rejected");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("suspicious range"), "got: {msg}");
     }
 
     #[test]
-    fn augment_body_range_from_ast_rust_with_doc_comment() {
+    fn validate_symbol_range_rejects_degenerate_rust_with_doc() {
         use crate::lsp::SymbolKind;
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.rs");
         // Doc comment on line 0; fn keyword on line 1.
-        // workspace/symbol would report lsp_start = 1 (the fn line).
-        // tree-sitter also starts at line 1.
         std::fs::write(
             &file,
             "/// Adds two numbers.\nfn add(a: i32, b: i32) -> i32 {\n    let r = a + b;\n    r\n}\n",
@@ -2517,18 +2425,17 @@ impl Point {
             detail: None,
         };
 
-        let augmented = augment_body_range_from_ast(sym);
+        let result = validate_symbol_range(&sym);
         assert!(
-            augmented.end_line > augmented.start_line,
-            "Rust+doc comment: end_line ({}) should be > start_line ({})",
-            augmented.end_line,
-            augmented.start_line
+            result.is_err(),
+            "Rust+doc comment degenerate range should be rejected"
         );
-        assert_eq!(augmented.end_line, 4);
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("suspicious range"), "got: {msg}");
     }
 
     #[test]
-    fn augment_body_range_from_ast_picks_correct_function_among_many() {
+    fn validate_symbol_range_picks_correct_function() {
         use crate::lsp::SymbolKind;
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.rs");
@@ -2551,13 +2458,21 @@ impl Point {
             detail: None,
         };
 
-        let augmented = augment_body_range_from_ast(sym);
-        assert_eq!(augmented.start_line, 4, "start_line should not change");
-        assert_eq!(augmented.end_line, 6, "should match `multiply`, not `add`");
+        let result = validate_symbol_range(&sym);
+        assert!(
+            result.is_err(),
+            "degenerate multiply range should be rejected"
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("multiply"),
+            "error should name the symbol; got: {msg}"
+        );
+        assert!(msg.contains("suspicious range"), "got: {msg}");
     }
 
     #[test]
-    fn augment_body_range_from_ast_name_not_in_file_leaves_unchanged() {
+    fn validate_symbol_range_accepts_when_ast_unavailable() {
         use crate::lsp::SymbolKind;
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.rs");
@@ -2569,21 +2484,22 @@ impl Point {
             kind: SymbolKind::Function,
             file: file.clone(),
             start_line: 0,
-            end_line: 0, // degenerate, but no match in AST
+            end_line: 0, // degenerate, but name not in AST
             start_col: 3,
             children: vec![],
             detail: None,
         };
 
-        let augmented = augment_body_range_from_ast(sym);
-        assert_eq!(
-            augmented.end_line, 0,
-            "unknown name: range must stay unchanged"
+        // Name not in file — AST can't confirm anything, so we accept the range
+        let result = validate_symbol_range(&sym);
+        assert!(
+            result.is_ok(),
+            "unknown name: range should be accepted (no AST confirmation to the contrary)"
         );
     }
 
     #[test]
-    fn augment_body_range_from_ast_recurses_into_children_for_method() {
+    fn validate_symbol_range_recurses_into_children() {
         use crate::lsp::SymbolKind;
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.rs");
@@ -2606,14 +2522,13 @@ impl Point {
             detail: None,
         };
 
-        let augmented = augment_body_range_from_ast(sym);
+        let result = validate_symbol_range(&sym);
         assert!(
-            augmented.end_line > augmented.start_line,
-            "method in impl: end_line ({}) should be > start_line ({})",
-            augmented.end_line,
-            augmented.start_line
+            result.is_err(),
+            "method in impl with degenerate range should be rejected"
         );
-        assert_eq!(augmented.end_line, 4);
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("suspicious range"), "got: {msg}");
     }
 
     #[tokio::test]
@@ -4146,11 +4061,11 @@ fn main() {
         assert_eq!(result, "\u{1F600} bar\n");
     }
 
-    // ── scan_backwards_for_docs tests ──────────────────────────────────────
+    // ── find_insert_before_line tests ──────────────────────────────────────
 
     #[test]
-    fn scan_backwards_includes_doc_comments() {
-        // Blank line between code and docs is included (eaten as separator)
+    fn find_insert_before_line_walks_past_doc_comments() {
+        // Blank line between code and docs is NOT consumed (stops at blank line)
         let lines = vec![
             "other code",
             "",
@@ -4158,41 +4073,25 @@ fn main() {
             "/// Doc line 2",
             "fn foo() {}",
         ];
-        assert_eq!(scan_backwards_for_docs(4, &lines), 1);
+        assert_eq!(find_insert_before_line(&lines, 4), 2);
     }
 
     #[test]
-    fn scan_backwards_includes_attributes() {
+    fn find_insert_before_line_walks_past_attributes() {
         let lines = vec!["other code", "#[test]", "#[ignore]", "fn foo() {}"];
-        assert_eq!(scan_backwards_for_docs(3, &lines), 1);
+        assert_eq!(find_insert_before_line(&lines, 3), 1);
     }
 
     #[test]
-    fn scan_backwards_stops_at_code() {
+    fn find_insert_before_line_stops_at_code() {
         let lines = vec!["let x = 1;", "fn foo() {}"];
-        assert_eq!(scan_backwards_for_docs(1, &lines), 1);
+        assert_eq!(find_insert_before_line(&lines, 1), 1);
     }
 
     #[test]
-    fn scan_backwards_at_start_of_file() {
+    fn find_insert_before_line_at_start_of_file() {
         let lines = vec!["/// Doc", "fn foo() {}"];
-        assert_eq!(scan_backwards_for_docs(1, &lines), 0);
-    }
-
-    // ── collapse_blank_lines tests ─────────────────────────────────────────
-
-    #[test]
-    fn collapse_blank_lines_collapses_triple() {
-        let lines = vec!["a", "", "", "", "b"];
-        let result = collapse_blank_lines(&lines);
-        assert_eq!(result, vec!["a", "", "b"]);
-    }
-
-    #[test]
-    fn collapse_blank_lines_preserves_single() {
-        let lines = vec!["a", "", "b"];
-        let result = collapse_blank_lines(&lines);
-        assert_eq!(result, vec!["a", "", "b"]);
+        assert_eq!(find_insert_before_line(&lines, 1), 0);
     }
 
     #[test]
