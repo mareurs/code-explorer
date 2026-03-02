@@ -191,6 +191,77 @@ impl OutputBuffer {
         inner.entries.get(canonical).cloned()
     }
 
+    /// Like [`get`], but also returns whether the entry was refreshed from disk.
+    /// Only `@file_*` entries with `source_path` set can refresh; all others return `false`.
+    pub fn get_with_refresh_flag(&self, id: &str) -> Option<(BufferEntry, bool)> {
+        let canonical = id.strip_suffix(".err").unwrap_or(id);
+        let mut inner = self.inner.lock().unwrap();
+
+        if !inner.entries.contains_key(canonical) {
+            return None;
+        }
+
+        // For file-backed entries: check mtime and refresh if stale.
+        let needs_refresh = if let Some(entry) = inner.entries.get(canonical) {
+            if let Some(ref path) = entry.source_path {
+                match std::fs::metadata(path) {
+                    Err(_) => {
+                        // File gone or unreadable — evict and return None.
+                        inner.order.retain(|k| k != canonical);
+                        inner.entries.remove(canonical);
+                        return None;
+                    }
+                    Ok(meta) => {
+                        let mtime_ms = meta
+                            .modified()
+                            .ok()
+                            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                            .map(|d| d.as_millis() as u64)
+                            .unwrap_or(0);
+                        mtime_ms > entry.timestamp
+                    }
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if needs_refresh {
+            let path = inner.entries[canonical].source_path.clone().unwrap();
+            match std::fs::read_to_string(&path) {
+                Ok(content) => {
+                    let now = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    if let Some(entry) = inner.entries.get_mut(canonical) {
+                        entry.stdout = content;
+                        entry.timestamp = now;
+                    }
+                }
+                Err(_) => {
+                    // Became unreadable between stat and read — evict.
+                    inner.order.retain(|k| k != canonical);
+                    inner.entries.remove(canonical);
+                    return None;
+                }
+            }
+        }
+
+        // Refresh LRU order: move to end.
+        if let Some(pos) = inner.order.iter().position(|k| k == canonical) {
+            inner.order.remove(pos);
+            inner.order.push(canonical.to_string());
+        }
+        inner
+            .entries
+            .get(canonical)
+            .cloned()
+            .map(|e| (e, needs_refresh))
+    }
+
     /// Store file content under a `@file_*` handle.
     ///
     /// Content goes in `stdout`; `stderr` is empty; `exit_code` is 0.
@@ -944,6 +1015,55 @@ mod tests {
         let buf = OutputBuffer::new(10);
         let id = buf.store("echo hi".to_string(), "hi".to_string(), "".to_string(), 0);
         let entry = buf.get(&id).unwrap();
+        assert_eq!(entry.stdout, "hi");
+    }
+
+    #[test]
+    fn get_with_refresh_flag_returns_true_when_file_changed() {
+        use std::fs;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.txt");
+        fs::write(&path, "original").unwrap();
+
+        let buf = OutputBuffer::new(10);
+        let id = buf.store_file(path.to_string_lossy().to_string(), "original".to_string());
+
+        // Overwrite file and bump mtime so it's definitely newer
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        fs::write(&path, "modified").unwrap();
+        let future = std::time::SystemTime::now() + std::time::Duration::from_secs(2);
+        filetime::set_file_mtime(&path, filetime::FileTime::from_system_time(future)).unwrap();
+
+        let (entry, was_refreshed) = buf.get_with_refresh_flag(&id).unwrap();
+        assert!(was_refreshed, "should report refresh when file changed");
+        assert_eq!(entry.stdout, "modified");
+    }
+
+    #[test]
+    fn get_with_refresh_flag_returns_false_when_file_unchanged() {
+        use std::fs;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.txt");
+        fs::write(&path, "content").unwrap();
+
+        let buf = OutputBuffer::new(10);
+        let id = buf.store_file(path.to_string_lossy().to_string(), "content".to_string());
+
+        let (entry, was_refreshed) = buf.get_with_refresh_flag(&id).unwrap();
+        assert!(
+            !was_refreshed,
+            "should not report refresh when file unchanged"
+        );
+        assert_eq!(entry.stdout, "content");
+    }
+
+    #[test]
+    fn get_with_refresh_flag_returns_false_for_cmd_entries() {
+        let buf = OutputBuffer::new(10);
+        let id = buf.store("echo hi".to_string(), "hi".to_string(), String::new(), 0);
+
+        let (entry, was_refreshed) = buf.get_with_refresh_flag(&id).unwrap();
+        assert!(!was_refreshed, "cmd entries never refresh");
         assert_eq!(entry.stdout, "hi");
     }
 }
