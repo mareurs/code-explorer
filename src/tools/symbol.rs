@@ -890,6 +890,21 @@ impl Tool for FindReferences {
             .await?;
 
         let root = ctx.agent.require_project_root().await?;
+
+        // Filter out references inside build-artifact directories. LSP servers often
+        // index generated files (target/, node_modules/, dist/, …) and including them
+        // creates noise without actionable information.
+        let total_raw = refs.len();
+        let refs: Vec<_> = refs
+            .into_iter()
+            .filter(|loc| {
+                uri_to_path(loc.uri.as_str())
+                    .map(|p| !path_in_excluded_dir(&p))
+                    .unwrap_or(true)
+            })
+            .collect();
+        let excluded = total_raw - refs.len();
+
         let locations: Vec<Value> = refs
             .iter()
             .map(|loc| {
@@ -922,6 +937,9 @@ impl Tool for FindReferences {
         let total = locations.len();
         let (locations, overflow) = guard.cap_items(locations, "This symbol has many references. Use detail_level='full' with offset/limit to paginate");
         let mut result = json!({ "references": locations, "total": total });
+        if excluded > 0 {
+            result["excluded_from_build_dirs"] = json!(excluded);
+        }
         if let Some(ov) = overflow {
             result["overflow"] = OutputGuard::overflow_json(&ov);
         }
@@ -2014,6 +2032,33 @@ fn uri_to_path(uri: &str) -> Option<PathBuf> {
     url::Url::parse(uri)
         .ok()
         .and_then(|u| u.to_file_path().ok())
+}
+
+/// Returns `true` if any component of `path` is a well-known build-artifact directory.
+/// Used by `find_references` to suppress noise from generated/vendored code.
+fn path_in_excluded_dir(path: &std::path::Path) -> bool {
+    const EXCLUDED: &[&str] = &[
+        "target",
+        "node_modules",
+        ".git",
+        "dist",
+        "build",
+        "out",
+        "__pycache__",
+        ".mypy_cache",
+        ".pytest_cache",
+        "vendor",
+        ".gradle",
+        ".idea",
+        ".vscode",
+    ];
+    path.components().any(|c| {
+        if let std::path::Component::Normal(name) = c {
+            EXCLUDED.iter().any(|&ex| name == std::ffi::OsStr::new(ex))
+        } else {
+            false
+        }
+    })
 }
 
 /// Apply LSP TextEdits to a source string, returning the modified version.

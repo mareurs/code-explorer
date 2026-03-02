@@ -218,4 +218,50 @@ mod tests {
         assert!(text.contains("2"), "got: {text}");
         assert!(text.contains("src/a.rs"), "got: {text}");
     }
+
+    // BUG-017: git_blame must work when the active project root is a subdirectory
+    // of the git repo root. `blame_file` must compute a repo-relative path that
+    // prefixes the project-root offset so git2 can find the file in the tree.
+    #[tokio::test]
+    async fn blame_works_when_project_root_is_git_subdirectory() {
+        let dir = tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+
+        // Create a file inside a subdirectory
+        let subdir = dir.path().join("subproject");
+        std::fs::create_dir_all(&subdir).unwrap();
+        std::fs::write(
+            subdir.join("lib.rs"),
+            "pub fn add(a: i32, b: i32) -> i32 { a + b }\n",
+        )
+        .unwrap();
+
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("subproject/lib.rs")).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let sig = git2::Signature::now("Test", "test@test.com").unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "initial commit", &tree, &[])
+            .unwrap();
+
+        // Activate project root at the subdirectory (not the git repo root)
+        std::fs::create_dir_all(subdir.join(".code-explorer")).unwrap();
+        let agent = Agent::new(Some(subdir.clone())).await.unwrap();
+        let ctx = ToolContext {
+            agent,
+            lsp: LspManager::new_arc(),
+            output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(20)),
+            progress: None,
+        };
+
+        let result = GitBlame
+            .call(json!({ "path": "lib.rs" }), &ctx)
+            .await
+            .expect("blame should work when project root is a git subdirectory");
+
+        let lines = result["lines"].as_array().unwrap();
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0]["content"].as_str().unwrap().contains("add"));
+    }
 }

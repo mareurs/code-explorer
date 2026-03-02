@@ -17,14 +17,26 @@ pub struct BlameLine {
 /// Return blame information for each line of `file` (relative to repo root).
 pub fn blame_file(repo_path: &Path, file: &Path) -> Result<Vec<BlameLine>> {
     let repo = open_repo(repo_path)?;
-    let blame = repo.blame_file(file, None)?;
+
+    // `open_repo` uses `Repository::discover`, which may find a .git directory
+    // above `repo_path` (e.g. project root is a subdirectory of the git repo).
+    // git2 needs paths relative to the repo workdir, not the project root.
+    let repo_file = match repo.workdir() {
+        Some(workdir) => match repo_path.strip_prefix(workdir) {
+            Ok(prefix) if !prefix.as_os_str().is_empty() => prefix.join(file),
+            _ => file.to_path_buf(),
+        },
+        None => file.to_path_buf(),
+    };
+
+    let blame = repo.blame_file(&repo_file, None)?;
 
     // Read the COMMITTED version (not working dir) to avoid line-count mismatch
-    let source = match committed_content(&repo, file) {
+    let source = match committed_content(&repo, &repo_file) {
         Ok(content) => content,
         Err(_) => {
             // Fallback to disk if file is not yet in any commit (brand new file)
-            std::fs::read_to_string(repo.workdir().unwrap_or(repo_path).join(file))?
+            std::fs::read_to_string(repo_path.join(file))?
         }
     };
 
