@@ -160,7 +160,7 @@ fn matches_kind_filter(kind: &crate::lsp::SymbolKind, filter: &str) -> bool {
 #[allow(clippy::too_many_arguments)]
 fn collect_matching(
     symbols: &[SymbolInfo],
-    pattern: &str,
+    name_ok: &dyn Fn(&SymbolInfo) -> bool,
     include_body: bool,
     source_code: Option<&str>,
     depth: usize,
@@ -169,10 +169,8 @@ fn collect_matching(
     kind_filter: Option<&str>,
 ) {
     for sym in symbols {
-        let name_ok = sym.name.to_lowercase().contains(pattern)
-            || sym.name_path.to_lowercase().contains(pattern);
         let kind_ok = kind_filter.map_or(true, |f| matches_kind_filter(&sym.kind, f));
-        if name_ok && kind_ok {
+        if name_ok(sym) && kind_ok {
             out.push(symbol_to_json(
                 sym,
                 include_body,
@@ -184,7 +182,7 @@ fn collect_matching(
         // Always recurse so nested matches inside filtered-out parents are still found.
         collect_matching(
             &sym.children,
-            pattern,
+            name_ok,
             include_body,
             source_code,
             depth,
@@ -676,6 +674,17 @@ impl Tool for FindSymbol {
 
         let root = ctx.agent.require_project_root().await?;
         let pattern_lower = pattern.to_lowercase();
+        // Build the name predicate once: exact matching for name_path lookups,
+        // case-insensitive substring matching for pattern searches.
+        let name_ok: Box<dyn Fn(&SymbolInfo) -> bool + Send> = if is_name_path {
+            let p = pattern.to_owned();
+            Box::new(move |sym: &SymbolInfo| symbol_name_matches(sym, &p))
+        } else {
+            let p = pattern_lower.clone();
+            Box::new(move |sym: &SymbolInfo| {
+                sym.name.to_lowercase().contains(&p) || sym.name_path.to_lowercase().contains(&p)
+            })
+        };
         let mut matches = vec![];
 
         if let Some(rel) = get_path_param(&input, false)? {
@@ -718,7 +727,7 @@ impl Tool for FindSymbol {
                 };
                 collect_matching(
                     &symbols,
-                    &pattern_lower,
+                    name_ok.as_ref(),
                     include_body,
                     source.as_deref(),
                     depth,
@@ -811,7 +820,7 @@ impl Tool for FindSymbol {
                         };
                         collect_matching(
                             &symbols,
-                            &pattern_lower,
+                            name_ok.as_ref(),
                             include_body,
                             source.as_deref(),
                             depth,
@@ -2481,6 +2490,13 @@ mod tests {
         Arc::new(crate::tools::output_buffer::OutputBuffer::new(20))
     }
 
+    /// Substring predicate for `collect_matching` tests: case-insensitive match on name or name_path.
+    fn substr_pred(pat: &'static str) -> impl Fn(&SymbolInfo) -> bool {
+        move |sym: &SymbolInfo| {
+            sym.name.to_lowercase().contains(pat) || sym.name_path.to_lowercase().contains(pat)
+        }
+    }
+
     /// Create a test Cargo project and return the context.
     async fn rust_project_ctx() -> Option<(tempfile::TempDir, ToolContext)> {
         if !std::process::Command::new("rust-analyzer")
@@ -3633,7 +3649,7 @@ fn main() {
         let mut results = vec![];
         collect_matching(
             &symbols,
-            "mystruct/my_method",
+            &substr_pred("mystruct/my_method"),
             false,
             None,
             0,
@@ -3651,7 +3667,7 @@ fn main() {
         let mut results2 = vec![];
         collect_matching(
             &symbols,
-            "my_method",
+            &substr_pred("my_method"),
             false,
             None,
             0,
@@ -3853,7 +3869,7 @@ fn main() {
         let mut results = vec![];
         collect_matching(
             &symbols,
-            "mystruct/my_method",
+            &substr_pred("mystruct/my_method"),
             false,
             None,
             0,
@@ -3939,7 +3955,7 @@ fn main() {
         let mut out = vec![];
         collect_matching(
             &symbols,
-            "weeklygrid",
+            &substr_pred("weeklygrid"),
             false,
             None,
             0,
@@ -3980,7 +3996,16 @@ fn main() {
         ];
 
         let mut out = vec![];
-        collect_matching(&symbols, "foo", false, None, 0, true, &mut out, None);
+        collect_matching(
+            &symbols,
+            &substr_pred("foo"),
+            false,
+            None,
+            0,
+            true,
+            &mut out,
+            None,
+        );
         assert_eq!(
             out.len(),
             2,

@@ -6,7 +6,7 @@
 
 use code_explorer::agent::Agent;
 use code_explorer::lsp::{MockLspClient, MockLspProvider, SymbolInfo, SymbolKind};
-use code_explorer::tools::symbol::{InsertCode, RemoveSymbol, ReplaceSymbol};
+use code_explorer::tools::symbol::{FindSymbol, InsertCode, RemoveSymbol, ReplaceSymbol};
 use code_explorer::tools::{Tool, ToolContext};
 use serde_json::json;
 
@@ -671,4 +671,65 @@ async fn remove_symbol_const_trusts_lsp_range() {
         use_count, 1,
         "use import must not be duplicated; found {use_count} occurrences in:\n{result}"
     );
+}
+
+// ── find_symbol: name_path exact match (BUG-011) ──────────────────────────────
+
+/// Searching by name_path must return only the exact symbol, not child symbols
+/// whose name_path happens to contain the query as a substring.
+///
+/// Regression for BUG-011: `collect_matching` used `contains()`, so a Variable
+/// child with name_path "my_fn/local_var" matched a query for "my_fn".
+#[tokio::test]
+async fn find_symbol_name_path_does_not_return_local_variable_children() {
+    use code_explorer::lsp::SymbolKind;
+
+    let src = "fn my_fn() {\n    let local_var = 1;\n}\n";
+
+    let (_dir, ctx) = ctx_with_mock(&[("src/lib.rs", src)], |root| {
+        let file = root.join("src/lib.rs");
+        let child = SymbolInfo {
+            name: "local_var".to_string(),
+            name_path: "my_fn/local_var".to_string(),
+            kind: SymbolKind::Variable,
+            file: file.clone(),
+            start_line: 1,
+            end_line: 1,
+            start_col: 4,
+            children: vec![],
+            detail: None,
+        };
+        let parent = SymbolInfo {
+            name: "my_fn".to_string(),
+            name_path: "my_fn".to_string(),
+            kind: SymbolKind::Function,
+            file: file.clone(),
+            start_line: 0,
+            end_line: 2,
+            start_col: 0,
+            children: vec![child],
+            detail: None,
+        };
+        MockLspClient::new().with_symbols(file, vec![parent])
+    })
+    .await;
+
+    let result = FindSymbol
+        .call(
+            json!({
+                "name_path": "my_fn",
+                "path": "src/lib.rs"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let symbols = result["symbols"].as_array().unwrap();
+    assert_eq!(
+        symbols.len(),
+        1,
+        "name_path lookup must return exactly the matching symbol, not its Variable children; got: {symbols:?}"
+    );
+    assert_eq!(symbols[0]["name"], "my_fn");
 }

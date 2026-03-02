@@ -15,30 +15,6 @@ cargo run -- index --project .     # Build embedding index
 
 **Always run `cargo fmt`, `cargo clippy`, and `cargo test` before completing any task.**
 
-## Source File Rules — MANDATORY
-
-**FORBIDDEN on source files (`.rs`, `.ts`, `.py`, `.go`, `.java`, etc.):**
-- `Read` — never use the native Read tool on source code
-- `Edit` / `Write` — never use native Edit or Write tools on source code
-- `Grep` / `Glob` — never use native Grep or Glob on source code
-
-**REQUIRED instead — use code-explorer MCP tools exclusively:**
-| Task | Tool |
-|---|---|
-| Read a file's symbols | `list_symbols(path)` |
-| Read a function body | `find_symbol(name, include_body=true)` |
-| Read function signatures | `list_functions(path)` |
-| Regex search | `search_pattern(pattern)` |
-| Concept search | `semantic_search(query)` |
-| Read non-source files | `read_file(path)` — markdown, toml, json only |
-| Edit a function/struct | `replace_symbol(name_path, path, new_body)` |
-| Insert code | `insert_code(name_path, path, code, position)` |
-| Small targeted edits | `edit_file(path, old_string, new_string)` — via code-explorer |
-| Delete a symbol | `remove_symbol(name_path, path)` |
-| Rename across codebase | `rename_symbol(name_path, path, new_name)` |
-
-These rules are **not enforced by a hard block** (Claude Code's PreToolUse hooks don't fire for built-in read-only tools). They are enforced by these instructions. Violating them produces worse results: raw file dumps instead of structured symbol trees, token waste, and bypassed code-explorer intelligence.
-
 ## Tool Misbehavior Log — MANDATORY
 
 **`docs/TODO-tool-misbehaviors.md` is a living document. You MUST maintain it.**
@@ -154,17 +130,23 @@ This project has a companion Claude Code plugin at **`../claude-plugins/code-exp
 **What it does:**
 - `SessionStart` hook (`hooks/session-start.sh`) — injects tool guidance + memory hints into every session
 - `SubagentStart` hook (`hooks/subagent-guidance.sh`) — same for all subagents
-- `PreToolUse` hook on `Bash` (`hooks/pre-tool-guard.sh`) — **hard-blocks all Bash calls**; use `run_command` instead
-- `PreToolUse` hook on `Grep|Glob|Read` (`hooks/pre-tool-guard.sh`) — registered but **does not fire** (Claude Code architectural limitation: built-in read-only tools bypass the permission pipeline)
+- `PreToolUse` hook on `Grep|Glob|Read` (`hooks/semantic-tool-router.sh`) — **blocks native Read/Grep/Glob on source files**, redirecting to code-explorer MCP tools
 
-**Bash is hard-blocked.** You will see `PreToolUse:Bash hook blocking error` if you try. Always use `run_command` instead.
+**Critical implication for working on this codebase:**
+The `PreToolUse` hook will **block** any attempt to use the native `Read`, `Grep`, or `Glob` tools on source code files (`.rs`, `.ts`, `.py`, etc). You will see `PreToolUse:Read hook error` if you try.
 
-**Read/Grep/Glob on source files are not hard-blocked** — the hook is registered but never invoked by Claude Code. Enforcement is via the "Source File Rules" section above (instructions-based).
+**You MUST use code-explorer's own MCP tools to read source code:**
+- `mcp__code-explorer__list_symbols(path)` — see all symbols in a file/dir
+- `mcp__code-explorer__find_symbol(name, include_body=true)` — read a function body
+- `mcp__code-explorer__list_functions(path)` — quick signatures
+- `mcp__code-explorer__search_pattern(pattern)` — regex search
+- `mcp__code-explorer__semantic_search(query)` — concept-level search
+- `mcp__code-explorer__read_file(path)` — for non-source files (markdown, toml, json)
 
 **Configuration:**
 - Auto-detects code-explorer from `.mcp.json` or `~/.claude/settings.json`
 - Can be overridden via `.claude/code-explorer-routing.json`
-- `block_reads: false` in that config to disable Bash blocking
+- `block_reads: false` in that config to disable blocking (dev/debug use)
 
 ## Docs
 
