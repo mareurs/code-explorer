@@ -19,6 +19,19 @@ to reflect the 23-tool post-restructure surface. Minimize token cost in server i
 - Superpowers research identified effective forcing patterns: Iron Laws, anti-rationalization
   tables, decision matrices, gate functions
 
+## Addendum: Context-Aware `read_file` Navigation
+
+The context-aware `read_file` design (`docs/plans/2026-03-03-context-aware-read-file-design.md`)
+introduces format-specific navigation parameters that replace the `run_command("jq ...")` pattern:
+
+- **Markdown:** `read_file(path, heading="## Section")` — jump to a heading
+- **JSON:** `read_file(path, json_path="$.key")` — extract a JSON subtree
+- **TOML/YAML:** `read_file(path, toml_key="section")` — extract a config section
+
+These are documented in `server_instructions.md` now (all 3 types). The onboarding system
+prompt template includes a "File Navigation" section with project-specific examples.
+`build_system_prompt_draft()` generates hints based on detected config files.
+
 ## Token Budget
 
 | File | Current | Target | Rationale |

@@ -54,7 +54,8 @@ These are non-negotiable. Violating the letter IS violating the spirit.
 | Run a shell command | `run_command(command)` | ~~piped commands~~ |
 | Index a library | `index_project(scope="lib:name")` | ~~removed `index_library`~~ |
 | Project health check | `project_status` | ~~removed `get_config`, `index_status`, `get_usage_stats`~~ |
-| Persistent notes | `memory(action="read\|write\|list\|delete")` | ~~removed 4 separate memory tools~~ |
+| Persistent notes | `memory(action="read\|write\|list\|delete")` | ~~`write_memory`, `read_memory`, `list_memories`, `delete_memory`~~ |
+| Git line history | `run_command("git blame file")` | ~~removed `git_blame` tool~~ |
 
 ## Anti-Patterns — STOP if you catch yourself doing these
 
@@ -62,6 +63,7 @@ These are non-negotiable. Violating the letter IS violating the spirit.
 |---|---|---|
 | `read_file("src/main.rs")` to read source | `list_symbols("src/main.rs")` then `find_symbol(name, include_body=true)` | Symbol tools are structured + token-efficient |
 | `read_file` then scan for a function | `find_symbol("function_name")` directly | Skip the file, go straight to the symbol |
+| `run_command("jq '.key' @file_ref")` to query JSON | `read_file(path, json_path="$.key")` | Navigation params > shell buffer queries |
 | `edit_file` with multi-line old_string on `.rs`/`.py`/`.ts` | `replace_symbol(name_path, path, new_body)` | Structural edits > fragile string matching |
 | `edit_file` to delete a function | `remove_symbol(name_path, path)` | LSP knows the exact range |
 | `edit_file` to add code after a function | `insert_code(name_path, path, code, "after")` | Position-aware, no string matching |
@@ -80,8 +82,13 @@ use the right tool. Small shortcuts compound into large context waste.
 ### File I/O
 
 - `read_file(path)` — read a file. Short files return content directly; large files
-  (>200 lines) return a smart summary + `@file_*` ref. Source code summaries include
-  top-level symbols. Use `start_line`/`end_line` for targeted excerpts.
+  (>200 lines) return a structural summary + `@file_*` ref with line ranges.
+  Navigate into large files by format instead of querying buffers:
+  - **Markdown:** summary shows heading tree → `read_file(path, heading="## Section")`
+  - **JSON:** summary shows key schema → `read_file(path, json_path="$.key")`
+  - **TOML/YAML:** summary shows table structure → `read_file(path, toml_key="section")`
+  - Source code summaries include top-level symbols. Use `start_line`/`end_line` for excerpts.
+  Prefer `list_symbols` / `find_symbol` over `read_file` for source code navigation.
 - `list_dir(path)` — list files and directories. Pass `recursive=true` for a full tree.
 - `search_pattern(pattern)` — regex search across files. Pass `context_lines` for
   merged context blocks. Scope with `path=`, limit with `max_results` (default 50).
