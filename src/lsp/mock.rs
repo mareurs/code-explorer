@@ -26,8 +26,6 @@ impl MockLspClient {
 
     /// Pre-load symbol results for a given file path.
     /// The path must match exactly what the tool passes to `document_symbols`.
-    /// Pre-load symbol results for a given file path.
-    /// The path must match exactly what the tool passes to `document_symbols`.
     pub fn with_symbols(mut self, path: impl Into<PathBuf>, syms: Vec<SymbolInfo>) -> Self {
         self.symbols.insert(path.into(), syms);
         self

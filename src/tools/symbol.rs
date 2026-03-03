@@ -779,8 +779,14 @@ impl Tool for FindSymbol {
                                         Some(resolved) => resolved,
                                         None => {
                                             // document_symbols fallback failed too — propagate
+                                            // original error. validate_symbol_range already failed
+                                            // once, but re-run to get the exact error message.
                                             validate_symbol_range(&sym)?;
-                                            unreachable!()
+                                            // Defensive: if file changed between calls, bail instead of panic
+                                            anyhow::bail!(RecoverableError::with_hint(
+                                                format!("Could not resolve body range for '{}'", sym.name),
+                                                "Try find_symbol with path= parameter to use document_symbols directly.",
+                                            ));
                                         }
                                     }
                                 }
@@ -5334,6 +5340,153 @@ fn main() {
         assert!(
             body.contains("let y = x + 1"),
             "body should contain function contents; got: {body}"
+        );
+    }
+
+    #[test]
+    fn find_matching_symbol_finds_top_level() {
+        use crate::lsp::SymbolKind;
+        let symbols = vec![SymbolInfo {
+            name: "foo".to_string(),
+            name_path: "foo".to_string(),
+            kind: SymbolKind::Function,
+            file: PathBuf::from("lib.rs"),
+            start_line: 10,
+            end_line: 20,
+            start_col: 0,
+            children: vec![],
+            detail: None,
+        }];
+        let result = find_matching_symbol(&symbols, "foo", 10);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().end_line, 20);
+    }
+
+    #[test]
+    fn find_matching_symbol_finds_nested_child() {
+        use crate::lsp::SymbolKind;
+        let child = SymbolInfo {
+            name: "bar".to_string(),
+            name_path: "Foo/bar".to_string(),
+            kind: SymbolKind::Function,
+            file: PathBuf::from("lib.rs"),
+            start_line: 15,
+            end_line: 18,
+            start_col: 4,
+            children: vec![],
+            detail: None,
+        };
+        let parent = SymbolInfo {
+            name: "Foo".to_string(),
+            name_path: "Foo".to_string(),
+            kind: SymbolKind::Struct,
+            file: PathBuf::from("lib.rs"),
+            start_line: 10,
+            end_line: 20,
+            start_col: 0,
+            children: vec![child],
+            detail: None,
+        };
+        let result = find_matching_symbol(&[parent], "bar", 15);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().end_line, 18);
+    }
+
+    #[test]
+    fn find_matching_symbol_returns_none_on_name_mismatch() {
+        use crate::lsp::SymbolKind;
+        let symbols = vec![SymbolInfo {
+            name: "foo".to_string(),
+            name_path: "foo".to_string(),
+            kind: SymbolKind::Function,
+            file: PathBuf::from("lib.rs"),
+            start_line: 10,
+            end_line: 20,
+            start_col: 0,
+            children: vec![],
+            detail: None,
+        }];
+        let result = find_matching_symbol(&symbols, "bar", 10);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn find_matching_symbol_returns_none_when_line_too_far() {
+        use crate::lsp::SymbolKind;
+        let symbols = vec![SymbolInfo {
+            name: "foo".to_string(),
+            name_path: "foo".to_string(),
+            kind: SymbolKind::Function,
+            file: PathBuf::from("lib.rs"),
+            start_line: 10,
+            end_line: 20,
+            start_col: 0,
+            children: vec![],
+            detail: None,
+        }];
+        // lsp_start=13 → abs_diff(10, 13) = 3 > 1 → no match
+        let result = find_matching_symbol(&symbols, "foo", 13);
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn find_symbol_propagates_error_when_fallback_also_fails() {
+        use crate::lsp::{mock::MockLspClient, mock::MockLspProvider, SymbolInfo, SymbolKind};
+
+        let dir = tempfile::tempdir().unwrap();
+        let src_dir = dir.path().join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let file = src_dir.join("lib.rs");
+        std::fs::write(
+            &file,
+            "fn helper(x: i32) -> i32 {\n    let y = x + 1;\n    y * 2\n}\n",
+        )
+        .unwrap();
+
+        // workspace/symbol returns degenerate range
+        let degenerate = SymbolInfo {
+            name: "helper".to_string(),
+            name_path: "helper".to_string(),
+            kind: SymbolKind::Function,
+            file: file.clone(),
+            start_line: 0,
+            end_line: 0,
+            start_col: 3,
+            children: vec![],
+            detail: None,
+        };
+
+        // document_symbols returns NOTHING — fallback will fail
+        let mock = MockLspClient::new().with_workspace_symbols(vec![degenerate]);
+        // Note: NOT calling .with_symbols() — document_symbols will return empty vec
+        let lsp = MockLspProvider::with_client(mock);
+
+        // Use the same ToolContext setup pattern as the other test
+        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
+        let ctx = ToolContext {
+            agent,
+            lsp,
+            output_buffer: buf(),
+            progress: None,
+        };
+
+        let result = FindSymbol
+            .call(
+                json!({
+                    "pattern": "helper",
+                    "include_body": true,
+                }),
+                &ctx,
+            )
+            .await;
+
+        // Should fail with the original RecoverableError
+        let err = result.expect_err("should propagate error when fallback fails");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("suspicious range"),
+            "error should mention suspicious range; got: {msg}"
         );
     }
 }
