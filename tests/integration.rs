@@ -170,7 +170,7 @@ async fn workflow_analyze_ast() {
 
 #[tokio::test]
 async fn workflow_project_memory_config() {
-    use code_explorer::tools::config::{ActivateProject, GetConfig};
+    use code_explorer::tools::config::{ActivateProject, ProjectStatus};
     use code_explorer::tools::memory::{ListMemories, ReadMemory, WriteMemory};
 
     let (dir, ctx) = project_with_files(&[("src/main.rs", "fn main() {}\n")]).await;
@@ -182,8 +182,8 @@ async fn workflow_project_memory_config() {
         .unwrap();
     assert_eq!(activate_result["status"], "ok");
 
-    // Step 2: Get config
-    let config = GetConfig.call(json!({}), &ctx).await.unwrap();
+    // Step 2: Get project status
+    let config = ProjectStatus.call(json!({}), &ctx).await.unwrap();
     assert!(config["config"].is_object());
     assert!(config["project_root"].is_string());
 

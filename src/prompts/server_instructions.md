@@ -1,6 +1,6 @@
 code-explorer MCP server: high-performance semantic code intelligence.
 Provides file operations, symbol navigation (LSP), AST analysis (tree-sitter),
-git blame, semantic search (embeddings), and project memory.
+semantic search (embeddings), and project memory.
 
 **Subagents and spawned agents SHOULD use code-explorer too.** If you spawn a subagent or delegate to another agent, instruct it to use code-explorer tools for all code navigation — do not fall back to native Read/Grep/Glob on source files.
 
@@ -15,8 +15,7 @@ git blame, semantic search (embeddings), and project memory.
 - `find_references(name_path, path)` — find all usages
 - `goto_definition(path, line)` — jump to a symbol's definition via LSP. Auto-discovers libraries.
 - `hover(path, line)` — get type info and documentation for a symbol at a given position. Complements find_symbol (name lookup) and goto_definition (navigation).
-- `list_functions(path)` — quick function/method signatures (tree-sitter, no LSP)
-- `list_docs(path)` — extract all docstrings and doc comments from a file (tree-sitter)
+- `list_symbols(path, include_docs=true)` — also returns docstrings alongside symbols (tree-sitter)
 
 **You know the concept → semantic search:**
 - `semantic_search(query)` → then drill down with `list_symbols` / `find_symbol(include_body=true)`
@@ -34,7 +33,7 @@ git blame, semantic search (embeddings), and project memory.
   files the summary includes top-level symbols. Prefer `list_symbols` /
   `find_symbol` for source code navigation — they are more structured and
   token-efficient.
-- `git_blame(path)` — who last changed each line and in which commit
+- `run_command("git blame path")` — who last changed each line and in which commit
 
 **List directory contents:**
 - `list_dir(path)` — list files and directories. Pass `recursive=true` for a full tree.
@@ -87,11 +86,11 @@ Multi-line edits on source files (`.rs`, `.py`, `.ts`, `.go`, etc.) are blocked 
 
 `find_symbol` auto-discovers libraries. Use `scope: "lib:<name>"` on symbol/search tools.
 - `list_libraries` — show registered libraries and their status
-- `index_library(name)` — build embedding index for a library
+- `index_project(scope='lib:name')` — build embedding index for a library
 
 ### Other local repositories
 
-- **Quick peek** (few files): use absolute paths — `list_dir`, `read_file`, `list_functions`, `search_pattern` all work without switching projects
+- **Quick peek** (few files): use absolute paths — `list_dir`, `read_file`, `list_symbols`, `search_pattern` all work without switching projects
 - **Deep dive** (symbols, references, semantic search): `activate_project("/absolute/path")` first, explore, then switch back
 
 ## Output Modes
@@ -130,18 +129,16 @@ don't probe the same `@ref` multiple times for overlapping information.
 
 - `onboarding` — initial project discovery: detect languages, read key files (README, CLAUDE.md, build file), create config, generate `system_prompt_draft`. Returns `features_md` path if found, or `features_suggestion` if not. Use `force: true` to re-scan.
 - `activate_project(path)` — switch the active project root. Required after `EnterWorktree`.
-- `get_config` — show active project config and server settings
-- `index_project` — build or incrementally update the semantic search index
-- `index_status` — index stats, staleness, and drift scores. Pass `threshold` to query drift.
+- `project_status` — active project config, index health, usage telemetry, library summary. Pass `threshold` for drift.
+- `index_project` — build or incrementally update the semantic search index. Pass `scope='lib:name'` for libraries.
 
 ### Memory (persistent per-project knowledge)
 
-- `write_memory(topic, content)` — persist knowledge (topic is path-like, e.g. 'debugging/async-patterns')
-- `read_memory(topic)` — retrieve a stored entry
-- `list_memories` — list all topics
-- `delete_memory(topic)` — remove an entry
-- `write_memory(topic, content, private=true)` — store in project-local private store (not surfaced in system instructions; use for sensitive or session-specific notes)
-- `list_memories(include_private=true)` — returns both shared and private memories in `{ shared: [...], private: [...] }` shape
+- `memory(action, topic?, content?)` — CRUD for persistent project knowledge.
+  - `action: "write"` — `topic` + `content` required. `private=true` for gitignored store.
+  - `action: "read"` — `topic` required. `private=true` to read from private store.
+  - `action: "list"` — lists all topics. `include_private=true` returns `{ shared, private }`.
+  - `action: "delete"` — `topic` required.
 
 ## Project Customization
 

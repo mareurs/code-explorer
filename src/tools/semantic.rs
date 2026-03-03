@@ -147,19 +147,83 @@ impl Tool for IndexProject {
         "index_project"
     }
     fn description(&self) -> &str {
-        "Build or incrementally update the semantic search index for the active project."
+        "Build or incrementally update the semantic search index for the active project. \
+         Use scope='lib:<name>' to index a registered library (replaces index_library)."
     }
     fn input_schema(&self) -> Value {
         json!({
             "type": "object",
             "properties": {
                 "force": { "type": "boolean", "default": false,
-                    "description": "Force full reindex, ignoring cached file hashes" }
+                    "description": "Force full reindex, ignoring cached file hashes" },
+                "scope": {
+                    "type": "string",
+                    "default": "project",
+                    "description": "Scope to index: 'project' (default) to index the active project, or 'lib:<name>' to index a registered library. Replaces index_library."
+                }
             }
         })
     }
     async fn call(&self, input: Value, ctx: &ToolContext) -> anyhow::Result<Value> {
         use crate::agent::IndexingState;
+
+        let scope_str = input["scope"].as_str().unwrap_or("project");
+
+        // Library scope: delegate to library indexing logic (replaces index_library tool)
+        if let Some(lib_name) = scope_str.strip_prefix("lib:") {
+            let force = input["force"].as_bool().unwrap_or(false);
+
+            let (root, lib_path) = {
+                let inner = ctx.agent.inner.read().await;
+                let project = inner.active_project.as_ref().ok_or_else(|| {
+                    crate::tools::RecoverableError::with_hint(
+                        "No active project. Use activate_project first.",
+                        "Call activate_project(\"/path/to/project\") to set the active project.",
+                    )
+                })?;
+                let entry = project.library_registry.lookup(lib_name).ok_or_else(|| {
+                    crate::tools::RecoverableError::with_hint(
+                        format!("Library '{}' not found in registry.", lib_name),
+                        "Use list_libraries to see registered libraries.",
+                    )
+                })?;
+                (project.root.clone(), entry.path.clone())
+            };
+
+            let source = format!("lib:{}", lib_name);
+            crate::embed::index::build_library_index(&root, &lib_path, &source, force).await?;
+
+            {
+                let mut inner = ctx.agent.inner.write().await;
+                let project = inner.active_project.as_mut().unwrap();
+                if let Some(entry) = project.library_registry.lookup_mut(lib_name) {
+                    entry.indexed = true;
+                }
+                let registry_path = project.root.join(".code-explorer").join("libraries.json");
+                project.library_registry.save(&registry_path)?;
+            }
+
+            let source2 = source.clone();
+            let root2 = root.clone();
+            let (file_count, chunk_count) = tokio::task::spawn_blocking(move || {
+                let conn = crate::embed::index::open_db(&root2)?;
+                let by_source = crate::embed::index::index_stats_by_source(&conn)?;
+                let lib_stats = by_source.get(&source2);
+                anyhow::Ok((
+                    lib_stats.map_or(0, |s| s.file_count),
+                    lib_stats.map_or(0, |s| s.chunk_count),
+                ))
+            })
+            .await??;
+
+            return Ok(json!({
+                "status": "ok",
+                "library": lib_name,
+                "source": source,
+                "files_indexed": file_count,
+                "chunks": chunk_count,
+            }));
+        }
 
         let force = input["force"].as_bool().unwrap_or(false);
         let root = ctx.agent.require_project_root().await?;

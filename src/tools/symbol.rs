@@ -351,7 +351,8 @@ impl Tool for ListSymbols {
     }
     fn description(&self) -> &str {
         "Return a tree of symbols (functions, classes, methods, etc.) in a file or directory. \
-         Uses LSP for accurate results."
+         Uses LSP for accurate results. Pass include_docs=true to also return docstrings \
+         (replaces list_docs). Signatures are always included (replaces list_functions)."
     }
     fn input_schema(&self) -> Value {
         json!({
@@ -362,7 +363,12 @@ impl Tool for ListSymbols {
                 "detail_level": { "type": "string", "description": "Output detail: omit or 'exploring' for compact (default), 'full' for complete with bodies" },
                 "offset": { "type": "integer", "description": "Skip this many files (focused mode pagination)" },
                 "limit": { "type": "integer", "description": "Max files per page (focused mode, default 50)" },
-                "scope": { "type": "string", "description": "Search scope: 'project' (default), 'libraries', 'all', or 'lib:<name>'", "default": "project" }
+                "scope": { "type": "string", "description": "Search scope: 'project' (default), 'libraries', 'all', or 'lib:<name>'", "default": "project" },
+                "include_docs": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "When true, include docstrings for each file alongside symbols (tree-sitter). Replaces list_docs."
+                }
             }
         })
     }
@@ -370,7 +376,24 @@ impl Tool for ListSymbols {
         let rel_path = get_path_param(&input, false)?.unwrap_or(".");
         let depth = input["depth"].as_u64().unwrap_or(1) as usize;
         let guard = OutputGuard::from_input(&input);
+        let include_docs = input["include_docs"].as_bool().unwrap_or(false);
         let _scope = crate::library::scope::Scope::parse(input["scope"].as_str());
+
+        // Helper: collect docstrings for a file path as a JSON array
+        let collect_docstrings = |path: &std::path::Path| -> Vec<Value> {
+            crate::ast::extract_docstrings(path)
+                .unwrap_or_default()
+                .iter()
+                .map(|d| {
+                    json!({
+                        "symbol_name": d.symbol_name,
+                        "content": d.content,
+                        "start_line": d.start_line + 1,
+                        "end_line": d.end_line + 1,
+                    })
+                })
+                .collect()
+        };
 
         // If the path contains glob metacharacters, expand and aggregate
         if is_glob(rel_path) {
@@ -401,10 +424,14 @@ impl Tool for ListSymbols {
                                 symbol_to_json(s, include_body, source.as_deref(), depth, false)
                             })
                             .collect();
-                        result.push(json!({
+                        let mut entry = json!({
                             "file": rel.display().to_string(),
                             "symbols": json_symbols,
-                        }));
+                        });
+                        if include_docs {
+                            entry["docstrings"] = json!(collect_docstrings(file_path));
+                        }
+                        result.push(entry);
                     }
                 }
             }
@@ -479,9 +506,16 @@ impl Tool for ListSymbols {
                 let mut result =
                     json!({ "file": rel_path, "symbols": json_symbols, "total": total });
                 result["overflow"] = OutputGuard::overflow_json(&ov);
+                if include_docs {
+                    result["docstrings"] = json!(collect_docstrings(&full_path));
+                }
                 return Ok(result);
             }
-            Ok(json!({ "file": rel_path, "symbols": json_symbols }))
+            let mut result = json!({ "file": rel_path, "symbols": json_symbols });
+            if include_docs {
+                result["docstrings"] = json!(collect_docstrings(&full_path));
+            }
+            Ok(result)
         } else if full_path.is_dir() {
             // Collect file paths from directory.
             // Project root → walk recursively so nested src/ files are found.
@@ -552,10 +586,14 @@ impl Tool for ListSymbols {
                         )
                     })
                     .collect();
-                result.push(json!({
+                let mut entry = json!({
                     "file": rel.display().to_string(),
                     "symbols": json_symbols,
-                }));
+                });
+                if include_docs {
+                    entry["docstrings"] = json!(collect_docstrings(path));
+                }
+                result.push(entry);
             }
             let mut result_json = json!({ "directory": rel_path, "files": result });
             if let Some(ov) = file_overflow {

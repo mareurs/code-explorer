@@ -18,19 +18,16 @@ use serde_json::Value;
 
 use crate::agent::Agent;
 use crate::tools::{
-    ast::{ListDocs, ListFunctions},
-    config::{ActivateProject, GetConfig},
+    config::{ActivateProject, ProjectStatus},
     file::{CreateFile, EditFile, FindFile, ListDir, ReadFile, SearchPattern},
-    git::GitBlame,
-    library::{IndexLibrary, ListLibraries},
-    memory::{DeleteMemory, ListMemories, ReadMemory, WriteMemory},
+    library::ListLibraries,
+    memory::Memory,
     progress,
-    semantic::{IndexProject, IndexStatus, SemanticSearch},
+    semantic::{IndexProject, SemanticSearch},
     symbol::{
         FindReferences, FindSymbol, GotoDefinition, Hover, InsertCode, ListSymbols, RemoveSymbol,
         RenameSymbol, ReplaceSymbol,
     },
-    usage::GetUsageStats,
     workflow::{Onboarding, RunCommand},
     Tool, ToolContext,
 };
@@ -79,28 +76,16 @@ impl CodeExplorerServer {
             Arc::new(RemoveSymbol),
             Arc::new(InsertCode),
             Arc::new(RenameSymbol),
-            // AST tools (stub — require tree-sitter wiring)
-            Arc::new(ListFunctions),
-            Arc::new(ListDocs),
-            // Git tools
-            Arc::new(GitBlame),
-            // Memory tools (stub — require Agent project root)
-            Arc::new(WriteMemory),
-            Arc::new(ReadMemory),
-            Arc::new(ListMemories),
-            Arc::new(DeleteMemory),
-            // Semantic search tools (stub — require embed engine)
+            // Memory tools
+            Arc::new(Memory),
+            // Semantic search tools
             Arc::new(SemanticSearch),
             Arc::new(IndexProject),
-            Arc::new(IndexStatus),
-            // Config tools (stub — require Agent wiring)
+            // Config tools
             Arc::new(ActivateProject),
-            Arc::new(GetConfig),
+            Arc::new(ProjectStatus),
             // Library tools
             Arc::new(ListLibraries),
-            Arc::new(IndexLibrary),
-            // Usage monitoring
-            Arc::new(GetUsageStats),
         ];
         let output_buffer = Arc::new(crate::tools::output_buffer::OutputBuffer::new(20));
         Self {
@@ -504,7 +489,6 @@ mod tests {
     #[tokio::test]
     async fn server_registers_all_tools() {
         let (_dir, server) = make_server().await;
-        // Verify expected tool count matches the registered tools
         let expected_tools = [
             "read_file",
             "list_dir",
@@ -523,28 +507,20 @@ mod tests {
             "remove_symbol",
             "goto_definition",
             "hover",
-            "list_functions",
-            "list_docs",
-            "git_blame",
-            "write_memory",
-            "read_memory",
-            "list_memories",
-            "delete_memory",
+            "memory",
             "semantic_search",
             "index_project",
-            "index_status",
             "activate_project",
-            "get_config",
+            "project_status",
             "list_libraries",
-            "index_library",
-            "get_usage_stats",
         ];
         assert_eq!(
             server.tools.len(),
             expected_tools.len(),
-            "tool count mismatch: expected {}, got {}",
+            "tool count mismatch: expected {}, got {}\nregistered: {:?}",
             expected_tools.len(),
-            server.tools.len()
+            server.tools.len(),
+            server.tools.iter().map(|t| t.name()).collect::<Vec<_>>()
         );
         for name in &expected_tools {
             assert!(

@@ -213,6 +213,139 @@ impl Tool for DeleteMemory {
     }
 }
 
+pub struct Memory;
+
+#[async_trait::async_trait]
+impl Tool for Memory {
+    fn name(&self) -> &str {
+        "memory"
+    }
+
+    fn description(&self) -> &str {
+        "Persistent project memory — action: \"read\", \"write\", \"list\", \"delete\". \
+         topic is a path-like key (e.g. 'debugging/async-patterns'). \
+         Pass private=true to use the gitignored private store."
+    }
+
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "required": ["action"],
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["read", "write", "list", "delete"],
+                    "description": "Operation to perform"
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "Required for read/write/delete. Path-like key, e.g. 'debugging/async-patterns'."
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Required for write. The content to persist."
+                },
+                "private": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "If true, use the gitignored private store."
+                },
+                "include_private": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "For list: also return private topics. Returns { shared, private } instead of { topics }."
+                }
+            }
+        })
+    }
+
+    async fn call(&self, input: Value, ctx: &ToolContext) -> anyhow::Result<Value> {
+        let action = super::require_str_param(&input, "action")?;
+        match action {
+            "write" => {
+                let topic = super::require_str_param(&input, "topic")?;
+                let content = super::require_str_param(&input, "content")?;
+                let private = input["private"].as_bool().unwrap_or(false);
+                ctx.agent
+                    .with_project(|p| {
+                        if private {
+                            p.private_memory.write(topic, content)?;
+                        } else {
+                            p.memory.write(topic, content)?;
+                        }
+                        Ok(json!("ok"))
+                    })
+                    .await
+            }
+            "read" => {
+                let topic = super::require_str_param(&input, "topic")?;
+                let private = input["private"].as_bool().unwrap_or(false);
+                ctx.agent
+                    .with_project(|p| {
+                        let store = if private {
+                            &p.private_memory
+                        } else {
+                            &p.memory
+                        };
+                        match store.read(topic)? {
+                            Some(content) => Ok(json!({ "content": content })),
+                            None => Err(RecoverableError::with_hint(
+                                format!("topic '{}' not found", topic),
+                                "Use memory(action='list') to see available topics",
+                            )
+                            .into()),
+                        }
+                    })
+                    .await
+            }
+            "list" => {
+                let include_private = input["include_private"].as_bool().unwrap_or(false);
+                ctx.agent
+                    .with_project(|p| {
+                        if include_private {
+                            Ok(json!({ "shared": p.memory.list()?, "private": p.private_memory.list()? }))
+                        } else {
+                            Ok(json!({ "topics": p.memory.list()? }))
+                        }
+                    })
+                    .await
+            }
+            "delete" => {
+                let topic = super::require_str_param(&input, "topic")?;
+                let private = input["private"].as_bool().unwrap_or(false);
+                ctx.agent
+                    .with_project(|p| {
+                        if private {
+                            p.private_memory.delete(topic)?;
+                        } else {
+                            p.memory.delete(topic)?;
+                        }
+                        Ok(json!("ok"))
+                    })
+                    .await
+            }
+            _ => Err(RecoverableError::with_hint(
+                format!(
+                    "unknown action '{}'. Must be one of: read, write, list, delete",
+                    action
+                ),
+                "Pass action: 'read', 'write', 'list', or 'delete'",
+            )
+            .into()),
+        }
+    }
+
+    fn format_compact(&self, result: &Value) -> Option<String> {
+        if result["topics"].is_array() || result["shared"].is_array() {
+            Some(format_list_memories(result))
+        } else if result["content"].is_string() {
+            Some(format_read_memory(result))
+        } else {
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -601,5 +734,75 @@ mod tests {
             out.contains("Agent → Server → Tools"),
             "should show full content"
         );
+    }
+
+    #[tokio::test]
+    async fn memory_write_and_read_via_dispatch() {
+        let (dir, ctx) = test_ctx_with_project().await;
+        let tool = Memory;
+
+        // write
+        let w = tool
+            .call(
+                json!({ "action": "write", "topic": "test/key", "content": "hello" }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+        assert_eq!(w, json!("ok"));
+
+        // read
+        let r = tool
+            .call(json!({ "action": "read", "topic": "test/key" }), &ctx)
+            .await
+            .unwrap();
+        assert_eq!(r["content"], json!("hello"));
+
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn memory_list_via_dispatch() {
+        let (dir, ctx) = test_ctx_with_project().await;
+        let tool = Memory;
+        tool.call(
+            json!({ "action": "write", "topic": "a", "content": "x" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let result = tool.call(json!({ "action": "list" }), &ctx).await.unwrap();
+        let topics = result["topics"].as_array().expect("expected topics array");
+        assert!(topics.iter().any(|t| t.as_str() == Some("a")));
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn memory_delete_via_dispatch() {
+        let (dir, ctx) = test_ctx_with_project().await;
+        let tool = Memory;
+        tool.call(
+            json!({ "action": "write", "topic": "to_delete", "content": "x" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        tool.call(json!({ "action": "delete", "topic": "to_delete" }), &ctx)
+            .await
+            .unwrap();
+        let result = tool
+            .call(json!({ "action": "read", "topic": "to_delete" }), &ctx)
+            .await;
+        assert!(result.is_err(), "expected error reading deleted topic");
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn memory_unknown_action_returns_recoverable_error() {
+        let (dir, ctx) = test_ctx_with_project().await;
+        let tool = Memory;
+        let result = tool.call(json!({ "action": "explode" }), &ctx).await;
+        assert!(result.is_err());
+        drop(dir);
     }
 }

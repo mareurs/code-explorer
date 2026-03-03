@@ -326,14 +326,7 @@ pub fn check_tool_access(tool_name: &str, config: &PathSecurityConfig) -> Result
                 );
             }
         }
-        "git_blame" => {
-            if !config.git_enabled {
-                bail!(
-                    "Git tools are disabled. Set security.git_enabled = true in .code-explorer/project.toml to enable."
-                );
-            }
-        }
-        "semantic_search" | "index_project" | "index_status" => {
+        "semantic_search" | "index_project" => {
             if !config.indexing_enabled {
                 bail!(
                     "Indexing tools are disabled. Set security.indexing_enabled = true in .code-explorer/project.toml to enable."
@@ -806,23 +799,10 @@ mod tests {
     }
 
     #[test]
-    fn git_disabled_blocks_git_tools() {
-        let mut config = PathSecurityConfig::default();
-        config.git_enabled = false;
-        for tool in &["git_blame"] {
-            assert!(
-                check_tool_access(tool, &config).is_err(),
-                "{} should be blocked",
-                tool
-            );
-        }
-    }
-
-    #[test]
     fn indexing_disabled_blocks_search_tools() {
         let mut config = PathSecurityConfig::default();
         config.indexing_enabled = false;
-        for tool in &["semantic_search", "index_project", "index_status"] {
+        for tool in &["semantic_search", "index_project"] {
             assert!(
                 check_tool_access(tool, &config).is_err(),
                 "{} should be blocked",
