@@ -18,7 +18,7 @@ impl Tool for ReadFile {
     }
 
     fn description(&self) -> &str {
-        "Read the contents of a file. Optionally restrict to a line range. Large files (>200 lines) are automatically buffered and returned as a summary + @file_* handle. Use start_line + end_line to read a specific range directly. For symbol-level navigation of source code, prefer symbol tools."
+        "Read the contents of a file. Optionally restrict to a line range. Large files (>200 lines) are automatically buffered and returned as a summary + @file_* handle. Use start_line + end_line to read a specific range directly. For symbol-level navigation of source code, prefer symbol tools. Format-aware navigation: use heading for Markdown sections, json_path for JSON subtrees, toml_key for TOML tables or YAML sections."
     }
 
     fn input_schema(&self) -> Value {
@@ -29,7 +29,10 @@ impl Tool for ReadFile {
                 "path": { "type": "string", "description": "File path relative to project root (also accepted: file_path)" },
                 "file_path": { "type": "string", "description": "Alias for path" },
                 "start_line": { "type": "integer", "description": "First line to return (1-indexed). Must be paired with end_line." },
-                "end_line": { "type": "integer", "description": "Last line to return (1-indexed, inclusive). Must be paired with start_line." }
+                "end_line": { "type": "integer", "description": "Last line to return (1-indexed, inclusive). Must be paired with start_line." },
+                "heading": { "type": "string", "description": "Extract a Markdown section by heading text (e.g. \"## Authentication\"). Returns section content with structural metadata. Mutually exclusive with start_line/end_line and other navigation params." },
+                "json_path": { "type": "string", "description": "Extract a JSON subtree by path (e.g. \"$.dependencies\", \"$.users[0]\"). Returns pretty-printed content with type info. Mutually exclusive with start_line/end_line and other navigation params." },
+                "toml_key": { "type": "string", "description": "Extract a TOML table or YAML section by key (e.g. \"dependencies\", \"database\"). Returns section content with structural metadata. Mutually exclusive with start_line/end_line and other navigation params." }
             }
         })
     }
@@ -57,6 +60,31 @@ impl Tool for ReadFile {
         // Extract line range (both must be present for a targeted read)
         let start_line = input["start_line"].as_u64();
         let end_line = input["end_line"].as_u64();
+
+        // Navigation parameters
+        let heading = input["heading"].as_str();
+        let json_path = input["json_path"].as_str();
+        let toml_key = input["toml_key"].as_str();
+        let nav_param_count = [heading.is_some(), json_path.is_some(), toml_key.is_some()]
+            .iter()
+            .filter(|&&x| x)
+            .count();
+
+        if nav_param_count > 1 {
+            return Err(RecoverableError::with_hint(
+                "only one navigation parameter allowed at a time",
+                "Use heading OR json_path OR toml_key, not multiple",
+            )
+            .into());
+        }
+
+        if nav_param_count > 0 && (start_line.is_some() || end_line.is_some()) {
+            return Err(RecoverableError::with_hint(
+                "navigation parameters are mutually exclusive with start_line/end_line",
+                "Use either heading/json_path/toml_key OR start_line+end_line",
+            )
+            .into());
+        }
 
         // Determine source tag
         let source_tag = {
@@ -94,6 +122,106 @@ impl Tool for ReadFile {
             _ => anyhow::anyhow!("failed to read {}: {}", resolved.display(), e),
         })?;
 
+        // Handle heading navigation
+        if let Some(heading_query) = heading {
+            let file_type =
+                crate::tools::file_summary::detect_file_type(&resolved.to_string_lossy());
+            if !matches!(
+                file_type,
+                crate::tools::file_summary::FileSummaryType::Markdown
+            ) {
+                return Err(RecoverableError::with_hint(
+                    "heading parameter is only supported for Markdown files",
+                    "For JSON files use json_path, for TOML/YAML use toml_key",
+                )
+                .into());
+            }
+            let result =
+                crate::tools::file_summary::extract_markdown_section(&text, heading_query)?;
+            // If extracted section is itself large, buffer it
+            if result.content.lines().count() > crate::tools::file_summary::FILE_BUFFER_THRESHOLD {
+                let file_id = ctx.output_buffer.store_file(
+                    resolved.to_string_lossy().to_string(),
+                    result.content.clone(),
+                );
+                return Ok(json!({
+                    "line_range": [result.line_range.0, result.line_range.1],
+                    "breadcrumb": result.breadcrumb,
+                    "siblings": result.siblings,
+                    "format": "markdown",
+                    "file_id": file_id,
+                    "hint": format!("Section content stored as {}. Query with: run_command(\"grep/sed {}\")", file_id, file_id),
+                }));
+            }
+            return Ok(json!({
+                "content": result.content,
+                "line_range": [result.line_range.0, result.line_range.1],
+                "breadcrumb": result.breadcrumb,
+                "siblings": result.siblings,
+                "format": "markdown",
+            }));
+        }
+
+        // Handle json_path navigation
+        if let Some(jp) = json_path {
+            let file_type =
+                crate::tools::file_summary::detect_file_type(&resolved.to_string_lossy());
+            if !matches!(file_type, crate::tools::file_summary::FileSummaryType::Json) {
+                return Err(RecoverableError::with_hint(
+                    "json_path parameter is only supported for JSON files",
+                    "For Markdown files use heading, for TOML/YAML use toml_key",
+                )
+                .into());
+            }
+            let (content, type_name, count) =
+                crate::tools::file_summary::extract_json_path(&text, jp)?;
+            let mut result = json!({
+                "content": content,
+                "path": jp,
+                "type": type_name,
+                "format": "json",
+            });
+            if let Some(c) = count {
+                result["count"] = json!(c);
+            }
+            return Ok(result);
+        }
+
+        // Handle toml_key navigation
+        if let Some(tk) = toml_key {
+            let file_type =
+                crate::tools::file_summary::detect_file_type(&resolved.to_string_lossy());
+            match file_type {
+                crate::tools::file_summary::FileSummaryType::Toml => {
+                    let result = crate::tools::file_summary::extract_toml_key(&text, tk)?;
+                    return Ok(json!({
+                        "content": result.content,
+                        "line_range": [result.line_range.0, result.line_range.1],
+                        "breadcrumb": result.breadcrumb,
+                        "siblings": result.siblings,
+                        "format": "toml",
+                    }));
+                }
+                crate::tools::file_summary::FileSummaryType::Yaml => {
+                    let result = crate::tools::file_summary::extract_yaml_key(&text, tk)?;
+                    return Ok(json!({
+                        "content": result.content,
+                        "line_range": [result.line_range.0, result.line_range.1],
+                        "breadcrumb": result.breadcrumb,
+                        "siblings": result.siblings,
+                        "format": "yaml",
+                    }));
+                }
+                _ => {
+                    return Err(RecoverableError::with_hint(
+                        "toml_key parameter is only supported for TOML and YAML files",
+                        "For Markdown files use heading, for JSON use json_path",
+                    )
+                    .into());
+                }
+            }
+        }
+
         // If explicit line range given, validate then use it directly (no capping, no buffering)
         if let (Some(start), Some(end)) = (start_line, end_line) {
             if start == 0 || end < start {
@@ -128,6 +256,15 @@ impl Tool for ReadFile {
                     }
                     crate::tools::file_summary::FileSummaryType::Markdown => {
                         crate::tools::file_summary::summarize_markdown(&text)
+                    }
+                    crate::tools::file_summary::FileSummaryType::Json => {
+                        crate::tools::file_summary::summarize_json(&text)
+                    }
+                    crate::tools::file_summary::FileSummaryType::Yaml => {
+                        crate::tools::file_summary::summarize_yaml(&text)
+                    }
+                    crate::tools::file_summary::FileSummaryType::Toml => {
+                        crate::tools::file_summary::summarize_toml(&text)
                     }
                     crate::tools::file_summary::FileSummaryType::Config => {
                         crate::tools::file_summary::summarize_config(&text)
@@ -645,6 +782,9 @@ fn format_read_file_summary(val: &Value, file_type: &str) -> String {
 
     let type_label = match file_type {
         "markdown" => " (Markdown)",
+        "json" => " (JSON)",
+        "yaml" => " (YAML)",
+        "toml" => " (TOML)",
         "config" => " (Config)",
         _ => "",
     };
@@ -686,13 +826,70 @@ fn format_read_file_summary(val: &Value, file_type: &str) -> String {
                 if !headings.is_empty() {
                     out.push_str("\n  Headings:");
                     for h in headings {
-                        if let Some(heading) = h.as_str() {
-                            out.push_str(&format!("\n    {heading}"));
-                        }
+                        let heading = h["heading"].as_str().unwrap_or("?");
+                        let line = h["line"].as_u64().unwrap_or(0);
+                        let end_line = h["end_line"].as_u64().unwrap_or(0);
+                        let level = h["level"].as_u64().unwrap_or(1) as usize;
+                        let indent = "  ".repeat(level.saturating_sub(1));
+                        out.push_str(&format!("\n    {indent}{heading}  L{line}-{end_line}"));
                     }
                 }
             }
         }
+        "json" => {
+            if let Some(schema) = val.get("schema") {
+                let root_type = schema["root_type"].as_str().unwrap_or("?");
+                out.push_str(&format!("\n  Root: {root_type}"));
+                if let Some(keys) = schema["keys"].as_array() {
+                    for k in keys {
+                        let path = k["path"].as_str().unwrap_or("?");
+                        let typ = k["type"].as_str().unwrap_or("?");
+                        let mut desc = format!("\n    {path}: {typ}");
+                        if let Some(count) = k["count"].as_u64() {
+                            desc.push_str(&format!(" ({count} items)"));
+                        }
+                        out.push_str(&desc);
+                    }
+                }
+                if let Some(count) = schema["count"].as_u64() {
+                    out.push_str(&format!("\n    Count: {count}"));
+                    if let Some(elem) = schema["element_type"].as_str() {
+                        out.push_str(&format!(" (element type: {elem})"));
+                    }
+                }
+            }
+        }
+        "toml" => {
+            if let Some(sections) = val["sections"].as_array() {
+                out.push_str("\n  Sections:");
+                for s in sections {
+                    let key = s["key"].as_str().unwrap_or("?");
+                    let line = s["line"].as_u64().unwrap_or(0);
+                    let end = s["end_line"].as_u64().unwrap_or(0);
+                    out.push_str(&format!("\n    {key}  L{line}-{end}"));
+                }
+            }
+            if let Some(keys) = val["keys"].as_array() {
+                out.push_str("\n  Keys:");
+                for k in keys {
+                    let key = k["key"].as_str().unwrap_or("?");
+                    let line = k["line"].as_u64().unwrap_or(0);
+                    out.push_str(&format!("\n    {key}  L{line}"));
+                }
+            }
+        }
+        "yaml" => {
+            if let Some(sections) = val["sections"].as_array() {
+                out.push_str("\n  Sections:");
+                for s in sections {
+                    let key = s["key"].as_str().unwrap_or("?");
+                    let line = s["line"].as_u64().unwrap_or(0);
+                    let end = s["end_line"].as_u64().unwrap_or(0);
+                    out.push_str(&format!("\n    {key}  L{line}-{end}"));
+                }
+            }
+        }
+        // Residual: .xml, .ini, .env, .lock, .cfg (JSON/YAML/TOML have dedicated branches)
         "config" => {
             if let Some(preview) = val["preview"].as_str() {
                 out.push_str("\n  Preview:");
@@ -3731,16 +3928,20 @@ mod tests {
         let val = serde_json::json!({
             "type": "markdown",
             "line_count": 200,
-            "headings": ["# Title", "## Section 1", "## Section 2"],
+            "headings": [
+                {"heading": "# Title", "level": 1, "line": 1, "end_line": 200},
+                {"heading": "## Section 1", "level": 2, "line": 5, "end_line": 100},
+                {"heading": "## Section 2", "level": 2, "line": 101, "end_line": 200}
+            ],
             "file_id": "@file_xyz",
             "hint": "Full file stored as @file_xyz."
         });
         let result = format_read_file(&val);
         assert!(result.starts_with("200 lines (Markdown)\n"));
         assert!(result.contains("Headings:"));
-        assert!(result.contains("# Title"));
-        assert!(result.contains("## Section 1"));
-        assert!(result.contains("## Section 2"));
+        assert!(result.contains("# Title  L1-200"));
+        assert!(result.contains("## Section 1  L5-100"));
+        assert!(result.contains("## Section 2  L101-200"));
         assert!(result.contains("Buffer: @file_xyz"));
     }
 
