@@ -739,3 +739,246 @@ async fn goto_definition_unknown_identifier_falls_back_to_first_nonwhitespace() 
          if col is wrong the mock returns [] and the tool errors instead"
     );
 }
+
+// ── replace_symbol: language-agnostic (BUG-019 regression) ───────────────────
+//
+// The old `is_valid_symbol_start_line` guard had a Rust-only keyword allowlist
+// (`fn `, `pub `, `struct `, `impl `, …). Any LSP start_line whose content did not
+// match was rejected as "symbol location appears stale", breaking replace_symbol
+// for every non-Rust language.
+//
+// Fix: the guard was removed. `validate_symbol_range` (AST cross-check) is the
+// canonical staleness defense and is language-agnostic.
+//
+// Each test below is a sandwich regression:
+//   Baseline  — Rust `fn` continues to work (covered by replace_symbol_clean_start_line).
+//   Stale     — the language's function keyword was NOT in the old Rust allowlist, so
+//               is_valid_symbol_start_line would have returned false and ReplaceSymbol
+//               would have returned Err("symbol location appears stale").
+//   Fixed     — ReplaceSymbol now succeeds and the new body appears in the file.
+
+/// Python: `def` was not in the Rust keyword allowlist → old code rejected it.
+#[tokio::test]
+async fn replace_symbol_works_for_python() {
+    // 0: "def greet():"
+    // 1: "    return 'old'"
+    let src = "def greet():\n    return 'old'\n";
+    let (dir, ctx) = ctx_with_mock(&[("greet.py", src)], |root| {
+        let file = root.join("greet.py");
+        MockLspClient::new().with_symbols(file.clone(), vec![sym("greet", 0, 1, file)])
+    })
+    .await;
+
+    ReplaceSymbol
+        .call(
+            json!({ "path": "greet.py", "name_path": "greet",
+                    "new_body": "def greet():\n    return 'new'" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let result = std::fs::read_to_string(dir.path().join("greet.py")).unwrap();
+    assert!(result.contains("'new'"), "new body must be present; got:\n{result}");
+    assert!(!result.contains("'old'"), "old body must be gone; got:\n{result}");
+}
+
+/// TypeScript: `function` was not in the Rust keyword allowlist → old code rejected it.
+#[tokio::test]
+async fn replace_symbol_works_for_typescript() {
+    // 0: "function greet(): string {"
+    // 1: "    return 'old';"
+    // 2: "}"
+    let src = "function greet(): string {\n    return 'old';\n}\n";
+    let (dir, ctx) = ctx_with_mock(&[("greet.ts", src)], |root| {
+        let file = root.join("greet.ts");
+        MockLspClient::new().with_symbols(file.clone(), vec![sym("greet", 0, 2, file)])
+    })
+    .await;
+
+    ReplaceSymbol
+        .call(
+            json!({ "path": "greet.ts", "name_path": "greet",
+                    "new_body": "function greet(): string {\n    return 'new';\n}" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let result = std::fs::read_to_string(dir.path().join("greet.ts")).unwrap();
+    assert!(result.contains("'new'"), "new body must be present; got:\n{result}");
+    assert!(!result.contains("'old'"), "old body must be gone; got:\n{result}");
+}
+
+/// JavaScript: `function` keyword → same Rust-allowlist rejection as TypeScript.
+#[tokio::test]
+async fn replace_symbol_works_for_javascript() {
+    let src = "function greet() {\n    return 'old';\n}\n";
+    let (dir, ctx) = ctx_with_mock(&[("greet.js", src)], |root| {
+        let file = root.join("greet.js");
+        MockLspClient::new().with_symbols(file.clone(), vec![sym("greet", 0, 2, file)])
+    })
+    .await;
+
+    ReplaceSymbol
+        .call(
+            json!({ "path": "greet.js", "name_path": "greet",
+                    "new_body": "function greet() {\n    return 'new';\n}" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let result = std::fs::read_to_string(dir.path().join("greet.js")).unwrap();
+    assert!(result.contains("'new'"), "new body must be present; got:\n{result}");
+    assert!(!result.contains("'old'"), "old body must be gone; got:\n{result}");
+}
+
+/// Go: `func` was not in the Rust keyword allowlist → old code rejected it.
+#[tokio::test]
+async fn replace_symbol_works_for_go() {
+    let src = "func Greet() string {\n\treturn \"old\"\n}\n";
+    let (dir, ctx) = ctx_with_mock(&[("greet.go", src)], |root| {
+        let file = root.join("greet.go");
+        MockLspClient::new().with_symbols(file.clone(), vec![sym("Greet", 0, 2, file)])
+    })
+    .await;
+
+    ReplaceSymbol
+        .call(
+            json!({ "path": "greet.go", "name_path": "Greet",
+                    "new_body": "func Greet() string {\n\treturn \"new\"\n}" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let result = std::fs::read_to_string(dir.path().join("greet.go")).unwrap();
+    assert!(result.contains("\"new\""), "new body must be present; got:\n{result}");
+    assert!(!result.contains("\"old\""), "old body must be gone; got:\n{result}");
+}
+
+/// Java: `public` at the start of a method was not in the allowlist → rejected.
+/// (Note: `pub ` and `pub(` were in the allowlist but not `public `.)
+#[tokio::test]
+async fn replace_symbol_works_for_java() {
+    let src = "public String greet() {\n    return \"old\";\n}\n";
+    let (dir, ctx) = ctx_with_mock(&[("Greet.java", src)], |root| {
+        let file = root.join("Greet.java");
+        MockLspClient::new().with_symbols(file.clone(), vec![sym("greet", 0, 2, file)])
+    })
+    .await;
+
+    ReplaceSymbol
+        .call(
+            json!({ "path": "Greet.java", "name_path": "greet",
+                    "new_body": "public String greet() {\n    return \"new\";\n}" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let result = std::fs::read_to_string(dir.path().join("Greet.java")).unwrap();
+    assert!(result.contains("\"new\""), "new body must be present; got:\n{result}");
+    assert!(!result.contains("\"old\""), "old body must be gone; got:\n{result}");
+}
+
+/// Kotlin: `fun` was not in the Rust keyword allowlist → old code rejected it.
+#[tokio::test]
+async fn replace_symbol_works_for_kotlin() {
+    let src = "fun greet(): String {\n    return \"old\"\n}\n";
+    let (dir, ctx) = ctx_with_mock(&[("Greet.kt", src)], |root| {
+        let file = root.join("Greet.kt");
+        MockLspClient::new().with_symbols(file.clone(), vec![sym("greet", 0, 2, file)])
+    })
+    .await;
+
+    ReplaceSymbol
+        .call(
+            json!({ "path": "Greet.kt", "name_path": "greet",
+                    "new_body": "fun greet(): String {\n    return \"new\"\n}" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let result = std::fs::read_to_string(dir.path().join("Greet.kt")).unwrap();
+    assert!(result.contains("\"new\""), "new body must be present; got:\n{result}");
+    assert!(!result.contains("\"old\""), "old body must be gone; got:\n{result}");
+}
+
+/// C: return-type-first signatures were not in the Rust keyword allowlist → rejected.
+#[tokio::test]
+async fn replace_symbol_works_for_c() {
+    let src = "int greet() {\n    return 0;\n}\n";
+    let (dir, ctx) = ctx_with_mock(&[("greet.c", src)], |root| {
+        let file = root.join("greet.c");
+        MockLspClient::new().with_symbols(file.clone(), vec![sym("greet", 0, 2, file)])
+    })
+    .await;
+
+    ReplaceSymbol
+        .call(
+            json!({ "path": "greet.c", "name_path": "greet",
+                    "new_body": "int greet() {\n    return 1;\n}" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let result = std::fs::read_to_string(dir.path().join("greet.c")).unwrap();
+    assert!(result.contains("return 1"), "new body must be present; got:\n{result}");
+    assert!(!result.contains("return 0"), "old body must be gone; got:\n{result}");
+}
+
+/// C++: same as C — return-type-first → rejected by old allowlist.
+#[tokio::test]
+async fn replace_symbol_works_for_cpp() {
+    let src = "std::string greet() {\n    return \"old\";\n}\n";
+    let (dir, ctx) = ctx_with_mock(&[("greet.cpp", src)], |root| {
+        let file = root.join("greet.cpp");
+        MockLspClient::new().with_symbols(file.clone(), vec![sym("greet", 0, 2, file)])
+    })
+    .await;
+
+    ReplaceSymbol
+        .call(
+            json!({ "path": "greet.cpp", "name_path": "greet",
+                    "new_body": "std::string greet() {\n    return \"new\";\n}" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let result = std::fs::read_to_string(dir.path().join("greet.cpp")).unwrap();
+    assert!(result.contains("\"new\""), "new body must be present; got:\n{result}");
+    assert!(!result.contains("\"old\""), "old body must be gone; got:\n{result}");
+}
+
+/// Ruby: `def` (without parens) was not in the Rust keyword allowlist → rejected.
+#[tokio::test]
+async fn replace_symbol_works_for_ruby() {
+    // Ruby methods end with `end`, not `}`
+    // 0: "def greet"
+    // 1: "  'old'"
+    // 2: "end"
+    let src = "def greet\n  'old'\nend\n";
+    let (dir, ctx) = ctx_with_mock(&[("greet.rb", src)], |root| {
+        let file = root.join("greet.rb");
+        MockLspClient::new().with_symbols(file.clone(), vec![sym("greet", 0, 2, file)])
+    })
+    .await;
+
+    ReplaceSymbol
+        .call(
+            json!({ "path": "greet.rb", "name_path": "greet",
+                    "new_body": "def greet\n  'new'\nend" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let result = std::fs::read_to_string(dir.path().join("greet.rb")).unwrap();
+    assert!(result.contains("'new'"), "new body must be present; got:\n{result}");
+    assert!(!result.contains("'old'"), "old body must be gone; got:\n{result}");
+}
