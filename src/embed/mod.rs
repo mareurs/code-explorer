@@ -150,9 +150,9 @@ pub async fn create_embedder(model: &str) -> Result<Box<dyn Embedder>> {
             let host =
                 std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".into());
             if let Err(e) = remote::probe_ollama(&host).await {
-                const FALLBACK: &str = "BGESmallENV15Q";
+                const FALLBACK: &str = "AllMiniLML6V2Q";
                 tracing::warn!(
-                    "{e}. Falling back to local:{FALLBACK} (CPU-friendly, ~20 MB). \
+                    "{e}. Falling back to local:{FALLBACK} (CPU-friendly, ~22 MB). \
                      Set embeddings.model in .code-explorer/project.toml to suppress this."
                 );
                 return Ok(Box::new(local::LocalEmbedder::new(FALLBACK)?));
@@ -184,7 +184,7 @@ pub async fn create_embedder(model: &str) -> Result<Box<dyn Embedder>> {
              Rebuild with: cargo build --features local-embed\n\n\
              Recommended (code-specific, CPU/WSL2):\n\
              • local:JinaEmbeddingsV2BaseCode   (768d, ~300MB)\n\
-             • local:BGESmallENV15Q             (384d, quantized, ~20MB, fast)"
+             • local:AllMiniLML6V2Q             (384d, quantized, ~22MB, CPU-safe)"
         );
     }
 
