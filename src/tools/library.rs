@@ -12,7 +12,8 @@ impl Tool for ListLibraries {
     }
 
     fn description(&self) -> &str {
-        "Show all registered libraries and their status (indexed, path, language)."
+        "List registered libraries and their index status. \
+         Use scope='lib:<name>' in semantic_search, find_symbol, or index_project to target a library."
     }
 
     fn input_schema(&self) -> Value {
@@ -300,6 +301,20 @@ mod tests {
         assert!(
             out.contains("indexed"),
             "should show index status, got: {out}"
+        );
+    }
+
+    #[tokio::test]
+    async fn index_project_scope_lib_errors_for_unknown() {
+        let ctx = project_ctx().await;
+        // Register nothing — querying an unknown lib name should return RecoverableError
+        let tool = crate::tools::semantic::IndexProject;
+        let result = tool.call(json!({ "scope": "lib:nonexistent" }), &ctx).await;
+        assert!(result.is_err(), "expected error for unknown library");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("nonexistent") || msg.contains("not found"),
+            "error should mention the library name: {msg}"
         );
     }
 }

@@ -514,4 +514,32 @@ mod tests {
         let out = format_list_docs(&result);
         assert!(out.contains("MyStruct"), "should show symbol");
     }
+
+    #[tokio::test]
+    async fn list_symbols_include_docs_returns_docstrings() {
+        let content = r#"
+/// A documented function.
+fn documented() {}
+
+fn undocumented() {}
+"#;
+        let (dir, ctx) = project_ctx_with_file("test.rs", content).await;
+        let tool = crate::tools::symbol::ListSymbols;
+        let result = tool
+            .call(json!({ "path": "test.rs", "include_docs": true }), &ctx)
+            .await
+            .unwrap();
+        let docstrings = result["docstrings"]
+            .as_array()
+            .expect("docstrings field missing");
+        assert!(!docstrings.is_empty(), "expected at least one docstring");
+        assert!(
+            docstrings.iter().any(|d| d["symbol_name"]
+                .as_str()
+                .unwrap_or("")
+                .contains("documented")),
+            "expected docstring for 'documented'"
+        );
+        drop(dir);
+    }
 }
