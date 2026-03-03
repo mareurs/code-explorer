@@ -282,6 +282,34 @@ fn find_ast_end_line_in(symbols: &[SymbolInfo], name: &str, lsp_start: u32) -> O
     None
 }
 
+/// When `workspace/symbol` returns a degenerate range, attempt to resolve the
+/// correct range by querying `textDocument/documentSymbol` for the symbol's file.
+/// Returns the corrected SymbolInfo if found, None otherwise.
+async fn resolve_range_via_document_symbols(
+    sym: &SymbolInfo,
+    ctx: &ToolContext,
+) -> Option<SymbolInfo> {
+    let lang = crate::ast::detect_language(&sym.file)?;
+    let language_id = crate::lsp::servers::lsp_language_id(lang);
+    let root = ctx.agent.require_project_root().await.ok()?;
+    let client = ctx.lsp.get_or_start(lang, &root).await.ok()?;
+    let doc_symbols = client.document_symbols(&sym.file, language_id).await.ok()?;
+    find_matching_symbol(&doc_symbols, &sym.name, sym.start_line)
+}
+
+/// Recursively search a document symbol tree for a symbol matching `name`
+/// within ±1 line of `lsp_start`. Returns a clone of the matching SymbolInfo.
+fn find_matching_symbol(symbols: &[SymbolInfo], name: &str, lsp_start: u32) -> Option<SymbolInfo> {
+    for sym in symbols {
+        if sym.name == name && sym.start_line.abs_diff(lsp_start) <= 1 {
+            return Some(sym.clone());
+        }
+        if let Some(found) = find_matching_symbol(&sym.children, name, lsp_start) {
+            return Some(found);
+        }
+    }
+    None
+}
 
 // ── get_symbols_overview ───────────────────────────────────────────────────
 
@@ -740,11 +768,26 @@ impl Tool for FindSymbol {
                         || sym.name_path.to_lowercase().contains(&pattern_lower);
                     let kind_ok = kind_filter.map_or(true, |f| matches_kind_filter(&sym.kind, f));
                     if name_ok && kind_ok {
-                        // Validate range but don't silently fix — if degenerate, the agent
-                        // sees the error and can fall back to edit_file.
-                        if include_body {
-                            validate_symbol_range(&sym)?;
-                        }
+                        // When include_body is requested, validate the range. If
+                        // workspace/symbol returned a degenerate range, fall back to
+                        // document_symbols for the file to get the correct range.
+                        let sym = if include_body {
+                            match validate_symbol_range(&sym) {
+                                Ok(()) => sym,
+                                Err(_) => {
+                                    match resolve_range_via_document_symbols(&sym, ctx).await {
+                                        Some(resolved) => resolved,
+                                        None => {
+                                            // document_symbols fallback failed too — propagate
+                                            validate_symbol_range(&sym)?;
+                                            unreachable!()
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            sym
+                        };
                         let source = if include_body {
                             std::fs::read_to_string(&sym.file).ok()
                         } else {
@@ -5287,9 +5330,7 @@ fn main() {
         let symbols = val["symbols"].as_array().expect("symbols array");
         assert_eq!(symbols.len(), 1, "should find exactly one symbol");
 
-        let body = symbols[0]["body"]
-            .as_str()
-            .expect("body should be present");
+        let body = symbols[0]["body"].as_str().expect("body should be present");
         assert!(
             body.contains("let y = x + 1"),
             "body should contain function contents; got: {body}"
