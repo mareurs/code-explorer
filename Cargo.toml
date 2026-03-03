@@ -112,6 +112,11 @@ e2e-java = []       # needs: jdtls
 opt-level = 3
 lto = "thin"
 strip = true
+# Abort on panic rather than unwind — prevents a future panic from leaving the
+# MCP server in a half-alive state where the process runs but no responses are
+# sent. With abort, any panic kills the process immediately and Claude Code
+# triggers a clean reconnect via `/mcp`. (BUG-021 investigation, 2026-03-03)
+panic = "abort"
 
 [dev-dependencies]
 tempfile = "3"

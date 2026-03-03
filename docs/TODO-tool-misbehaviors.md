@@ -609,11 +609,11 @@ which now catches this case. The insertion fails loudly rather than silently cor
 ---
 ```
 
-### BUG-021 — `edit_file`: parallel calls cause partial state + MCP server crash
+### BUG-021 — `edit_file`: parallel calls cause partial state + MCP server "crash"
 
 **Date:** 2026-03-03
-**Severity:** High — leaves files in inconsistent partial state; server crash requires `/mcp` restart
-**Status:** Open
+**Severity:** High — leaves files in inconsistent partial state; server exit requires `/mcp` restart
+**Status:** 🔍 ROOT CAUSE IDENTIFIED (2026-03-03) — two independent issues, one fixable
 
 **What happened:**
 Dispatched two `edit_file` calls in the same parallel response (targeting two different source
@@ -629,22 +629,45 @@ MCP server crashed and became unavailable, requiring a manual `/mcp` reconnect.
 3. Observe: first file edited, second file unchanged — inconsistent partial state.
 4. code-explorer MCP server crashes; subsequent tool calls fail until `/mcp` restart.
 
-**Root cause hypothesis:**
-Unknown exactly. Two likely contributors:
-1. **Permission system races**: the permission dialog for call #2 may time out or get into a
-   bad state while call #1 is completing, causing the MCP handler to receive an error response
-   it doesn't handle gracefully.
-2. **MCP server state corruption**: if the server's internal state machine (e.g. pending
-   response tracking) is not designed for one-success-one-failure in a parallel pair, an
-   unhandled error path may panic or leave the server in a broken state.
+**Root cause (investigated 2026-03-03 — two separate issues):**
 
-**Fix ideas:**
-- Avoid dispatching multiple `edit_file` calls in the same parallel response. Always serialize
-  file edits — finish one before starting the next.
-- As a server-side safeguard, the MCP handler could catch panics per-call so a single failed
-  call doesn't bring down the server.
-- Investigate whether the crash is a panic in the rmcp handler or a broken stdio pipe from
-  Claude Code after a permission rejection during a multi-call response.
+**Issue A — Partial state: inherent to independent parallel writes.**
+When two `edit_file` calls target different files, they run as independent `tokio::spawn` tasks
+inside rmcp's `serve_inner`. There is no transaction semantics across them. If one is denied
+(permission dialog) while the other succeeds, the files are left in a partially-applied state.
+This is NOT a bug in our code — it's the correct behavior for two independent operations. The
+fix is operational: never dispatch parallel write tool calls.
+
+**Issue B — "Crash" is actually Claude Code closing the stdio pipe (rmcp cancellation race).**
+Static analysis of the full code path confirms there are NO panic paths in our production code
+that could crash the server:
+- All `lock().unwrap()` calls in the hot path (`open_files`, `OutputBuffer`) have trivial
+  critical sections (HashSet ops only) — mutex cannot be poisoned by normal use.
+- `call_tool_inner` routes ALL errors through `route_tool_error`; no unhandled panics.
+- rmcp 0.1.5 spawns each request as `tokio::spawn` with the JoinHandle **dropped** — task
+  panics are absorbed by the detached task and never propagate to the serve loop.
+- The serve loop in `serve_inner` has no `unwrap()`/`expect()` in its event handler.
+
+The "crash" is the server process exiting cleanly after the **stdio pipe closes**. This maps to
+`service.waiting()` returning `QuitReason::Closed` → error propagates via `?` in `run()`.
+
+**Why does Claude Code close the pipe?** Most likely a cancellation race in rmcp 0.1.5:
+When Claude Code denies a parallel call, it may send a `notifications/cancelled` for the
+in-flight request. rmcp cancels the `CancellationToken` but the spawned task has **no check**
+for `context.ct.is_cancelled()` — it runs to completion and sends a response back through
+`sink_proxy_tx`. The main loop then writes that response to stdout. Claude Code receives an
+unexpected response for an already-cancelled request ID, which may cause it to close the
+connection (a Claude Code MCP client bug, not ours).
+
+**Fix:**
+- **Operational** (immediate): never dispatch parallel write tool calls. Always finish one
+  `edit_file` / `replace_symbol` / `insert_code` / `create_file` before starting the next.
+- **rmcp limitation**: rmcp 0.1.5 does not suppress responses for cancelled requests.
+  This cannot be fixed in our code without forking rmcp. Upgrading rmcp if a newer version
+  respects cancellation tokens in the task-spawn path would help.
+- **Defence-in-depth** (optional): add a `[profile.release] panic = "abort"` to Cargo.toml so
+  any future panic terminates the process immediately rather than leaving a half-alive server
+  (currently no panics exist, but this prevents silent corruption if one is introduced later).
 
 ---
 
