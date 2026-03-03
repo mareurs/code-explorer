@@ -201,20 +201,24 @@ fn symbol_to_json(
     depth: usize,
     show_file: bool,
 ) -> Value {
-    let mut obj = json!({
-        "name": sym.name,
-        "name_path": sym.name_path,
-        "kind": format!("{:?}", sym.kind),
-        "start_line": sym.start_line + 1,
-        "end_line": sym.end_line + 1,
-    });
+    // Build fields in a reader-friendly order:
+    //   identity  → name, name_path, kind
+    //   location  → file (optional)
+    //   detail    → signature, body (optional)
+    //   structure → children (optional)
+    //   metadata  → start_line, end_line (last — positional info, not primary identity)
+    let mut map = serde_json::Map::new();
+
+    map.insert("name".into(), json!(sym.name));
+    map.insert("name_path".into(), json!(sym.name_path));
+    map.insert("kind".into(), json!(format!("{:?}", sym.kind)));
 
     if show_file {
-        obj["file"] = json!(sym.file.display().to_string());
+        map.insert("file".into(), json!(sym.file.display().to_string()));
     }
 
     if let Some(sig) = &sym.detail {
-        obj["signature"] = json!(sig);
+        map.insert("signature".into(), json!(sig));
     }
 
     if include_body {
@@ -223,20 +227,27 @@ fn symbol_to_json(
             let start = sym.start_line as usize;
             let end = (sym.end_line as usize + 1).min(lines.len());
             if start < lines.len() {
-                obj["body"] = json!(lines[start..end].join("\n"));
+                map.insert("body".into(), json!(lines[start..end].join("\n")));
             }
         }
     }
 
     if depth > 0 && !sym.children.is_empty() {
-        obj["children"] = json!(sym
-            .children
-            .iter()
-            .map(|c| symbol_to_json(c, include_body, source_code, depth - 1, show_file))
-            .collect::<Vec<_>>());
+        map.insert(
+            "children".into(),
+            json!(sym
+                .children
+                .iter()
+                .map(|c| symbol_to_json(c, include_body, source_code, depth - 1, show_file))
+                .collect::<Vec<_>>()),
+        );
     }
 
-    obj
+    // Line numbers last — positional metadata, not primary identity.
+    map.insert("start_line".into(), json!(sym.start_line + 1));
+    map.insert("end_line".into(), json!(sym.end_line + 1));
+
+    Value::Object(map)
 }
 
 /// When the LSP `workspace/symbol` response returns a degenerate range
@@ -4182,6 +4193,43 @@ fn main() {
             "file must be absent when show_file=false, got: {result}"
         );
         assert_eq!(result["name"], "foo");
+    }
+
+    #[test]
+    fn symbol_to_json_field_order_name_kind_before_line_numbers() {
+        // Regression: without preserve_order, serde_json used BTreeMap and sorted keys
+        // alphabetically, putting end_line before kind/name. Line numbers must come last
+        // as positional metadata, with identity fields (name, kind) first.
+        let sym = make_test_sym("my_fn", Some("fn my_fn() -> u32"));
+        let result = symbol_to_json(&sym, false, None, 0, false);
+
+        let keys: Vec<&str> = result
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|s| s.as_str())
+            .collect();
+
+        // name and name_path come before start_line / end_line
+        let name_pos = keys.iter().position(|k| *k == "name").unwrap();
+        let start_pos = keys.iter().position(|k| *k == "start_line").unwrap();
+        let end_pos = keys.iter().position(|k| *k == "end_line").unwrap();
+        assert!(
+            name_pos < start_pos,
+            "name must appear before start_line, got key order: {keys:?}"
+        );
+        // start_line comes immediately before end_line
+        assert_eq!(
+            start_pos + 1,
+            end_pos,
+            "start_line must immediately precede end_line, got key order: {keys:?}"
+        );
+        // end_line is the final field
+        assert_eq!(
+            end_pos,
+            keys.len() - 1,
+            "end_line must be the last field, got key order: {keys:?}"
+        );
     }
 
     #[test]

@@ -77,13 +77,16 @@ fn collect_functions(symbols: &[crate::lsp::symbols::SymbolInfo], out: &mut Vec<
     for sym in symbols {
         match sym.kind {
             SymbolKind::Function | SymbolKind::Method => {
-                out.push(json!({
-                    "name": sym.name,
-                    "name_path": sym.name_path,
-                    "kind": sym.kind,
-                    "start_line": sym.start_line + 1,
-                    "end_line": sym.end_line + 1,
-                }));
+                let mut map = serde_json::Map::new();
+                map.insert("name".into(), json!(sym.name));
+                map.insert("name_path".into(), json!(sym.name_path));
+                map.insert("kind".into(), json!(sym.kind));
+                if let Some(sig) = &sym.detail {
+                    map.insert("signature".into(), json!(sig));
+                }
+                map.insert("start_line".into(), json!(sym.start_line + 1));
+                map.insert("end_line".into(), json!(sym.end_line + 1));
+                out.push(Value::Object(map));
             }
             _ => {}
         }
