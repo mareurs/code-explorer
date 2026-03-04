@@ -26,7 +26,7 @@ pub fn build_server_instructions(project_status: Option<&ProjectStatus>) -> Stri
         }
         if !status.memories.is_empty() {
             instructions.push_str(&format!(
-                "- **Available shared memories:** {} — use `read_memory(topic)` to read relevant ones as needed for your current task\n",
+                "- **Available shared memories:** {} — use `memory(action=\"read\", topic=...)` to read relevant ones as needed for your current task\n",
                 status.memories.join(", ")
             ));
         } else {

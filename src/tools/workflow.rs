@@ -185,7 +185,11 @@ fn language_navigation_hints(lang: &str) -> Option<&'static str> {
     }
 }
 
-fn build_system_prompt_draft(languages: &[String], entry_points: &[String]) -> String {
+fn build_system_prompt_draft(
+    languages: &[String],
+    entry_points: &[String],
+    project_root: Option<&Path>,
+) -> String {
     let mut draft = String::new();
     draft.push_str("# Project — Code Explorer Guidance\n\n");
 
@@ -225,7 +229,7 @@ fn build_system_prompt_draft(languages: &[String], entry_points: &[String]) -> S
 
     // Navigation strategy
     draft.push_str("## Navigation Strategy\n");
-    draft.push_str("1. `read_memory(\"architecture\")` — orient yourself\n");
+    draft.push_str("1. `memory(action=\"read\", topic=\"architecture\")` — orient yourself\n");
     if !entry_points.is_empty() {
         draft.push_str(&format!(
             "2. `list_symbols(\"{}\")` — see main structure\n",
@@ -235,7 +239,9 @@ fn build_system_prompt_draft(languages: &[String], entry_points: &[String]) -> S
         draft.push_str("2. `list_symbols(\"src/\")` — see main structure\n");
     }
     draft.push_str("3. `semantic_search(\"your concept\")` — find relevant code\n");
-    draft.push_str("4. `find_symbol(\"Name\", include_body=true)` — read implementation\n\n");
+    draft.push_str("4. `find_symbol(\"Name\", include_body=true)` — read implementation\n");
+    draft
+        .push_str("5. `memory(action=\"recall\", query=\"...\")` — search memories by meaning\n\n");
 
     // Project rules — placeholder
     draft.push_str("## Project Rules\n");
@@ -246,16 +252,58 @@ fn build_system_prompt_draft(languages: &[String], entry_points: &[String]) -> S
     draft.push_str(
         "Private memories are gitignored — personal to this developer, not shared with the team.\n\
          They live in `.code-explorer/private-memories/`.\n\n\
-         **Write to the private store** (`write_memory(topic, content, private=true)`) for:\n\
+         **Write to the private store** (`memory(action=\"write\", topic=..., content=..., private=true)`) for:\n\
          - Personal preferences and workflow rules for this developer\n\
          - Machine-specific config (local ports, paths, GPU type, env quirks)\n\
          - WIP notes and in-progress debugging context\n\
          - Personal debugging history specific to this setup\n\n\
-         **Write to the shared store** (`write_memory(topic, content)`) for:\n\
+         **Write to the shared store** (`memory(action=\"write\", topic=..., content=...)`) for:\n\
          - Architecture, conventions, design patterns — knowledge useful to ALL contributors\n\
          - When in doubt: private first, promote to shared only if universally applicable\n\n\
-         **Each session:** `list_memories(include_private=true)` to see what's available.\n",
+         **Each session:** `memory(action=\"list\", include_private=true)` to see what's available.\n",
     );
+
+    // Semantic memories section
+    draft.push_str("\n## Semantic Memories\n\n");
+    draft.push_str(
+        "Use `memory(action=\"remember\", content=\"...\")` to store knowledge that doesn't fit\n\
+         a named topic. Search with `memory(action=\"recall\", query=\"...\")`. Buckets:\n\
+         code, system, preferences, unstructured (auto-classified if omitted).\n\
+         Delete with `memory(action=\"forget\", id=N)` using IDs from recall results.\n",
+    );
+
+    // Auto-inject preferences from semantic memory (best-effort)
+    if let Some(root) = project_root {
+        if let Ok(conn) = crate::embed::index::open_db(root) {
+            if crate::embed::index::ensure_vec_memories(&conn).is_ok() {
+                let mut prefs = Vec::new();
+                if let Ok(mut stmt) = conn.prepare(
+                    "SELECT title, content FROM memories WHERE bucket = 'preferences' \
+                     ORDER BY updated_at DESC LIMIT 10",
+                ) {
+                    if let Ok(rows) = stmt.query_map([], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    }) {
+                        for row in rows.flatten() {
+                            prefs.push(row);
+                        }
+                    }
+                }
+                if !prefs.is_empty() {
+                    draft.push_str("\n## User Preferences\n\n");
+                    for (title, content) in &prefs {
+                        // Use title as heading, content as body — keep it compact
+                        let summary = if content.len() > 200 {
+                            format!("{}...", &content[..200])
+                        } else {
+                            content.clone()
+                        };
+                        draft.push_str(&format!("- **{}:** {}\n", title, summary));
+                    }
+                }
+            }
+        }
+    }
 
     draft
 }
@@ -307,13 +355,14 @@ impl Tool for Onboarding {
             if has_config && has_onboarding_memory {
                 let mut message = format!(
                     "Onboarding already performed. Available shared memories: {}. \
-                     Use `read_memory(topic)` to read relevant ones as needed for your current task. \
-                     Do not read all memories at once — only read those relevant to what you're working on.",
+                     Use `memory(action=\"read\", topic=...)` to read relevant ones as needed for your current task. \
+                     Do not read all memories at once — only read those relevant to what you're working on. \
+                     Use `memory(action=\"recall\", query=\"...\")` to search memories by meaning when the topic name isn't known.",
                     memories.join(", ")
                 );
                 if !private_memories.is_empty() {
                     message.push_str(&format!(
-                        " Private memories: {}. Read with `read_memory(topic, private=true)`.",
+                        " Private memories: {}. Read with `memory(action=\"read\", topic=..., private=true)`.",
                         private_memories.join(", ")
                     ));
                 }
@@ -427,7 +476,8 @@ impl Tool for Onboarding {
         );
 
         // Build the system prompt draft scaffold
-        let system_prompt_draft = build_system_prompt_draft(&lang_list, &gathered.entry_points);
+        let system_prompt_draft =
+            build_system_prompt_draft(&lang_list, &gathered.entry_points, Some(&root));
 
         let features_suggestion = gathered.features_md.is_none().then_some(
             "No FEATURES.md found. Consider creating docs/FEATURES.md to document \
@@ -2102,7 +2152,7 @@ mod tests {
     #[test]
     fn system_prompt_draft_includes_language_hints() {
         let langs = vec!["rust".to_string(), "python".to_string()];
-        let draft = build_system_prompt_draft(&langs, &[]);
+        let draft = build_system_prompt_draft(&langs, &[], None);
         assert!(
             draft.contains("## Language Navigation"),
             "should have Language Navigation section"
@@ -2118,7 +2168,7 @@ mod tests {
     #[test]
     fn system_prompt_draft_omits_hints_for_unsupported_languages() {
         let langs = vec!["markdown".to_string()];
-        let draft = build_system_prompt_draft(&langs, &[]);
+        let draft = build_system_prompt_draft(&langs, &[], None);
         assert!(
             !draft.contains("## Language Navigation"),
             "should not have Language Navigation for markdown-only"
@@ -2128,7 +2178,7 @@ mod tests {
     #[test]
     fn system_prompt_draft_isolates_hints_per_language() {
         let langs = vec!["python".to_string()];
-        let draft = build_system_prompt_draft(&langs, &[]);
+        let draft = build_system_prompt_draft(&langs, &[], None);
         assert!(draft.contains("**python:**"), "should have python hints");
         assert!(
             !draft.contains("impl Trait for Type"),
@@ -2138,7 +2188,7 @@ mod tests {
 
     #[test]
     fn system_prompt_draft_includes_private_memory_rules() {
-        let draft = build_system_prompt_draft(&[], &[]);
+        let draft = build_system_prompt_draft(&[], &[], None);
         assert!(
             draft.contains("Private Memory Rules"),
             "draft should include Private Memory Rules section"

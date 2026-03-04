@@ -55,6 +55,8 @@ These are non-negotiable. Violating the letter IS violating the spirit.
 | Index a library | `index_project(scope="lib:name")` | ~~removed `index_library`~~ |
 | Project health check | `project_status` | ~~removed `get_config`, `index_status`, `get_usage_stats`~~ |
 | Persistent notes | `memory(action="read\|write\|list\|delete")` | ~~`write_memory`, `read_memory`, `list_memories`, `delete_memory`~~ |
+| Search memories by meaning | `memory(action="recall", query="...")` | — |
+| Store knowledge for later | `memory(action="remember", content="...")` | — |
 | Git line history | `run_command("git blame file")` | ~~removed `git_blame` tool~~ |
 
 ## Anti-Patterns — STOP if you catch yourself doing these
@@ -142,6 +144,9 @@ use the right tool. Small shortcuts compound into large context waste.
   - `action="read"` — requires `topic`. Pass `private=true` for private store.
   - `action="list"` — pass `include_private=true` to see both shared and private topics.
   - `action="delete"` — requires `topic`. Pass `private=true` for private store.
+  - `action="remember"` — store a semantic memory. Requires `content`. Optional `title`, `bucket` (code/system/preferences/unstructured — auto-classified if omitted).
+  - `action="recall"` — search memories by meaning. Requires `query`. Optional `bucket` filter, `limit`.
+  - `action="forget"` — delete a semantic memory. Requires `id` (from recall results).
 
 ### Project & Libraries
 
@@ -169,16 +174,21 @@ Overflow produces: `{ "overflow": { "shown": N, "total": M, "hint": "...", "by_f
 ### Output Buffers
 
 Large content is stored in an `OutputBuffer` — you get a smart summary + `@ref` handle.
-The full content costs nothing to hold. Query via `run_command` + Unix tools:
+The full content costs nothing to hold.
 
-| Ref pattern | Source | Example query |
+**Primary:** pass `@ref` handles back to `read_file` with line ranges:
+
+| Ref pattern | Source | Read back with |
 |---|---|---|
-| `@cmd_*` | `run_command` output | `grep FAILED @cmd_a1b2c3` |
-| `@file_*` | Large file reads (>200 lines) | `sed -n '42,80p' @file_abc123` |
-| `@tool_*` | Large tool responses (>10 KB) | `jq '.symbols[].name' @tool_abc12345` |
+| `@file_*` | Large file reads (>200 lines) | `read_file("@file_abc", start_line=42, end_line=80)` |
+| `@cmd_*` | `run_command` output | `read_file("@cmd_abc", start_line=1, end_line=50)` |
+| `@tool_*` | Large tool responses (>10 KB) | `read_file("@tool_abc", start_line=10, end_line=30)` |
 
-Buffer queries return ≤ 100 lines inline. Truncation hints show the exact `sed` command
-to continue. Do NOT pipe buffer queries (`grep @ref | head`) — run targeted commands directly.
+**Fallback:** complex queries via `run_command` + Unix tools:
+`grep FAILED @cmd_id`, `jq '.key' @tool_id`, `diff @cmd_a @cmd_b`
+
+Buffer queries via `run_command` return ≤ 100 lines inline. Truncation hints show the
+exact `sed` command to continue. Do NOT pipe buffer queries — run targeted commands directly.
 
 ## Project Management
 

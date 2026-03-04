@@ -213,6 +213,9 @@ After confirming all 6 memories and the system prompt with the user, deliver thi
   injected into every session. Edit anytime to refine how AI navigates your codebase.
 - **Memories** — reference material read on demand via `memory(action: "read", topic: ...)`. Update
   with `memory(action: "write", topic: ..., content: ...)`.
+- **Semantic memories** — use `memory(action: "remember", content: "...")` to store knowledge
+  that doesn't fit a named topic. Search later with `memory(action: "recall", query: "...")`.
+  Useful for preferences, patterns discovered during work, and cross-cutting notes.
 - **Quick start for new tasks:**
   1. `memory(action: "read", topic: "architecture")` — orient yourself
   2. `list_symbols("src/")` — see the module structure
@@ -233,3 +236,15 @@ After creating the 6 shared memories above, check if any personal context is wor
 capturing now. Use `memory(action: "write", topic: ..., content: ..., private: true)` for anything specific
 to your setup — local machine config, personal workflow preferences, or current WIP
 context. This is optional; skip if nothing personal applies yet.
+
+## Optional: Semantic Memories
+
+For knowledge that doesn't fit a named topic — personal preferences, recurring patterns,
+project-specific learnings — use semantic memories:
+
+- `memory(action: "remember", content: "Always run integration tests with --release flag", bucket: "preferences")` — store a preference
+- `memory(action: "remember", content: "The auth module uses a custom middleware chain")` — store a note (bucket auto-classified)
+- `memory(action: "recall", query: "testing preferences")` — search by meaning later
+
+Semantic memories with `bucket: "preferences"` are automatically included in future
+onboarding prompts, so they persist across sessions without manual recall.
