@@ -502,6 +502,40 @@ impl Tool for Onboarding {
         }))
     }
 
+    async fn call_content(
+        &self,
+        input: Value,
+        ctx: &ToolContext,
+    ) -> anyhow::Result<Vec<rmcp::model::Content>> {
+        let val = self.call(input, ctx).await?;
+
+        // The "already onboarded" path returns a plain string message.
+        if let Some(msg) = val.as_str() {
+            return Ok(vec![rmcp::model::Content::text(msg.to_string())]);
+        }
+
+        // Full onboarding: always inline `instructions` and `system_prompt_draft`.
+        // The default call_content buffers large JSON and shows only format_compact,
+        // which drops these fields entirely — the LLM never sees what to do next.
+        let compact = format_onboarding(&val);
+        let instructions = val["instructions"].as_str().unwrap_or("");
+        let system_prompt_draft = val["system_prompt_draft"].as_str().unwrap_or("");
+
+        let mut response = format!("{}\n\n{}", compact, instructions);
+        if !system_prompt_draft.is_empty() {
+            response.push_str(&format!(
+                "\n\n## System Prompt Draft\n\n```\n{}\n```",
+                system_prompt_draft
+            ));
+        }
+        if let Some(suggestion) = val["features_suggestion"].as_str() {
+            response.push_str(&format!("\n\n> {}", suggestion));
+        }
+
+        Ok(vec![rmcp::model::Content::text(response)])
+    }
+
+
     fn format_compact(&self, result: &Value) -> Option<String> {
         Some(format_onboarding(result))
     }
