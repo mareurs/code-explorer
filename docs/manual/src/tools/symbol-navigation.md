@@ -493,6 +493,41 @@ operation. Every reference in every file is updated atomically.
 
 ---
 
+## `remove_symbol`
+
+**Purpose:** Delete a named symbol (function, struct, method, test, etc.) entirely from a file.
+Uses LSP to identify the exact line range covered by the symbol — no manual line counting required.
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `name_path` | string | yes | — | Symbol identifier, e.g. `"MyStruct/my_method"` or `"old_helper"` |
+| `path` | string | yes | — | File containing the symbol |
+
+**Example — delete a deprecated function:**
+
+```json
+{
+  "tool": "remove_symbol",
+  "arguments": {
+    "name_path": "legacy_auth_check",
+    "path": "src/auth/middleware.rs"
+  }
+}
+```
+
+**Output:** `"ok"`
+
+**Tips:**
+
+- Use `find_references` first to confirm nothing still calls the symbol before removing it.
+- For methods on a struct or class, use the full path: `"MyStruct/my_method"`.
+- The tool removes the exact LSP range — it will not leave behind stray blank lines from adjacent doc comments if they fall outside the symbol's range. Review the diff after removal.
+- If you want to replace rather than delete, use `replace_symbol` instead.
+
+---
+
 ## `goto_definition`
 
 **Purpose:** Jump to the definition of a symbol at a given line. Resolves types via LSP — handles method calls, trait implementations, and cross-crate navigation. When the definition lives outside the project root, the library is auto-discovered and registered in `list_libraries`.
