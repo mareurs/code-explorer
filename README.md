@@ -1,6 +1,6 @@
 # codescout
 
-Rust MCP server giving LLMs IDE-grade code intelligence — symbol navigation, semantic search, git blame, shell integration, and persistent memory. Built for [Claude Code](https://code.claude.com/).
+Rust MCP server giving LLMs IDE-grade code intelligence — symbol navigation, semantic search, shell integration, persistent memory, and GitHub integration. Built for [Claude Code](https://code.claude.com/).
 
 ![Dashboard — Tool Stats page](docs/images/dashboard.png)
 
@@ -12,6 +12,7 @@ Rust MCP server giving LLMs IDE-grade code intelligence — symbol navigation, s
 - **Shell integration** — `run_command` executes any shell command from the project root with safety guardrails, stderr capture, and full Output Buffer support for large results.
 - **Symbol-level editing** — `replace_symbol`, `insert_code`, `rename_symbol` operate on named code symbols via LSP, not fragile line ranges.
 - **Progressive disclosure** — every tool defaults to compact output; `detail_level: "full"` + pagination unlocks everything. No accidental context floods.
+- **GitHub integration** — `github_issue`, `github_pr`, `github_file`, and `github_repo` give the AI authenticated access to GitHub — read and write issues, review PRs, push files, search code — without leaving the coding session.
 
 ## The Problem
 
@@ -220,6 +221,7 @@ suboptimal tool calls and redirects them before they execute.
 | Memory | 1 | `memory` (read / write / list / delete) |
 | Workflow | 2 | `onboarding`, `run_command` |
 | Config & Navigation | 3 | `activate_project`, `project_status`, `list_libraries` |
+| GitHub | 5 | `github_identity`, `github_issue`, `github_pr`, `github_file`, `github_repo` |
 
 Every tool defaults to compact output (exploring mode) and supports `detail_level: "full"` with pagination for when you need the complete picture.
 
