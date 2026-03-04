@@ -31,7 +31,7 @@ codescout is an MCP server that gives your AI coding agent the same navigation t
 | Semantic Search | Find code by concept, not just text match — via embeddings | 2 tools |
 | Persistent Memory | Remember project knowledge across sessions | 1 tool |
 
-Plus file operations (6 tools), workflow (2 tools), and config & navigation (3 tools) — **23 tools total**.
+Plus file operations (6 tools), workflow (2 tools), config & navigation (3 tools), and GitHub integration (5 tools) — **28 tools total**.
 
 **Recent additions:**
 - **`goto_definition` + `hover`** — LSP-backed jump-to-definition and type/doc inspection. `goto_definition` auto-discovers and registers library source when the definition lives outside the project root.
@@ -95,7 +95,7 @@ The behavior described in this README — Claude consistently reaching for the r
 
 | Component | Plugin ID | Role |
 |---|---|---|
-| **codescout** | *(this server)* | 23 tools: symbol navigation, semantic search, memory |
+| **codescout** | *(this server)* | 28 tools: symbol navigation, semantic search, memory |
 | **code-explorer-routing** | `code-explorer-routing@sdd-misc-plugins` | Hooks that enforce tool selection — intercepts `grep`/`cat`/`read` in all sessions and subagents and redirects to codescout equivalents |
 | **superpowers** | `superpowers@superpowers-marketplace` | Skills framework: TDD, systematic debugging, brainstorming, parallel agents, code review |
 | **episodic-memory** | `episodic-memory@superpowers-marketplace` | Cross-session memory: Claude searches past conversations semantically before starting any task |
@@ -128,7 +128,7 @@ If you prefer to install manually, follow the steps below.
 
 codescout has two components that work together:
 
-1. **MCP Server** — provides the 23 tools (symbol navigation, semantic search, memory, etc.)
+1. **MCP Server** — provides the 28 tools (symbol navigation, semantic search, memory, etc.)
 2. **Routing Plugin** — ensures Claude always uses the right tool, across all sessions and subagents
 
 **Both are recommended.** The MCP server gives Claude the capability; the plugin ensures
@@ -176,7 +176,7 @@ The plugin is available from the [claude-plugins marketplace](https://github.com
 
 ```bash
 claude mcp list
-# Should show: codescout with 23 tools
+# Should show: codescout with 28 tools
 ```
 
 ### How They Interact
@@ -195,7 +195,7 @@ claude mcp list
 │  └──────────────────────┬──────────────────────┘    │
 │                         │ routes to                   │
 │  ┌──────────────────────▼──────────────────────┐    │
-│  │  codescout MCP server (23 tools)             │    │
+│  │  codescout MCP server (28 tools)             │    │
 │  │                                              │    │
 │  │  LSP · Semantic · Memory · ...               │    │
 │  └──────────────────────────────────────────────┘    │
@@ -210,7 +210,7 @@ instead of `semantic_search`.
 tool to use for each situation. The `PreToolUse` hook actively intercepts
 suboptimal tool calls and redirects them before they execute.
 
-## Tools (23)
+## Tools (28)
 
 | Category | Count | Highlights |
 |---|---|---|
