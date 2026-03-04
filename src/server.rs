@@ -20,6 +20,7 @@ use crate::agent::Agent;
 use crate::tools::{
     config::{ActivateProject, ProjectStatus},
     file::{CreateFile, EditFile, FindFile, ListDir, ReadFile, SearchPattern},
+    github,
     library::ListLibraries,
     memory::Memory,
     progress,
@@ -86,6 +87,12 @@ impl CodeExplorerServer {
             Arc::new(ProjectStatus),
             // Library tools
             Arc::new(ListLibraries),
+            // GitHub tools
+            Arc::new(github::GithubIdentity),
+            Arc::new(github::GithubIssue),
+            Arc::new(github::GithubPr),
+            Arc::new(github::GithubFile),
+            Arc::new(github::GithubRepo),
         ];
         let output_buffer = Arc::new(crate::tools::output_buffer::OutputBuffer::new(20));
         Self {
@@ -513,6 +520,11 @@ mod tests {
             "activate_project",
             "project_status",
             "list_libraries",
+            "github_identity",
+            "github_issue",
+            "github_pr",
+            "github_file",
+            "github_repo",
         ];
         assert_eq!(
             server.tools.len(),
