@@ -1,6 +1,7 @@
 # Summary
 
 [Introduction](introduction.md)
+[From code-explorer to codescout](history.md)
 
 # User Guide
 
