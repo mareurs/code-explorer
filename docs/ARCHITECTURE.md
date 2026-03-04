@@ -6,7 +6,7 @@
 > user-facing manual — installation, tool reference, and semantic search guide — see
 > [`docs/manual/src/`](manual/src/introduction.md).
 
-code-explorer is an MCP server that gives LLMs IDE-grade code intelligence. It exposes symbol-level tools so agents can navigate and edit code semantically.
+codescout is an MCP server that gives LLMs IDE-grade code intelligence. It exposes symbol-level tools so agents can navigate and edit code semantically.
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -102,7 +102,7 @@ Transparent wrapper around the tool dispatch loop in `server.rs`. Records every 
 
 ### Dashboard (`src/dashboard/`)
 
-Axum HTTP server launched via `code-explorer dashboard --project . [--port 8099]`. Serves a static HTML/CSS/JS app with multiple views: Tool Stats (per-tool call charts from `usage.db`), index status, memories browser, and library list. API routes under `/api/` read from the same data sources as the MCP tools. Not started by the MCP server — opt-in via the `dashboard` CLI subcommand.
+Axum HTTP server launched via `codescout dashboard --project . [--port 8099]`. Serves a static HTML/CSS/JS app with multiple views: Tool Stats (per-tool call charts from `usage.db`), index status, memories browser, and library list. API routes under `/api/` read from the same data sources as the MCP tools. Not started by the MCP server — opt-in via the `dashboard` CLI subcommand.
 
 ### Tools (`src/tools/`)
 

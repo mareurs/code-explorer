@@ -1,14 +1,14 @@
 # Progressive Discoverability — Design Guidance
 
 **Status:** Living document. Updated as patterns are discovered or LLM behavior changes.
-**Audience:** Anyone adding or modifying tools in code-explorer.
+**Audience:** Anyone adding or modifying tools in codescout.
 **Last updated:** 2026-02-28
 
 ---
 
 ## What This Document Is
 
-This is the canonical reference for how tools in code-explorer should handle output sizing,
+This is the canonical reference for how tools in codescout should handle output sizing,
 overflow, and agent guidance. Every tool that returns variable-length data must follow these
 patterns. The goal: **an LLM should never receive a tool response that leaves it stuck** — every
 response must either contain the answer or teach the LLM exactly how to get it.

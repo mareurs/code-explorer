@@ -1,7 +1,7 @@
 # Tool Misbehaviors — Observed in the Wild
 
 This is a living document. **Update it whenever you observe unexpected, wrong, or dangerous
-behavior from code-explorer's own tools while working on the codebase.** Each entry should
+behavior from codescout's own tools while working on the codebase.** Each entry should
 capture: what you did, what you expected, what actually happened, and a reproduction hint.
 
 ---
@@ -444,7 +444,7 @@ Immediately call `search_pattern` on a unique string from the new content. Conte
 
 **Root cause hypothesis:**
 Unknown. Possibly:
-1. A code-explorer routing plugin hook intercepts the write and drops it silently.
+1. A codescout routing plugin hook intercepts the write and drops it silently.
 2. An internal check (multi-line source guard?) rejects the write but returns `"ok"` instead of an error.
 3. A file lock or concurrent write causes the edit to be lost.
 
@@ -526,14 +526,14 @@ blocked waiting for an LSP notification or response that never came.
 
 **What happened:**
 Activated `tests/fixtures/kotlin-library` as the project root (a subdirectory inside the
-code-explorer git repo). Called `git_blame` on `src/main/kotlin/library/models/Book.kt`.
+codescout git repo). Called `git_blame` on `src/main/kotlin/library/models/Book.kt`.
 Got error: `the path 'main' does not exist in the given tree; class=Tree (14); code=NotFound (-3)`.
 
-The tool correctly discovers the parent `.git` at the code-explorer root, but then tries to
+The tool correctly discovers the parent `.git` at the codescout root, but then tries to
 resolve the file path (`src/main/kotlin/...`) relative to the git root instead of relative to
 the active project root — so the git tree lookup fails.
 
-Switching active project to the actual git root (`/home/marius/work/claude/code-explorer`) and
+Switching active project to the actual git root (`/home/marius/work/claude/codescout`) and
 calling with the full path (`tests/fixtures/kotlin-library/src/main/kotlin/library/models/Book.kt`)
 works correctly.
 
@@ -620,14 +620,14 @@ Dispatched two `edit_file` calls in the same parallel response (targeting two di
 files: `src/embed/local.rs` and `src/config/project.rs`). The Claude Code permission system
 handles each call independently: the first call was approved and returned `"ok"` (edit applied
 to `local.rs`); the second call was rejected by the user and returned an error. This left the
-two files in an inconsistent state — one edited, one not. Immediately after, the code-explorer
+two files in an inconsistent state — one edited, one not. Immediately after, the codescout
 MCP server crashed and became unavailable, requiring a manual `/mcp` reconnect.
 
 **Reproduction hint:**
 1. Dispatch two `edit_file` tool calls in a single parallel response to different source files.
 2. Approve the first permission prompt, reject (or let timeout) the second.
 3. Observe: first file edited, second file unchanged — inconsistent partial state.
-4. code-explorer MCP server crashes; subsequent tool calls fail until `/mcp` restart.
+4. codescout MCP server crashes; subsequent tool calls fail until `/mcp` restart.
 
 **Root cause (investigated 2026-03-03 — two separate issues):**
 

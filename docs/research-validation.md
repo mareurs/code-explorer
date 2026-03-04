@@ -1,6 +1,6 @@
-# Research Validation: The Science Behind code-explorer
+# Research Validation: The Science Behind codescout
 
-This document maps current academic research to code-explorer's design decisions,
+This document maps current academic research to codescout's design decisions,
 showing that each major architectural choice is independently validated by papers
 from the LLM agents and software engineering community.
 
@@ -18,7 +18,7 @@ project-wide.
 
 The landmark finding: LLM performance peaks when relevant information is at the
 **beginning or end** of the context, and **degrades significantly** when it falls
-in the middle — even in "long-context" models. Directly validates why code-explorer
+in the middle — even in "long-context" models. Directly validates why codescout
 tools keep output compact and lead with the most relevant items.
 
 ### "Context Length Alone Hurts LLM Performance Despite Perfect Retrieval"
@@ -64,8 +64,8 @@ IDEs use. `find_symbol`, `goto_definition`, `hover`, `find_references`,
 The core thesis: *"Large language models routinely hallucinate APIs and mislocalize
 edits, while language servers compute verified, IDE-grade facts about real code."*
 LSP servers provide **verifiable facts: definitions, references, types, diagnostics,
-and safe edits** — exactly what code-explorer exposes. The closest academic sibling
-to code-explorer's architecture.
+and safe edits** — exactly what codescout exposes. The closest academic sibling
+to codescout's architecture.
 
 ### "LSPRAG: LSP-Guided RAG for Language-Agnostic Real-Time Unit Test Generation"
 *arXiv:2510.22210 — 2025*
@@ -73,7 +73,7 @@ to code-explorer's architecture.
 
 Uses LSP to generate language-agnostic unit tests, demonstrating LSP provides
 structural context that improves both line coverage and valid test rates. Validates
-the language-agnostic approach (20+ extensions supported in code-explorer).
+the language-agnostic approach (20+ extensions supported in codescout).
 
 ### "An Exploratory Study of Code Retrieval Techniques in Coding Agents"
 *Preprints.org, Oct 2025*
@@ -117,7 +117,7 @@ implements. Achieved SOTA on SWE-bench by careful interface design alone.
 
 RAG-powered agents that inject semantic context into queries significantly outperform
 direct embedding lookup. Validates the combination of semantic search + symbol tools
-that code-explorer provides (search to find the right area, then navigate precisely
+that codescout provides (search to find the right area, then navigate precisely
 with LSP).
 
 ### "Retrieval-Augmented Code Generation: A Survey with Focus on Repository-Level Approaches"
@@ -143,7 +143,7 @@ Documents a production system (108,000-line C# codebase, 283 development session
 using a three-layer approach: *"(1) hot-memory constitution encoding conventions,
 retrieval hooks, and orchestration protocols; (2) 19 specialized domain-expert
 agents; (3) cold-memory knowledge base of 34 on-demand specification documents."*
-This is the real-world pattern that code-explorer's `memory/` store + `project.toml`
+This is the real-world pattern that codescout's `memory/` store + `project.toml`
 + on-demand tool documentation implements.
 
 ### "Agent READMEs: An Empirical Study of Context Files for Agentic Coding"
@@ -161,7 +161,7 @@ instructions.* 72.6% of CLAUDE.md files define architecture. Validates the
 
 **Controlled experiment**: agents with AGENTS.md files show *lower runtime and token
 consumption* while maintaining comparable task completion. Directly validates why
-code-explorer surfaces `CLAUDE.md` and project memory as first-class context through
+codescout surfaces `CLAUDE.md` and project memory as first-class context through
 the `onboarding` tool.
 
 ---
@@ -177,7 +177,7 @@ exposing them through `rmcp ServerHandler`.
 
 The first rigorous benchmark for MCP-based tool use, covering 28 MCP servers and
 250 tools. Tests tool selection from fuzzy instructions, multi-hop planning, and
-cross-tool orchestration — all scenarios code-explorer tools must handle. Validates
+cross-tool orchestration — all scenarios codescout tools must handle. Validates
 MCP as the right protocol layer.
 
 ### "Configuring Agentic AI Coding Tools: An Exploratory Study"
@@ -188,13 +188,13 @@ Systematic analysis of configuration mechanisms across Claude Code, GitHub Copil
 Cursor, Gemini, and Codex across 2,926 repositories. Finds distinct configuration
 cultures forming around different tools, with Claude Code users employing the
 broadest range of mechanisms (context files, skills, subagents). Validates the
-MCP + configuration-file ecosystem code-explorer operates in.
+MCP + configuration-file ecosystem codescout operates in.
 
 ---
 
 ## Summary
 
-| code-explorer Feature | Validating Paper | Key Finding |
+| codescout Feature | Validating Paper | Key Finding |
 |---|---|---|
 | Compact default output (OutputGuard) | Liu et al. TACL'24 | Info in middle of context is lost |
 | Output caps, overflow hints | arXiv:2510.05381 | Context length alone degrades performance |
@@ -209,6 +209,6 @@ MCP + configuration-file ecosystem code-explorer operates in.
 | MCP protocol | MCP-Bench 2025 | MCP is the emerging standard for tool-using agents |
 
 The most striking pattern: papers like SWE-agent and AgentDiet are *optimizing
-away* the bloat that code-explorer *never creates*. The "context rot" problem — raw
+away* the bloat that codescout *never creates*. The "context rot" problem — raw
 file reads, large grep dumps, unfiltered directory listings — is exactly what the
 OutputGuard + symbol-tool architecture prevents by design.

@@ -1,6 +1,6 @@
 # Features
 
-Implemented capabilities in code-explorer. For what's coming next, see [`ROADMAP.md`](ROADMAP.md).
+Implemented capabilities in codescout. For what's coming next, see [`ROADMAP.md`](ROADMAP.md).
 
 ---
 
@@ -42,7 +42,7 @@ Session-scoped LRU buffer (max 20 entries) that stores large command output and 
 
 **Smart summaries:** Long output is summarized by command type — cargo test (pass/fail counts, failed test names), cargo build (error extraction), generic (head + tail with omission count).
 
-**Source file blocking:** `run_command` cannot `cat`/`head`/`tail` source files (`.rs`, `.ts`, `.py`, etc.) — use code-explorer symbol tools instead. Pass `acknowledge_risk: true` only if truly necessary.
+**Source file blocking:** `run_command` cannot `cat`/`head`/`tail` source files (`.rs`, `.ts`, `.py`, etc.) — use codescout symbol tools instead. Pass `acknowledge_risk: true` only if truly necessary.
 
 ---
 
@@ -273,7 +273,7 @@ Track tool call patterns to surface bugs, usage drift, and performance regressio
 
 **Storage:** Append-only SQLite table in `.code-explorer/usage.db`.
 
-**Surfacing via the dashboard** (`code-explorer dashboard`):
+**Surfacing via the dashboard** (`codescout dashboard`):
 - Per-tool call counts, error rates, p50/p99 latency
 - Time-bucketed view: last hour / day / week / 30 days
 - Overflow rate per tool (high overflow = agent asking too broadly)

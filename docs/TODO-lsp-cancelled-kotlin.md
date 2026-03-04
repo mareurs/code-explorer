@@ -6,10 +6,10 @@
 
 kotlin-lsp uses a workspace-scoped on-disk database that only one process can own
 at a time. When another instance holds the lock (IDE open, stale terminal session,
-orphaned process from a previous code-explorer run), a new instance either:
+orphaned process from a previous codescout run), a new instance either:
 
 - **Hangs indefinitely during `initialize`** — never sends back an LSP
-  `InitializeResult`, so code-explorer sits at the 300s JVM `init_timeout`
+  `InitializeResult`, so codescout sits at the 300s JVM `init_timeout`
 - **Returns -32800 "cancelled"** — server starts but immediately cancels all
   requests because the database is locked
 
@@ -29,7 +29,7 @@ orphaned process from a previous code-explorer run), a new instance either:
 ### Cleanup performed
 - Killed competing kotlin-lsp instances (PIDs 1144325, 1582490)
 - Removed community `kotlin-language-server` binary and lib dir from `~/.local/`
-  (was never used by code-explorer, caused confusion)
+  (was never used by codescout, caused confusion)
 
 ---
 

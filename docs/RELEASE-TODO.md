@@ -1,6 +1,6 @@
 # Release Readiness Checklist
 
-Tracking remaining work items for the first public release of code-explorer.
+Tracking remaining work items for the first public release of codescout.
 
 ## Completed
 

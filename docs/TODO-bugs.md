@@ -1,6 +1,6 @@
-# Code-Explorer Bug Log
+# Codescout Bug Log
 
-This is a living document. **Update it whenever you discover a bug in code-explorer's own
+This is a living document. **Update it whenever you discover a bug in codescout's own
 logic — regardless of whether you're fixing it immediately.** Each entry should capture:
 what the wrong behavior is, where it lives, how to reproduce it, and a root cause hypothesis.
 

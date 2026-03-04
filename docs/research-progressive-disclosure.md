@@ -1,6 +1,6 @@
 # Research Validation: Progressive Disclosure & Tool Discovery for LLM Agents
 
-This document maps current academic research to code-explorer's progressive
+This document maps current academic research to codescout's progressive
 disclosure design — the `OutputGuard` two-mode system, overflow hints, tool
 selection guidance, and `RecoverableError` with actionable hints.
 
@@ -36,7 +36,7 @@ schemas into prompts, reducing models to passive selectors."* MCP-Zero restores
 rather than receiving all 2,797 tools from 308 MCP servers upfront. Result:
 **98% reduction in token consumption** on APIBank while maintaining accuracy.
 
-The core insight maps exactly to code-explorer's two-mode system: expose the map
+The core insight maps exactly to codescout's two-mode system: expose the map
 first (exploring mode), let the agent navigate to what it needs (focused mode).
 
 ### "ToolLLM: Facilitating Large Language Models to Master 16,000+ Real-world APIs"
@@ -65,7 +65,7 @@ tools, and this is *surprisingly fragile*. Minor edits to tool descriptions caus
 **>10x change in tool usage** from GPT-4.1 and Qwen2.5-7B. The implication:
 tool naming and description are not cosmetic — they are the selection mechanism.
 
-This validates code-explorer's strict naming convention: `list_*` (enumerate),
+This validates codescout's strict naming convention: `list_*` (enumerate),
 `find_*` (search by criteria), `search_*` (text/semantic). Consistent, predictable
 naming reduces the space of selection errors.
 
@@ -79,7 +79,7 @@ Performance depends on two factors equally: agent reasoning capability **and**
 tool description quality. Tool descriptions need to be written for machine
 consumers, not humans.
 
-This is the rationale behind code-explorer's `server_instructions.md` — the
+This is the rationale behind codescout's `server_instructions.md` — the
 navigation guide that tells the agent *which tool to use given what it knows*:
 "Know the name → LSP tools. Know the concept → semantic search. Know nothing →
 list_dir + list_symbols."
@@ -95,7 +95,7 @@ multiple JSON keys have similar meaning (a hotel with `name`, `room_name`, and
 models *"regurgitate the input JSON response"* when outputs are too long, breaking
 structured pipelines where one tool's output becomes another's input.
 
-This validates code-explorer's output design: structured outputs with unambiguous
+This validates codescout's output design: structured outputs with unambiguous
 field names, compact representations that avoid key-name collision, and the
 decision to return focused bodies only on explicit request.
 
@@ -139,14 +139,14 @@ hints, and source files are never returned as raw text.
 Finds that **read operations constitute 76.1% of all tokens** in coding agent
 trajectories. SWE-Pruner's key contribution is pruning these aggressively (23–38%
 reduction) without performance loss. The "read-heavy" cost profile is exactly what
-code-explorer's architecture avoids by routing through symbol tools instead of
+codescout's architecture avoids by routing through symbol tools instead of
 raw file access.
 
 ---
 
 ## The Overflow Hint Pattern: Actionable Guidance on Truncation
 
-Code-explorer's overflow responses include a `hint` field and `by_file` distribution
+Codescout's overflow responses include a `hint` field and `by_file` distribution
 map — telling the agent *how to narrow the search* rather than just truncating.
 Research validates why this matters.
 
@@ -172,13 +172,13 @@ Finds that coarse agent-level descriptions used for routing *"obscures fine-grai
 tool functionality and often results in suboptimal agent selection."* The fix:
 embed both tools **and** their parent agents in a shared vector space with metadata
 relationships, enabling the agent to navigate from coarse to fine. This is the
-multi-agent equivalent of code-explorer's explore → focus workflow.
+multi-agent equivalent of codescout's explore → focus workflow.
 
 ---
 
 ## RecoverableError vs Fatal Error: A Two-Tier Signal
 
-Code-explorer routes tool errors through two paths: `RecoverableError` (the agent
+Codescout routes tool errors through two paths: `RecoverableError` (the agent
 made a correctable mistake, here's the hint) vs. `anyhow::bail!` (something truly
 broke). Research validates why conflating these harms agents.
 
@@ -207,7 +207,7 @@ self-correct precisely.
 
 ## Navigation Guidance in Server Instructions
 
-Code-explorer's `server_instructions.md` provides a decision tree for tool
+Codescout's `server_instructions.md` provides a decision tree for tool
 selection: what to use when. Research validates that this meta-level guidance
 is not optional.
 
@@ -234,9 +234,9 @@ of `server_instructions.md` provides.
 
 ---
 
-## Summary: What the Literature Says code-explorer Gets Right
+## Summary: What the Literature Says codescout Gets Right
 
-| code-explorer Pattern | Research Backing | Finding |
+| codescout Pattern | Research Backing | Finding |
 |---|---|---|
 | Compact exploring mode (200-item cap) | RAG-MCP (2025) | All-tools-upfront: 13.6% accuracy |
 | On-demand detail via `detail_level: "full"` | MCP-Zero (2025) | 98% token reduction with on-demand discovery |
@@ -250,5 +250,5 @@ of `server_instructions.md` provides.
 | CLAUDE.md / project memory as onboarding | AGENTS.md Impact (2026) | Context files lower runtime + token consumption |
 
 The research converges on a single principle: **the agent's context window is not
-a dump site — it is a limited workspace**. Every design choice in code-explorer's
+a dump site — it is a limited workspace**. Every design choice in codescout's
 output layer is an application of that principle.
