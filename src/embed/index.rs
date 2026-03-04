@@ -254,6 +254,147 @@ pub fn ensure_vec_memories(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// A memory record returned by [`search_memories`].
+pub struct MemoryResult {
+    pub id: i64,
+    pub bucket: String,
+    pub title: String,
+    pub content: String,
+    pub similarity: f32,
+    pub created_at: String,
+}
+
+/// Insert a new memory and its embedding into both `memories` and `vec_memories`.
+///
+/// Returns the row id of the newly inserted memory.
+pub fn insert_memory(
+    conn: &Connection,
+    bucket: &str,
+    title: &str,
+    content: &str,
+    embedding: &[f32],
+) -> Result<i64> {
+    let now = utc_now_display();
+    conn.execute(
+        "INSERT INTO memories (bucket, title, content, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![bucket, title, content, now, now],
+    )?;
+    let row_id = conn.last_insert_rowid();
+
+    // Serialize embedding as little-endian f32 bytes (sqlite-vec format)
+    let blob: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
+    conn.execute(
+        "INSERT INTO vec_memories (rowid, embedding) VALUES (?1, ?2)",
+        params![row_id, blob],
+    )?;
+
+    Ok(row_id)
+}
+
+/// Search memories by embedding similarity, optionally filtered by bucket.
+///
+/// Returns up to `limit` results sorted by descending similarity (1.0 = identical).
+pub fn search_memories(
+    conn: &Connection,
+    query_embedding: &[f32],
+    bucket_filter: Option<&str>,
+    limit: usize,
+) -> Result<Vec<MemoryResult>> {
+    let query_blob: Vec<u8> = query_embedding
+        .iter()
+        .flat_map(|f| f.to_le_bytes())
+        .collect();
+
+    let map_row = |row: &rusqlite::Row<'_>| -> rusqlite::Result<MemoryResult> {
+        let distance: f64 = row.get(5)?;
+        let similarity = (1.0_f32 - distance as f32).clamp(0.0, 1.0);
+        Ok(MemoryResult {
+            id: row.get(0)?,
+            bucket: row.get(1)?,
+            title: row.get(2)?,
+            content: row.get(3)?,
+            created_at: row.get(4)?,
+            similarity,
+        })
+    };
+
+    let knn = "SELECT rowid, distance FROM vec_memories \
+               WHERE embedding MATCH vec_f32(?1) ORDER BY distance LIMIT ?2";
+
+    let sel = format!(
+        "SELECT m.id, m.bucket, m.title, m.content, m.created_at, \
+         COALESCE(knn.distance, 1.0) AS distance \
+         FROM memories m JOIN ({knn}) knn ON m.id = knn.rowid"
+    );
+
+    match bucket_filter {
+        None => {
+            let sql = format!("{sel} ORDER BY distance ASC");
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt
+                .query_map(params![query_blob, limit as i64], map_row)?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(rows)
+        }
+        Some(bucket) => {
+            let sql = format!("{sel} WHERE m.bucket = ?3 ORDER BY distance ASC");
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt
+                .query_map(params![query_blob, limit as i64, bucket], map_row)?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(rows)
+        }
+    }
+}
+
+/// Delete a memory from both `vec_memories` and `memories` by id.
+pub fn delete_memory(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute("DELETE FROM vec_memories WHERE rowid = ?1", params![id])?;
+    conn.execute("DELETE FROM memories WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+/// Insert or update a memory by title match within the same bucket.
+///
+/// If a memory with the same `title` already exists, its content, bucket, embedding,
+/// and `updated_at` timestamp are updated. Otherwise a new memory is inserted.
+/// Returns the row id.
+pub fn upsert_memory_by_title(
+    conn: &Connection,
+    bucket: &str,
+    title: &str,
+    content: &str,
+    embedding: &[f32],
+) -> Result<i64> {
+    use rusqlite::OptionalExtension;
+
+    let existing_id: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM memories WHERE title = ?1",
+            params![title],
+            |r| r.get(0),
+        )
+        .optional()?;
+
+    match existing_id {
+        Some(id) => {
+            let now = utc_now_display();
+            conn.execute(
+                "UPDATE memories SET content = ?1, bucket = ?2, updated_at = ?3 WHERE id = ?4",
+                params![content, bucket, now, id],
+            )?;
+            let blob: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
+            conn.execute(
+                "UPDATE vec_memories SET embedding = ?1 WHERE rowid = ?2",
+                params![blob, id],
+            )?;
+            Ok(id)
+        }
+        None => insert_memory(conn, bucket, title, content, embedding),
+    }
+}
+
 /// Hash the content of a file for change detection.
 pub fn hash_file(path: &Path) -> Result<String> {
     let bytes = std::fs::read(path)?;
@@ -2607,5 +2748,87 @@ mod tests {
             sql.contains("vec0"),
             "expected vec0 virtual table, got: {sql}"
         );
+    }
+
+    #[test]
+    fn insert_and_search_memory() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = open_db(dir.path()).unwrap();
+        set_meta(&conn, "embedding_dims", "3").unwrap();
+        ensure_vec_memories(&conn).unwrap();
+
+        let embedding = vec![0.1_f32, 0.2, 0.3];
+        let id = insert_memory(
+            &conn,
+            "code",
+            "test title",
+            "test content about patterns",
+            &embedding,
+        )
+        .unwrap();
+        assert!(id > 0);
+
+        let results = search_memories(&conn, &embedding, None, 5).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "test title");
+        assert_eq!(results[0].bucket, "code");
+    }
+
+    #[test]
+    fn delete_memory_removes_from_both_tables() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = open_db(dir.path()).unwrap();
+        set_meta(&conn, "embedding_dims", "3").unwrap();
+        ensure_vec_memories(&conn).unwrap();
+
+        let embedding = vec![0.1_f32, 0.2, 0.3];
+        let id = insert_memory(&conn, "code", "to delete", "content", &embedding).unwrap();
+        delete_memory(&conn, id).unwrap();
+
+        let results = search_memories(&conn, &embedding, None, 5).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn search_memories_filters_by_bucket() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = open_db(dir.path()).unwrap();
+        set_meta(&conn, "embedding_dims", "3").unwrap();
+        ensure_vec_memories(&conn).unwrap();
+
+        let e1 = vec![0.1_f32, 0.2, 0.3];
+        let e2 = vec![0.3_f32, 0.2, 0.1];
+        insert_memory(&conn, "code", "code mem", "patterns", &e1).unwrap();
+        insert_memory(&conn, "system", "sys mem", "build stuff", &e2).unwrap();
+
+        let code_only = search_memories(&conn, &e1, Some("code"), 5).unwrap();
+        assert_eq!(code_only.len(), 1);
+        assert_eq!(code_only[0].bucket, "code");
+    }
+
+    #[test]
+    fn upsert_memory_updates_existing() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = open_db(dir.path()).unwrap();
+        set_meta(&conn, "embedding_dims", "3").unwrap();
+        ensure_vec_memories(&conn).unwrap();
+
+        let e1 = vec![0.1_f32, 0.2, 0.3];
+        let id1 = insert_memory(&conn, "code", "my-topic", "old content", &e1).unwrap();
+
+        let e2 = vec![0.4_f32, 0.5, 0.6];
+        let id2 = upsert_memory_by_title(&conn, "code", "my-topic", "new content", &e2).unwrap();
+
+        assert_eq!(id1, id2, "should update same row, not insert new");
+
+        // Verify content updated
+        let content: String = conn
+            .query_row(
+                "SELECT content FROM memories WHERE id = ?1",
+                params![id1],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(content, "new content");
     }
 }
