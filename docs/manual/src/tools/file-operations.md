@@ -227,3 +227,75 @@ The glob is matched against the path relative to the search directory, so `**/*.
 - Prefer `find_file` over `list_dir` when you are looking for files by name — the glob match is more expressive than scanning a directory tree manually.
 - Use `search_pattern` when you need to find files by their contents rather than their names.
 - The `**` wildcard matches across directory boundaries. Use it for language-wide searches like `**/*.rs` or to locate files with a specific name anywhere in the tree: `**/Makefile`.
+
+---
+
+## `create_file`
+
+**Purpose:** Create a new file or overwrite an existing file with given content.
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `path` | string | yes | — | File path relative to project root |
+| `content` | string | yes | — | Full file content to write |
+
+**Example:**
+
+```json
+{
+  "tool": "create_file",
+  "arguments": {
+    "path": "src/utils/helpers.rs",
+    "content": "pub fn clamp(v: f64, min: f64, max: f64) -> f64 {\n    v.max(min).min(max)\n}\n"
+  }
+}
+```
+
+**Output:** `"ok"`
+
+**Tips:**
+- Creates parent directories if they don't exist.
+- Overwrites without warning — check that the path is correct before writing.
+- For editing existing files, use `edit_file` instead.
+
+See [Editing](editing.md#create_file) for more usage guidance.
+
+---
+
+## `edit_file`
+
+**Purpose:** Find-and-replace editing within an existing file. Matches an exact string and replaces it — whitespace-sensitive.
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `path` | string | yes | — | File path relative to project root |
+| `old_string` | string | yes | — | Exact text to find (must match including whitespace) |
+| `new_string` | string | yes | — | Replacement text |
+| `replace_all` | boolean | no | `false` | Replace every occurrence instead of just the first |
+| `insert` | string | no | — | `"prepend"` or `"append"` — add text at the start/end of the file |
+
+**Example — change an import:**
+
+```json
+{
+  "tool": "edit_file",
+  "arguments": {
+    "path": "src/main.rs",
+    "old_string": "use crate::utils::old_helper;",
+    "new_string": "use crate::utils::new_helper;"
+  }
+}
+```
+
+**Output:** `"ok"`
+
+**Tips:**
+- `old_string` must match exactly — including indentation and line endings.
+- Use for imports, constants, config values, and small literal changes.
+- For changes to a function or struct body, prefer `replace_symbol` — it's robust to line number shifts.
+
+See [Editing](editing.md#edit_file) for full parameter details and more examples.
