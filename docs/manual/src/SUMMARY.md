@@ -48,6 +48,7 @@
   - [AST Analysis](tools/ast.md)
   - [Memory](tools/memory.md)
   - [Workflow & Config](tools/workflow-and-config.md)
+  - [GitHub](tools/github.md)
 
 # Development
 
