@@ -24,9 +24,7 @@ async fn project_with_files(files: &[(&str, &str)]) -> (tempfile::TempDir, ToolC
     let ctx = ToolContext {
         agent,
         lsp: LspManager::new_arc(),
-        output_buffer: std::sync::Arc::new(codescout::tools::output_buffer::OutputBuffer::new(
-            20,
-        )),
+        output_buffer: std::sync::Arc::new(codescout::tools::output_buffer::OutputBuffer::new(20)),
         progress: None,
     };
     (dir, ctx)
@@ -238,9 +236,7 @@ async fn workflow_git_blame() {
     let ctx = ToolContext {
         agent,
         lsp: LspManager::new_arc(),
-        output_buffer: std::sync::Arc::new(codescout::tools::output_buffer::OutputBuffer::new(
-            20,
-        )),
+        output_buffer: std::sync::Arc::new(codescout::tools::output_buffer::OutputBuffer::new(20)),
         progress: None,
     };
 
@@ -554,9 +550,7 @@ async fn write_allowed_when_project_provided_at_startup_even_with_worktrees() {
     let ctx = ToolContext {
         agent,
         lsp: LspManager::new_arc(),
-        output_buffer: std::sync::Arc::new(codescout::tools::output_buffer::OutputBuffer::new(
-            20,
-        )),
+        output_buffer: std::sync::Arc::new(codescout::tools::output_buffer::OutputBuffer::new(20)),
         progress: None,
     };
 

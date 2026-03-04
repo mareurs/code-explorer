@@ -62,7 +62,7 @@ impl ProgressReporter {
             .peer
             .notify_logging_message(LoggingMessageNotificationParam {
                 level: LoggingLevel::Info,
-                logger: Some("code-explorer".to_string()),
+                logger: Some("codescout".to_string()),
                 data: serde_json::Value::String(text.to_string()),
             })
             .await;

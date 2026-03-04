@@ -385,7 +385,7 @@ pub async fn run(
             }
 
             let addr: std::net::SocketAddr = format!("{}:{}", host, port).parse()?;
-            tracing::info!("code-explorer MCP server ready (HTTP/SSE at {})", addr);
+            tracing::info!("codescout MCP server ready (HTTP/SSE at {})", addr);
             tracing::info!("  SSE endpoint: http://{}/sse", addr);
             tracing::info!("  Message endpoint: http://{}/message", addr);
 

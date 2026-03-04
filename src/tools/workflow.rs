@@ -1470,7 +1470,7 @@ mod tests {
         let (_dir, ctx) = project_ctx().await;
         let result = RunCommand
             .call(
-                json!({ "command": "rm -rf /tmp/code_explorer_test_nonexistent" }),
+                json!({ "command": "rm -rf /tmp/codescout_test_nonexistent" }),
                 &ctx,
             )
             .await

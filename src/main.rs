@@ -3,10 +3,7 @@ use clap::{Parser, Subcommand};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[derive(Parser)]
-#[command(
-    name = "codescout",
-    about = "High-performance coding agent MCP server"
-)]
+#[command(name = "codescout", about = "High-performance coding agent MCP server")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -87,10 +84,7 @@ async fn main() -> Result<()> {
             port,
             auth_token,
         } => {
-            tracing::info!(
-                "Starting codescout MCP server (transport={})",
-                transport
-            );
+            tracing::info!("Starting codescout MCP server (transport={})", transport);
             codescout::server::run(project, &transport, &host, port, auth_token).await?;
         }
         Commands::Index { project, force } => {

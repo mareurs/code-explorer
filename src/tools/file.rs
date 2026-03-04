@@ -3950,7 +3950,7 @@ mod tests {
         let val = serde_json::json!({
             "type": "config",
             "line_count": 50,
-            "preview": "[package]\nname = \"code-explorer\"\nversion = \"0.1.0\"",
+            "preview": "[package]\nname = \"codescout\"\nversion = \"0.1.0\"",
             "file_id": "@file_cfg",
             "hint": "Full file stored as @file_cfg."
         });
@@ -3958,7 +3958,7 @@ mod tests {
         assert!(result.starts_with("50 lines (Config)\n"));
         assert!(result.contains("Preview:"));
         assert!(result.contains("[package]"));
-        assert!(result.contains("name = \"code-explorer\""));
+        assert!(result.contains("name = \"codescout\""));
         assert!(result.contains("Buffer: @file_cfg"));
     }
 

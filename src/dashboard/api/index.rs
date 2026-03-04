@@ -13,7 +13,7 @@ pub async fn get_index(State(state): State<DashboardState>) -> Json<Value> {
     if !db_path.exists() {
         return Json(json!({
             "available": false,
-            "reason": "No semantic index. Run `code-explorer index` to build one."
+            "reason": "No semantic index. Run `codescout index` to build one."
         }));
     }
 

@@ -647,7 +647,7 @@ mod tests {
     fn write_to_tmp_allowed() {
         let project = tempdir().unwrap();
         // /tmp itself must exist on the system for this test to be meaningful
-        let target = PathBuf::from("/tmp/code-explorer-test-write.txt");
+        let target = PathBuf::from("/tmp/codescout-test-write.txt");
         let result =
             validate_write_path(target.to_str().unwrap(), project.path(), &default_config());
         assert!(

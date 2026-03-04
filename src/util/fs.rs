@@ -97,7 +97,7 @@ mod tests {
     }
 
     #[test]
-    fn detect_project_root_prefers_code_explorer_over_git() {
+    fn detect_project_root_prefers_codescout_dir_over_git() {
         let dir = tempdir().unwrap();
         std::fs::create_dir(dir.path().join(".git")).unwrap();
         std::fs::create_dir(dir.path().join(".code-explorer")).unwrap();
