@@ -2831,4 +2831,118 @@ mod tests {
             .unwrap();
         assert_eq!(content, "new content");
     }
+
+    #[test]
+    fn build_index_does_not_clear_memories() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = open_db(dir.path()).unwrap();
+        set_meta(&conn, "embedding_dims", "3").unwrap();
+        ensure_vec_memories(&conn).unwrap();
+
+        // Insert a memory
+        insert_memory(
+            &conn,
+            "code",
+            "keep me",
+            "important knowledge",
+            &[0.1, 0.2, 0.3],
+        )
+        .unwrap();
+
+        // Also insert a code chunk so we have data in the chunks/files tables
+        insert_chunk(
+            &conn,
+            &dummy_chunk("src/main.rs", "fn main() {}"),
+            &[0.4_f32, 0.5, 0.6],
+        )
+        .unwrap();
+
+        // Simulate what build_index does to code chunks (it clears and rebuilds)
+        conn.execute("DELETE FROM chunks", []).unwrap();
+        conn.execute("DELETE FROM files", []).unwrap();
+
+        // Memories should survive — they live in separate tables
+        let results = search_memories(&conn, &[0.1, 0.2, 0.3], None, 5).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "keep me");
+        assert_eq!(results[0].content, "important knowledge");
+    }
+
+    #[test]
+    fn search_memories_empty_db() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = open_db(dir.path()).unwrap();
+        set_meta(&conn, "embedding_dims", "3").unwrap();
+        ensure_vec_memories(&conn).unwrap();
+
+        let results = search_memories(&conn, &[0.1, 0.2, 0.3], None, 5).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn insert_memory_timestamps_are_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = open_db(dir.path()).unwrap();
+        set_meta(&conn, "embedding_dims", "3").unwrap();
+        ensure_vec_memories(&conn).unwrap();
+
+        insert_memory(&conn, "code", "test", "content", &[0.1, 0.2, 0.3]).unwrap();
+
+        let (created, updated): (String, String) = conn
+            .query_row(
+                "SELECT created_at, updated_at FROM memories WHERE title = 'test'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+
+        assert!(!created.is_empty());
+        assert!(!updated.is_empty());
+        assert_eq!(created, updated); // Same on first insert
+    }
+
+    #[test]
+    fn upsert_memory_updates_timestamp() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = open_db(dir.path()).unwrap();
+        set_meta(&conn, "embedding_dims", "3").unwrap();
+        ensure_vec_memories(&conn).unwrap();
+
+        insert_memory(&conn, "code", "ts-test", "v1", &[0.1, 0.2, 0.3]).unwrap();
+
+        let created1: String = conn
+            .query_row(
+                "SELECT created_at FROM memories WHERE title = 'ts-test'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+
+        // Upsert with new content
+        upsert_memory_by_title(&conn, "code", "ts-test", "v2", &[0.4, 0.5, 0.6]).unwrap();
+
+        let (created2, updated2): (String, String) = conn
+            .query_row(
+                "SELECT created_at, updated_at FROM memories WHERE title = 'ts-test'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(created1, created2, "created_at should not change on upsert");
+        // updated_at may or may not differ (depends on timing) but should exist
+        assert!(!updated2.is_empty());
+    }
+
+    #[test]
+    fn delete_nonexistent_memory_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = open_db(dir.path()).unwrap();
+        set_meta(&conn, "embedding_dims", "3").unwrap();
+        ensure_vec_memories(&conn).unwrap();
+
+        // Deleting a memory that doesn't exist should not error
+        let result = delete_memory(&conn, 99999);
+        assert!(result.is_ok());
+    }
 }

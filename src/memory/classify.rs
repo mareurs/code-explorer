@@ -161,4 +161,17 @@ mod tests {
             "code"
         );
     }
+
+    #[test]
+    fn empty_content_returns_unstructured() {
+        assert_eq!(classify_bucket(""), "unstructured");
+    }
+
+    #[test]
+    fn preferences_detected_from_remember_to() {
+        assert_eq!(
+            classify_bucket("Remember to always run clippy before committing"),
+            "preferences"
+        );
+    }
 }
