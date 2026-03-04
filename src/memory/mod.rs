@@ -4,6 +4,8 @@
 //! They are organized hierarchically via path-like topics:
 //! e.g. "debugging/async-patterns" → `.code-explorer/memories/debugging/async-patterns.md`
 
+pub mod classify;
+
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
