@@ -1,6 +1,6 @@
 # Language Support
 
-code-explorer provides three tiers of support depending on which backends are
+codescout provides three tiers of support depending on which backends are
 available for a given language.
 
 - **Full support** — LSP server + tree-sitter grammar. All symbol tools work,
@@ -67,7 +67,7 @@ is configured and no tree-sitter grammar is bundled.
 
 ## Installing LSP Servers
 
-code-explorer looks for each LSP server binary on `PATH`. The quickest way to
+codescout looks for each LSP server binary on `PATH`. The quickest way to
 get started is the bundled install script:
 
 ```bash

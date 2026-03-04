@@ -2,22 +2,22 @@
 
 ## Why the Plugin Exists
 
-Claude Code has access to code-explorer's 23 tools, but it also has built-in tools like `grep`,
+Claude Code has access to codescout's 23 tools, but it also has built-in tools like `grep`,
 `cat`, and `Read`. Without guidance, Claude tends to reach for the familiar built-ins — especially
 in subagents, which start each task with a blank slate and have no memory of earlier instructions.
 
 The `code-explorer-routing` plugin solves this with three hooks that run automatically:
 
 - **SessionStart** — injects a tool selection guide into every new session, explaining when to
-  prefer code-explorer tools over built-ins.
+  prefer codescout tools over built-ins.
 - **SubagentStart** — propagates the same guide to every subagent that Claude Code spawns, so
-  subagents also know to use code-explorer from the start.
+  subagents also know to use codescout from the start.
 - **PreToolUse** — actively intercepts calls to `grep`, `cat`, `Read`, `find`, and `ls` and
-  redirects them to the appropriate code-explorer equivalents before they execute.
+  redirects them to the appropriate codescout equivalents before they execute.
 
 The difference in practice:
 
-- Without the plugin: Claude has access to code-explorer but may use `grep` for pattern search and
+- Without the plugin: Claude has access to codescout but may use `grep` for pattern search and
   `cat` for reading files out of habit, missing LSP-backed navigation, token-efficient output, and
   progressive disclosure.
 - With the plugin: every session and subagent starts with a clear preference order, and old habits
@@ -35,11 +35,11 @@ The difference in practice:
 │  │  SessionStart  → inject tool selection guide │    │
 │  │  SubagentStart → propagate to all subagents  │    │
 │  │  PreToolUse    → redirect grep/cat/read to   │    │
-│  │                  code-explorer equivalents    │    │
+│  │                  codescout equivalents    │    │
 │  └──────────────────────┬──────────────────────┘    │
 │                         │ routes to                   │
 │  ┌──────────────────────▼──────────────────────┐    │
-│  │  code-explorer MCP server (23 tools)         │    │
+│  │  codescout MCP server (23 tools)         │    │
 │  │                                              │    │
 │  │  LSP · Semantic · Git · AST · Memory · ...   │    │
 │  └──────────────────────────────────────────────┘    │
@@ -97,7 +97,7 @@ Injects the following guidance at the start of every session:
 - Prefer `list_symbols` and `find_symbol` over `cat`/`Read` when exploring code structure.
 - Prefer `list_dir` over `ls` and `find_file` over `find`.
 - Use `semantic_search` when looking for code by concept rather than by name.
-- Reserve built-in file tools for writing new content and reading files that code-explorer does
+- Reserve built-in file tools for writing new content and reading files that codescout does
   not index (binary files, generated artifacts, etc.).
 
 This guidance is injected as a system-level note, not as a user message, so it does not clutter

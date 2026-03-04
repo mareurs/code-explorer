@@ -1,6 +1,6 @@
 # Memory
 
-Memory gives code-explorer persistent, project-scoped storage that outlives any
+Memory gives codescout persistent, project-scoped storage that outlives any
 single conversation. Notes written in one session are available in every future
 session — the agent accumulates knowledge about a codebase over time rather than
 rediscovering the same things repeatedly.

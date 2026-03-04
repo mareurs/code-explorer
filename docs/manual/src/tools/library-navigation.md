@@ -15,7 +15,7 @@ All library access is **read-only**. Editing tools operate only on project code.
 
 The most common way libraries enter the registry is automatically: when an LSP
 `goto_definition` request returns a path outside the project root (e.g. a Rust
-crate in `~/.cargo/registry/`, a Python package in `.venv/`), code-explorer
+crate in `~/.cargo/registry/`, a Python package in `.venv/`), codescout
 walks the parent directories looking for a package manifest (`Cargo.toml`,
 `package.json`, `pyproject.toml`, `go.mod`) and registers the library.
 

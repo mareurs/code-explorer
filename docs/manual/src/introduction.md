@@ -1,6 +1,6 @@
 # Introduction
 
-This manual covers code-explorer: an MCP server that gives AI coding agents
+This manual covers codescout: an MCP server that gives AI coding agents
 IDE-grade code navigation, optimized for token efficiency.
 
 ---
@@ -44,12 +44,12 @@ runs into this wall, regardless of model capability.
 
 ## The Solution
 
-code-explorer exposes the same information an IDE uses — symbol definitions,
+codescout exposes the same information an IDE uses — symbol definitions,
 references, call hierarchies, type information, git history — through a standard
 MCP interface that any agent can call.
 
 It is a Rust binary that runs alongside your coding agent. The agent sends MCP
-tool calls; code-explorer delegates to the right backend (LSP server,
+tool calls; codescout delegates to the right backend (LSP server,
 tree-sitter, git, embedding index) and returns structured, compact results.
 
 Four pillars:
@@ -57,7 +57,7 @@ Four pillars:
 ### LSP Navigation (9 tools, 9 languages)
 
 The Language Server Protocol is how IDEs answer questions like "where is this
-defined?" and "who calls this?". code-explorer runs LSP servers on your behalf
+defined?" and "who calls this?". codescout runs LSP servers on your behalf
 and exposes their answers as agent-friendly tools.
 
 - `find_symbol` — locate any symbol by name across the project
@@ -94,7 +94,7 @@ For git history and diffs, use `run_command` with shell git commands (e.g. `run_
 
 ### Persistent Memory (1 tool)
 
-Agents are stateless across sessions by default. code-explorer provides a
+Agents are stateless across sessions by default. codescout provides a
 lightweight key-value store backed by markdown files in `.code-explorer/memories/`.
 
 - `memory` — unified dispatch tool: `action: "read"` / `"write"` / `"list"` / `"delete"`
@@ -140,7 +140,7 @@ This manual is written for three audiences.
 
 ### Operators
 
-You are setting up code-explorer for a team or configuring it to work with
+You are setting up codescout for a team or configuring it to work with
 Claude Code, Cursor, or another MCP-capable agent. You need to understand
 installation, the MCP configuration format, embedding backend options, and
 which LSP servers to install for your languages.
@@ -150,7 +150,7 @@ Start here: [Installation](getting-started/installation.md), then
 
 ### End-User Developers
 
-You are a developer using Claude Code (or another agent) with code-explorer
+You are a developer using Claude Code (or another agent) with codescout
 already set up. You want to understand what the tools do and when to reach for
 each one, so you can ask the agent better questions and interpret its reasoning.
 
@@ -175,7 +175,7 @@ Start here: [Architecture](architecture.md), then
 The manual is organized into three sections:
 
 **User Guide** — everything you need to install, configure, and use
-code-explorer. Reads linearly for first-time setup; use it as a reference once
+codescout. Reads linearly for first-time setup; use it as a reference once
 you are familiar.
 
 **Tool Reference** — one page per tool category. Each page covers what the
@@ -195,22 +195,22 @@ Oriented toward contributors and operators debugging unexpected behavior.
 - [Your First Project](getting-started/first-project.md) — onboarding, indexing,
   and your first tool calls
 - [Routing Plugin](getting-started/routing-plugin.md) — the plugin that ensures
-  Claude always reaches for code-explorer tools
+  Claude always reaches for codescout tools
 
 ---
 
 ## A Quick Example
 
-Here is what a concrete agent interaction looks like with code-explorer versus
+Here is what a concrete agent interaction looks like with codescout versus
 without it.
 
-**Without code-explorer** — the agent uses `read_file` on `auth.rs` (850
+**Without codescout** — the agent uses `read_file` on `auth.rs` (850
 lines), scans for `authenticate_user`, reads the function, then uses `grep` for
 callers, gets 23 hits including test fixtures, reads three more files to
 disambiguate, and still misses that the error type changed in a recent refactor.
 
 
-**With code-explorer:**
+**With codescout:**
 
 ```
 list_symbols("src/auth.rs")
@@ -229,4 +229,4 @@ find_symbol("AuthError", include_body=true)
 
 Four targeted calls. The agent sees the symbol tree, the exact call sites, the
 relevant git history, and the type definition — without reading a single full
-file. That is the difference code-explorer makes.
+file. That is the difference codescout makes.

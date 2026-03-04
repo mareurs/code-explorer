@@ -1,18 +1,18 @@
 # Installation
 
-> **Platform support:** code-explorer has been tested on **Linux**. macOS and Windows may work but have not been verified. Contributions welcome.
+> **Platform support:** codescout has been tested on **Linux**. macOS and Windows may work but have not been verified. Contributions welcome.
 
-> **This is a Claude Code tool.** code-explorer is built for [Claude Code](https://code.claude.com/) and currently requires it as the host agent.
+> **This is a Claude Code tool.** codescout is built for [Claude Code](https://code.claude.com/) and currently requires it as the host agent.
 
 ## The Easy Way
 
 Clone the repo and let Claude handle the installation. It has access to the full documentation, your system, and the install scripts — it will build the binary, register the MCP server, install LSP servers for your languages, and set up the routing plugin.
 
 ```bash
-git clone https://github.com/mareurs/code-explorer.git
-cd code-explorer
+git clone https://github.com/mareurs/codescout.git
+cd codescout
 claude
-# Then ask: "Help me install and set up code-explorer"
+# Then ask: "Help me install and set up codescout"
 ```
 
 ## Manual Installation
@@ -37,10 +37,10 @@ You also need [Claude Code](https://code.claude.com/) installed and available as
 
 ## Installing the Binary
 
-Install code-explorer from crates.io:
+Install codescout from crates.io:
 
 ```bash
-cargo install code-explorer
+cargo install codescout
 ```
 
 This builds with the `remote-embed` feature enabled by default, which adds HTTP client support for
@@ -49,19 +49,19 @@ embeddings without any external service, see [Feature Flags](#feature-flags) bel
 
 ## Registering as an MCP Server
 
-Claude Code discovers MCP servers through its configuration. You can register code-explorer either
+Claude Code discovers MCP servers through its configuration. You can register codescout either
 globally (applies to every Claude Code session on your machine) or per-project (applies only when
 working in a specific directory tree).
 
 ### Global Registration
 
-Run this once to make code-explorer available in every Claude Code session:
+Run this once to make codescout available in every Claude Code session:
 
 ```bash
-claude mcp add --global code-explorer -- code-explorer start --project .
+claude mcp add --global codescout -- codescout start --project .
 ```
 
-With global registration, code-explorer starts automatically whenever Claude Code opens. The
+With global registration, codescout starts automatically whenever Claude Code opens. The
 `--project .` argument tells it to activate the project you opened Claude Code in.
 
 ### Per-Project Registration via `.mcp.json`
@@ -70,19 +70,19 @@ For tighter control — useful when different projects need different embedding 
 are sharing configuration with a team — create or edit `.mcp.json` in the project root:
 
 ```bash
-claude mcp add code-explorer -- code-explorer start --project /path/to/your/project
+claude mcp add codescout -- codescout start --project /path/to/your/project
 ```
 
 This writes an entry to `.mcp.json`. Commit the file so that everyone working on the project gets
-the same code-explorer setup automatically.
+the same codescout setup automatically.
 
 A resulting `.mcp.json` entry looks like this:
 
 ```json
 {
   "mcpServers": {
-    "code-explorer": {
-      "command": "code-explorer",
+    "codescout": {
+      "command": "codescout",
       "args": ["start", "--project", "/path/to/your/project"]
     }
   }
@@ -99,17 +99,17 @@ After registering, confirm Claude Code sees the server and all its tools:
 claude mcp list
 ```
 
-You should see `code-explorer` listed with 23 tools. If it does not appear, make sure the
-`code-explorer` binary is on your PATH:
+You should see `codescout` listed with 23 tools. If it does not appear, make sure the
+`codescout` binary is on your PATH:
 
 ```bash
-which code-explorer
-code-explorer --version
+which codescout
+codescout --version
 ```
 
 ## Feature Flags
 
-code-explorer has three embedding modes, controlled at compile time via Cargo features:
+codescout has three embedding modes, controlled at compile time via Cargo features:
 
 > **See also:** [Embedding Backends](../configuration/embedding-backends.md) —
 > full backend comparison, recommended models, and per-backend configuration.
@@ -123,7 +123,7 @@ code-explorer has three embedding modes, controlled at compile time via Cargo fe
 ### Installing with Local Embeddings
 
 ```bash
-cargo install code-explorer --features local-embed
+cargo install codescout --features local-embed
 ```
 
 The first time you build a semantic search index, the local backend model (typically
@@ -133,7 +133,7 @@ uses are fully offline.
 ### Installing with Both Backends
 
 ```bash
-cargo install code-explorer --features remote-embed,local-embed
+cargo install codescout --features remote-embed,local-embed
 ```
 
 Switch between backends per-project by setting `embed_backend` in `.code-explorer/project.toml`.
@@ -145,7 +145,7 @@ If you only want LSP-backed symbol navigation and git tools and do not need sema
 can build without any embedding feature:
 
 ```bash
-cargo install code-explorer --no-default-features
+cargo install codescout --no-default-features
 ```
 
 Semantic search tools (`semantic_search`, `index_project`) will return a clear error if called
@@ -154,4 +154,4 @@ without an embedding backend compiled in.
 ## Next Steps
 
 - [Your First Project](first-project.md) — open a project, run onboarding, and try the basic tools
-- [Routing Plugin](routing-plugin.md) — install the plugin that steers Claude toward code-explorer tools automatically
+- [Routing Plugin](routing-plugin.md) — install the plugin that steers Claude toward codescout tools automatically

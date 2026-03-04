@@ -1,6 +1,6 @@
 # Editing
 
-code-explorer provides two categories of editing tools:
+codescout provides two categories of editing tools:
 
 - **Text-level editing** — `edit_file` finds and replaces an exact string in a file.
 - **Symbol-level editing** — `replace_symbol`, `insert_code`, and `rename_symbol` operate on named code symbols located via the LSP. These are the preferred tools for editing source code.

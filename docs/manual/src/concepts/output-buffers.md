@@ -11,7 +11,7 @@ of text to find what it actually needs.
 ## How It Works
 
 When `run_command` or `read_file` produces output above a size threshold,
-code-explorer stores the full content in an in-memory buffer and returns a compact
+codescout stores the full content in an in-memory buffer and returns a compact
 summary + an `@id` handle instead:
 
 ```
@@ -61,7 +61,7 @@ targeted, reviewable queries — `grep FAILED`, then `sed -n '42,80p'`, then
 `grep -A5 'panicked'`. The exploration is transparent and auditable.
 
 **When a buffer query still returns too much, you get 100 lines inline.**
-If `grep @ref` or `jq @tool_ref` produces more than 100 lines, code-explorer
+If `grep @ref` or `jq @tool_ref` produces more than 100 lines, codescout
 returns the first 100 lines inline with truncation metadata rather than
 creating another `@ref` handle (which would cause an infinite loop).
 The response includes `truncated: true`, `stdout_shown`/`stdout_total`

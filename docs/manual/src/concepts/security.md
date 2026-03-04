@@ -1,6 +1,6 @@
 # Security & Permissions
 
-code-explorer is designed to be safe to run autonomously: an agent can explore
+codescout is designed to be safe to run autonomously: an agent can explore
 any codebase it needs to understand, but it **cannot write outside its current
 project without explicit opt-in**. This page explains the model, the defaults,
 and the configuration knobs.

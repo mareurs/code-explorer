@@ -1,6 +1,6 @@
 # Adding Languages
 
-code-explorer supports languages at three levels, each building on the
+codescout supports languages at three levels, each building on the
 previous. You can ship a partial implementation and add deeper support later.
 
 | Level | What it enables | Effort |

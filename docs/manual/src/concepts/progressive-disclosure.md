@@ -1,7 +1,7 @@
 # Progressive Disclosure
 
 LLM context windows are finite. Every token spent on output you didn't need is
-a token that could have held something useful. code-explorer is designed around
+a token that could have held something useful. codescout is designed around
 a single principle to address this: show the minimum that is actionable, and
 reveal detail only when asked.
 
@@ -24,7 +24,7 @@ before you can identify what you need.
 
 ## The Solution: Two Modes
 
-code-explorer tools operate in one of two modes, controlled by the
+codescout tools operate in one of two modes, controlled by the
 `detail_level` parameter.
 
 **Exploring mode** (the default) produces compact summaries: names, kinds,

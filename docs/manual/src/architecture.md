@@ -1,6 +1,6 @@
 # Architecture
 
-This page describes how code-explorer works internally. It is written for users
+This page describes how codescout works internally. It is written for users
 who want to understand the system, not for contributors adding new tools or
 languages (see the [Extending](extending/adding-languages.md) chapter for that).
 
@@ -8,7 +8,7 @@ languages (see the [Extending](extending/adding-languages.md) chapter for that).
 
 ## System Overview
 
-code-explorer is an MCP server that gives LLMs IDE-grade code intelligence. It
+codescout is an MCP server that gives LLMs IDE-grade code intelligence. It
 sits between the AI assistant (Claude Code, Cursor, or any MCP-capable client)
 and the project's source code, providing 23 tools for navigation, search,
 editing, and analysis.
@@ -16,7 +16,7 @@ editing, and analysis.
 The server is a single Rust binary. It launches language servers, parses source
 files with tree-sitter, manages a vector embedding index, and reads git history
 -- all behind a uniform MCP tool interface. The AI assistant never interacts
-with these backends directly; it calls tools, and code-explorer handles the
+with these backends directly; it calls tools, and codescout handles the
 rest.
 
 ---
@@ -24,7 +24,7 @@ rest.
 ## Component Diagram
 
 ```
-Claude Code ──MCP──▶ CodeExplorerServer
+Claude Code ──MCP──▶ CodeScoutServer
                           │
                     ┌─────┼─────┐
                     ▼     ▼     ▼
@@ -39,7 +39,7 @@ Claude Code ──MCP──▶ CodeExplorerServer
           .toml    Servers   grammars     index
 ```
 
-**CodeExplorerServer** is the MCP entry point. It holds the Agent, the tool
+**CodeScoutServer** is the MCP entry point. It holds the Agent, the tool
 registry, and the server instructions that get sent to the LLM.
 
 **Agent** manages the active project: root path, configuration, memory store.
@@ -60,7 +60,7 @@ When the LLM calls a tool, here is what happens:
    connection) or HTTP/SSE (multi-connection). The `rmcp` crate handles
    protocol framing.
 
-2. **Tool lookup.** `CodeExplorerServer::call_tool()` searches the tool
+2. **Tool lookup.** `CodeScoutServer::call_tool()` searches the tool
    registry -- a `Vec<Arc<dyn Tool>>` -- for a tool matching the requested
    name. If no match is found, an `invalid_params` MCP error is returned.
 
@@ -106,7 +106,7 @@ across all tool calls and, in HTTP mode, across all connections. Calling
 
 **Source:** `src/server.rs`
 
-All 23 tools are registered at startup in `CodeExplorerServer::from_parts()` as
+All 23 tools are registered at startup in `CodeScoutServer::from_parts()` as
 a `Vec<Arc<dyn Tool>>`. Dispatch is by name: `call_tool()` iterates the vector
 and matches on `tool.name()`.
 
@@ -223,13 +223,13 @@ persist across agent sessions.
 
 ## Transport Modes
 
-code-explorer supports two transport modes, selected at startup via the
+codescout supports two transport modes, selected at startup via the
 `--transport` flag.
 
 ### stdio (default)
 
 ```bash
-code-explorer start --project /path/to/project
+codescout start --project /path/to/project
 ```
 
 Single connection. Claude Code launches the server as a subprocess and
@@ -242,11 +242,11 @@ command (`claude mcp add`) sets this up automatically.
 ### HTTP/SSE
 
 ```bash
-code-explorer start --project /path/to/project --transport http --port 8080
+codescout start --project /path/to/project --transport http --port 8080
 ```
 
 Multi-connection. The server binds to a port and accepts SSE (Server-Sent
-Events) connections. Each connection gets its own `CodeExplorerServer` instance
+Events) connections. Each connection gets its own `CodeScoutServer` instance
 but shares the same Agent and LSP Manager.
 
 An auth token is auto-generated and printed to stderr at startup. Clients must

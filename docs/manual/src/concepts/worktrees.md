@@ -5,7 +5,7 @@
 Claude Code's `EnterWorktree` creates an isolated git worktree for feature work,
 and the shell's working directory moves into it. The MCP server does not follow.
 
-code-explorer's project root is set when the server starts (or when
+codescout's project root is set when the server starts (or when
 `activate_project` is called). It has no visibility into where the shell is
 currently pointed. So after `EnterWorktree`, write tools — `edit_file`,
 `create_file`, `replace_symbol`, `insert_code`, `remove_symbol` — are still

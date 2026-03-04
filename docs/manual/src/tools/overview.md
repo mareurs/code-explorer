@@ -1,6 +1,6 @@
 # Tools Overview
 
-code-explorer exposes 23 tools organized into six categories. This page is a
+codescout exposes 23 tools organized into six categories. This page is a
 quick map. Each category has a dedicated reference page linked from the headings
 below.
 

@@ -1,6 +1,6 @@
 # Embedding Backends
 
-Semantic search requires converting source code into vector embeddings. code-explorer supports
+Semantic search requires converting source code into vector embeddings. codescout supports
 four backends, selected at runtime by the `model` field in `[embeddings]` inside
 `.code-explorer/project.toml`. The prefix before the colon determines which backend is used.
 
@@ -83,7 +83,7 @@ export OLLAMA_HOST=http://192.168.1.50:11434
 
 ### Automatic CPU Fallback
 
-When code-explorer is built with both `remote-embed` and `local-embed` features, it probes
+When codescout is built with both `remote-embed` and `local-embed` features, it probes
 Ollama before every indexing or search call. If the daemon is not reachable within 2 seconds,
 it automatically falls back to `local:AllMiniLML6V2Q` and emits a warning:
 
@@ -153,7 +153,7 @@ Together AI, or other third-party providers.
 
 **Model string format:** `"custom:<model-name>@<base-url>"`
 
-code-explorer appends `/v1/embeddings` to `<base-url>`, so a base URL of
+codescout appends `/v1/embeddings` to `<base-url>`, so a base URL of
 `http://localhost:1234` becomes `http://localhost:1234/v1/embeddings`.
 
 **Authentication:** `$EMBED_API_KEY` environment variable (optional — set it if the server
@@ -207,13 +207,13 @@ download.
 Install with local embedding support:
 
 ```bash
-cargo install code-explorer --features local-embed
+cargo install codescout --features local-embed
 ```
 
 Or, to have both local and remote backends available simultaneously:
 
 ```bash
-cargo install code-explorer --features remote-embed,local-embed
+cargo install codescout --features remote-embed,local-embed
 ```
 
 ### Configuration
@@ -267,7 +267,7 @@ from different models:
 { "name": "index_project", "arguments": { "force": true } }
 ```
 
-code-explorer will warn if it detects a mismatch between the configured model and the model
+codescout will warn if it detects a mismatch between the configured model and the model
 recorded in the existing index.
 
 ---

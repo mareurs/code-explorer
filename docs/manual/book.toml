@@ -1,5 +1,5 @@
 [book]
-title = "code-explorer Manual"
+title = "codescout Manual"
 authors = ["Marius"]
 language = "en"
 src = "src"
@@ -8,6 +8,6 @@ src = "src"
 build-dir = "../../target/manual"
 
 [output.html]
-git-repository-url = "https://github.com/mareurs/code-explorer"
-edit-url-template = "https://github.com/mareurs/code-explorer/edit/master/docs/manual/{path}"
+git-repository-url = "https://github.com/mareurs/codescout"
+edit-url-template = "https://github.com/mareurs/codescout/edit/master/docs/manual/{path}"
 no-section-label = false

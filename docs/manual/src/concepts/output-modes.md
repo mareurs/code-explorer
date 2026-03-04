@@ -1,6 +1,6 @@
 # Output Modes
 
-code-explorer tools produce different amounts of detail depending on which mode
+codescout tools produce different amounts of detail depending on which mode
 they operate in. Understanding the two modes — and when to switch between them
 — is the key to using the tools efficiently.
 

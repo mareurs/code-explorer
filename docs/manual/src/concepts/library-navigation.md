@@ -9,7 +9,7 @@ locating package directories.
 
 Libraries are discovered automatically. When you call `goto_definition` on a
 symbol and the LSP resolves it to a path *outside the project root* (typically
-inside a language package cache), code-explorer registers that path as a library
+inside a language package cache), codescout registers that path as a library
 and names it by the package name inferred from the manifest it finds there.
 
 The next time you call `list_libraries`, the dependency appears in the list.

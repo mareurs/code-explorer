@@ -17,11 +17,11 @@ The server is not registered in your MCP configuration.
 claude mcp list
 ```
 
-You should see `code-explorer` listed with 23 tools. If it is missing,
+You should see `codescout` listed with 23 tools. If it is missing,
 register it:
 
 ```bash
-claude mcp add --global code-explorer -- code-explorer start --project .
+claude mcp add --global codescout -- codescout start --project .
 ```
 
 See [Installation](getting-started/installation.md) for the full setup.
@@ -35,10 +35,10 @@ must be an absolute path to an existing directory, or `.` to use the current
 working directory. Verify it resolves correctly:
 
 ```bash
-code-explorer start --project /path/to/your/project
+codescout start --project /path/to/your/project
 ```
 
-If you omit `--project`, code-explorer tries to auto-detect from the current
+If you omit `--project`, codescout tries to auto-detect from the current
 working directory. This works when Claude Code launches the server from within
 a project, but can fail if the working directory is unexpected.
 
@@ -51,11 +51,11 @@ already in use.
 
 ```bash
 # Check the binary is installed
-which code-explorer
-code-explorer --version
+which codescout
+codescout --version
 
 # If not found, install it
-cargo install code-explorer
+cargo install codescout
 
 # For HTTP mode, check port conflicts
 lsof -i :8080
@@ -71,7 +71,7 @@ install the ONNX Runtime or switch to the `remote-embed` feature:
 
 ```bash
 # Reinstall with only remote embedding support
-cargo install code-explorer --no-default-features --features remote-embed
+cargo install codescout --no-default-features --features remote-embed
 ```
 
 ---
@@ -247,10 +247,10 @@ was enabled.
 
 ```bash
 # Remote (Ollama, OpenAI)
-cargo install code-explorer --features remote-embed
+cargo install codescout --features remote-embed
 
 # Local (CPU, no external service)
-cargo install code-explorer --features local-embed
+cargo install codescout --features local-embed
 ```
 
 ---
@@ -284,7 +284,7 @@ a project from the working directory.
 Or restart the server with `--project`:
 
 ```bash
-code-explorer start --project /path/to/project
+codescout start --project /path/to/project
 ```
 
 ---
@@ -414,13 +414,13 @@ Language servers can use significant memory, especially `jdtls` and
 `rust-analyzer` on large projects. Running multiple language servers
 simultaneously compounds this.
 
-**Fix:** code-explorer starts language servers on demand, so only languages
+**Fix:** codescout starts language servers on demand, so only languages
 you actively use consume memory. When the MCP server exits (or receives
 SIGINT/SIGTERM), it gracefully shuts down all language servers via the LSP
 shutdown protocol. As a safety net, the `LspClient` Drop implementation also
 sends SIGTERM to child processes, ensuring cleanup even on abrupt exits.
 
-If you have multiple Claude Code sessions, each spawns its own code-explorer
+If you have multiple Claude Code sessions, each spawns its own codescout
 process with its own language servers. Close unused sessions to reclaim
 memory.
 
@@ -430,14 +430,14 @@ memory.
 
 If none of the above resolves your issue:
 
-1. **Check server logs.** code-explorer logs to stderr. In stdio mode, Claude
+1. **Check server logs.** codescout logs to stderr. In stdio mode, Claude
    Code captures this; look in Claude Code's MCP server logs. In HTTP mode,
    stderr goes to the terminal where you started the server.
 
 2. **Enable debug logging.** Set `RUST_LOG=debug` for verbose output:
 
    ```bash
-   RUST_LOG=debug code-explorer start --project /path/to/project
+   RUST_LOG=debug codescout start --project /path/to/project
    ```
 
    This shows every tool call, LSP message, and embedding operation.

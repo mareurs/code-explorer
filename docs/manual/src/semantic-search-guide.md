@@ -11,7 +11,7 @@ individual tools, see [Semantic Search Tools](tools/semantic-search.md).
 
 ## Choosing an Embedding Backend
 
-code-explorer supports four embedding backends. The model string prefix in
+codescout supports four embedding backends. The model string prefix in
 `project.toml` selects which one is used:
 
 | Prefix | Example | When to use |
@@ -64,7 +64,7 @@ environment variable before starting Claude Code:
 export OLLAMA_HOST=http://192.168.1.10:11434
 ```
 
-## Configuring code-explorer
+## Configuring codescout
 
 The `[embeddings]` section of `.code-explorer/project.toml` controls which
 model is used and how files are chunked. The defaults work well for most
@@ -99,7 +99,7 @@ Once Ollama is running and `project.toml` is configured, build the index:
 
 What happens internally:
 
-1. code-explorer walks the project tree, skipping directories listed in
+1. codescout walks the project tree, skipping directories listed in
    `ignored_paths` (by default: `.git`, `node_modules`, `target`,
    `__pycache__`, `.venv`, `dist`, `build`, `.code-explorer`).
 2. Each source file is split into chunks using an AST-aware chunker. Each
@@ -119,7 +119,7 @@ projects. A 10,000-line project usually indexes in under two minutes with
 either backend.
 
 **Incremental updates:** Running `index_project` again after editing a few
-files is cheap. code-explorer hashes each file's content and only re-embeds
+files is cheap. codescout hashes each file's content and only re-embeds
 files whose hash has changed since the last run. Unchanged files are skipped
 at negligible cost.
 

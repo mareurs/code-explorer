@@ -5,7 +5,7 @@ health, tool usage, and memories. It runs as a separate process — no MCP serve
 no LSP, no tool machinery — just the data already on disk in `.code-explorer/`.
 
 ```bash
-code-explorer dashboard --project .
+codescout dashboard --project .
 # opens http://127.0.0.1:8099
 ```
 
@@ -53,7 +53,7 @@ Read and edit the project's persistent memory store directly in the browser:
 | `--no-open` | off | Disable auto-opening the browser |
 
 ```bash
-code-explorer dashboard --project . --port 9000
+codescout dashboard --project . --port 9000
 ```
 
 ## Notes

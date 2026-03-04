@@ -45,7 +45,7 @@ rather than accidentally.
 
 `cat`, `grep`, `head`, `tail`, `sed`, and `awk` used directly on source files
 (`.rs`, `.py`, `.ts`, `.go`, `.java`, `.kt`, etc.) are blocked at the tool
-level. The error message suggests the appropriate code-explorer equivalent:
+level. The error message suggests the appropriate codescout equivalent:
 
 | Blocked pattern | Redirect to |
 |---|---|
@@ -54,10 +54,10 @@ level. The error message suggests the appropriate code-explorer equivalent:
 | `head -20 main.py` | `read_file("main.py", start_line=1, end_line=20)` |
 
 This enforces token-efficient navigation. Reading an entire file to find one
-function is the antipattern code-explorer is designed to eliminate.
+function is the antipattern codescout is designed to eliminate.
 
 Pass `acknowledge_risk: true` to bypass when you genuinely need raw access
-(e.g. checking file encoding, binary content, or files code-explorer can't
+(e.g. checking file encoding, binary content, or files codescout can't
 parse).
 
 ### Path Traversal Protection

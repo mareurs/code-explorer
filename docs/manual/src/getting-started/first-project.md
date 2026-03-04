@@ -1,6 +1,6 @@
 # Your First Project
 
-This page walks you through opening a project for the first time and making sure code-explorer
+This page walks you through opening a project for the first time and making sure codescout
 is working correctly before you start a real task.
 
 ## Start a Claude Code Session
@@ -12,12 +12,12 @@ cd /path/to/your/project
 claude
 ```
 
-When code-explorer is registered (either globally or via `.mcp.json`), it starts automatically
+When codescout is registered (either globally or via `.mcp.json`), it starts automatically
 alongside Claude Code. You do not need to do anything to launch the MCP server.
 
 ## What Happens on First Open
 
-The first time code-explorer activates in a project it:
+The first time codescout activates in a project it:
 
 1. Creates a configuration file at `.code-explorer/project.toml` with sensible defaults.
 2. Detects the languages present in the repository (based on file extensions and tree-sitter
@@ -184,6 +184,6 @@ by default so team members build their own local copies.
 
 ## Next Steps
 
-- [Routing Plugin](routing-plugin.md) — install the plugin that ensures subagents also use code-explorer
+- [Routing Plugin](routing-plugin.md) — install the plugin that ensures subagents also use codescout
 - [Tool Selection](../concepts/tool-selection.md) — when to use symbol tools vs semantic search vs text search
 - [Progressive Disclosure](../concepts/progressive-disclosure.md) — how tools manage output size automatically

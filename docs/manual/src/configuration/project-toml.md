@@ -1,6 +1,6 @@
 # Project Configuration
 
-Every project managed by code-explorer has an optional configuration file at
+Every project managed by codescout has an optional configuration file at
 `.code-explorer/project.toml`. The file uses [TOML](https://toml.io/) syntax.
 
 ## File Location and Auto-Creation
@@ -11,7 +11,7 @@ The file lives at:
 <project-root>/.code-explorer/project.toml
 ```
 
-If the file does not exist when a project is first activated, code-explorer creates it with
+If the file does not exist when a project is first activated, codescout creates it with
 sensible defaults derived from the directory name. You can also create it manually before
 activating a project.
 
@@ -58,7 +58,7 @@ drift_detection_enabled = true
 | `model` | string | `"ollama:mxbai-embed-large"` | Embedding model. The prefix selects the backend. See [Embedding Backends](embedding-backends.md) for the full list of supported prefixes and models. |
 | `drift_detection_enabled` | bool | `true` | Enable semantic drift detection during index builds. `index_project` compares old and new chunk embeddings to score how much each changed file's *meaning* shifted. Results queryable via `project_status(threshold)`. Set to `false` to opt out. Experimental — adds memory overhead proportional to changed-file count. |
 
-> **Note — chunk size is automatic.** code-explorer derives the chunk budget
+> **Note — chunk size is automatic.** codescout derives the chunk budget
 > directly from the model's published context window using a conservative
 > `max_tokens × 3 chars/token` formula at 85 % utilisation. There is no
 > `chunk_size` or `chunk_overlap` setting — they were removed because manual
@@ -66,7 +66,7 @@ drift_detection_enabled = true
 > Existing `project.toml` files containing these keys are silently ignored.
 
 **Changing the model after indexing:** If you change `model`, you must rebuild the index
-(`index_project` with `force: true`). code-explorer detects model mismatches and will warn
+(`index_project` with `force: true`). codescout detects model mismatches and will warn
 rather than return wrong results.
 
 ---
@@ -148,7 +148,7 @@ indexing_enabled = true
 
 ### Built-in Read Deny-List
 
-Regardless of `denied_read_patterns`, code-explorer always blocks reads from these locations:
+Regardless of `denied_read_patterns`, codescout always blocks reads from these locations:
 
 ```
 ~/.ssh
@@ -247,7 +247,7 @@ indexing_enabled = true
 
 ## How Configuration Is Loaded
 
-At startup and whenever `activate_project` is called, code-explorer:
+At startup and whenever `activate_project` is called, codescout:
 
 1. Looks for `.code-explorer/project.toml` in the project root.
 2. If found, parses it. Any section that is missing falls back to its defaults.

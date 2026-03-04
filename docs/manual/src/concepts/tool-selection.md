@@ -1,7 +1,7 @@
 # Tool Selection
 
 Choosing the right tool for a task depends on what you already know about the
-code. code-explorer organizes its tools around three knowledge levels. Matching
+code. codescout organizes its tools around three knowledge levels. Matching
 your level of knowledge to the right tool category avoids wasted queries and
 keeps context usage low.
 
