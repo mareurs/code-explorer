@@ -558,7 +558,9 @@ fn format_search_result_item(
     map.insert("start_line".into(), json!(start_line));
     map.insert("end_line".into(), json!(end_line));
     map.insert("language".into(), json!(language));
-    map.insert("source".into(), json!(source));
+    if source != "project" {
+        map.insert("source".into(), json!(source));
+    }
     map.insert("content".into(), json!(content));
     Value::Object(map)
 }

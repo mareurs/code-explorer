@@ -1029,7 +1029,6 @@ impl Tool for FindReferences {
                     "line": loc.range.start.line + 1,
                     "column": loc.range.start.character,
                     "context": context,
-                    "source": "project",
                 })
             })
             .collect();
@@ -1157,13 +1156,16 @@ impl Tool for GotoDefinition {
                 })
                 .unwrap_or_default();
 
-            results.push(json!({
+            let mut def = json!({
                 "file": file_display,
                 "line": loc.range.start.line + 1,
                 "end_line": loc.range.end.line + 1,
                 "context": context.trim(),
-                "source": source_tag,
-            }));
+            });
+            if source_tag != "project" {
+                def["source"] = json!(source_tag);
+            }
+            results.push(def);
         }
 
         Ok(json!({

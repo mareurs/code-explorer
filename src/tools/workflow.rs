@@ -712,10 +712,7 @@ fn format_run_command(result: &Value) -> String {
                     format!("{check} exit {exit}  (query {output_id})")
                 }
             }
-            _ => {
-                let lines = result["total_stdout_lines"].as_u64().unwrap_or(0);
-                format!("{check} exit {exit} · {lines} lines  (query {output_id})")
-            }
+            _ => format!("{check} exit {exit}  (query {output_id})"),
         }
     } else if result["timed_out"].as_bool().unwrap_or(false) {
         "✗ timed out".to_string()
@@ -728,21 +725,6 @@ fn format_run_command(result: &Value) -> String {
         let check = if exit == 0 { "✓" } else { "✗" };
         format!("{check} exit {exit} · {stdout_lines} lines")
     }
-}
-
-/// Returns true when `command` looks like a plain file read (`cat`, `head`, `tail`)
-/// on a real filesystem path (not a `@ref` buffer handle). Used to suggest
-/// `read_file` as a more efficient alternative in the buffer-creation hint.
-fn looks_like_file_read(command: &str) -> bool {
-    let mut words = command.split_whitespace();
-    let Some(cmd) = words.next() else {
-        return false;
-    };
-    if !matches!(cmd, "cat" | "head" | "tail") {
-        return false;
-    }
-    // At least one argument must look like a file path (not a flag or @ref)
-    words.any(|w| !w.starts_with('-') && !w.starts_with('@'))
 }
 
 /// Returns true when `command` is a bare `@ack_<8hex>` handle.
@@ -760,15 +742,8 @@ fn looks_like_ack_handle(command: &str) -> bool {
 /// Dynamic field appending (`obj["key"] = val`) always places fields last, which
 /// caused `output_id` (the buffer reference) to land after `stdout`/`failures`/
 /// `first_error` (the bulk content). Correct order:
-///   type → exit_code → output_id → [counts] → hint → [total_lines] → [warning] → [content]
-fn rebuild_buffered_summary(
-    raw: Value,
-    output_id: &str,
-    hint: &str,
-    total_stdout_lines: usize,
-    total_stderr_lines: usize,
-    add_warning: bool,
-) -> Value {
+///   type → exit_code → output_id → [counts] → [content]
+fn rebuild_buffered_summary(raw: Value, output_id: &str) -> Value {
     // These are large text fields — always go last.
     const CONTENT_FIELDS: &[&str] = &["stdout", "failures", "first_error"];
 
@@ -793,24 +768,7 @@ fn rebuild_buffered_summary(
         }
     }
 
-    // 4. Guidance
-    map.insert("hint".into(), json!(hint));
-
-    // 5. Line count metadata
-    map.insert("total_stdout_lines".into(), json!(total_stdout_lines));
-    if total_stderr_lines > 0 {
-        map.insert("total_stderr_lines".into(), json!(total_stderr_lines));
-    }
-
-    // 6. Warning (security notice)
-    if add_warning {
-        map.insert(
-            "warning".into(),
-            json!("Shell commands execute with full user permissions. Only use for build/test commands."),
-        );
-    }
-
-    // 7. Content fields last — bulk payload
+    // 4. Content fields last — bulk payload
     for field in CONTENT_FIELDS {
         if let Some(v) = raw_obj.get(*field) {
             map.insert((*field).into(), v.clone());
@@ -1052,31 +1010,9 @@ async fn run_command_inner(
                     CommandType::Generic => summarize_generic(&raw_stdout, &raw_stderr, exit_code),
                 };
 
-                let hint_text = if looks_like_file_read(original_command) {
-                    format!(
-                        "Full output stored. Query with: run_command(\"grep/tail/awk/sed {output_id}\"). \
-                         For text/markdown files, read_file(path, start_line, end_line) is more efficient.",
-                    )
-                } else {
-                    format!(
-                        "Full output stored. Query with: run_command(\"grep/tail/awk/sed {output_id}\")",
-                    )
-                };
-
-                let stdout_lines = count_lines(&raw_stdout);
-                let stderr_lines = count_lines(&raw_stderr);
-                let add_warning = false;
-
                 // Rebuild with correct field order so output_id (the buffer reference
                 // the agent needs) appears before content fields (stdout/failures/first_error).
-                let summary = rebuild_buffered_summary(
-                    cmd_summary,
-                    &output_id,
-                    &hint_text,
-                    stdout_lines,
-                    stderr_lines,
-                    add_warning,
-                );
+                let summary = rebuild_buffered_summary(cmd_summary, &output_id);
 
                 Ok(summary)
             } else {
@@ -1305,8 +1241,6 @@ mod tests {
     #[tokio::test]
     async fn execute_shell_command_output_truncated() {
         let (_dir, ctx) = project_ctx().await;
-        // Generate output larger than summary threshold (>50 lines).
-        // seq 1 100000 produces ~588KB / 100K lines — should be buffered.
         let result = RunCommand
             .call(
                 json!({ "command": "seq 1 100000", "timeout_secs": 10 }),
@@ -1314,16 +1248,16 @@ mod tests {
             )
             .await
             .unwrap();
-        // New behavior: large output is buffered, not byte-truncated.
+        // Large output is buffered, not byte-truncated.
         assert!(
             result["output_id"].as_str().is_some(),
             "large output should be buffered with output_id"
         );
-        assert!(result["total_stdout_lines"].as_u64().unwrap() > 50);
-        assert!(result["hint"]
-            .as_str()
-            .unwrap()
-            .contains("Full output stored"));
+        assert!(result["hint"].is_null(), "hint field should be absent");
+        assert!(
+            result["total_stdout_lines"].is_null(),
+            "total_stdout_lines should be absent"
+        );
     }
 
     #[tokio::test]
@@ -1859,15 +1793,10 @@ mod tests {
             "output_id should start with @cmd_: {}",
             output_id
         );
+        assert!(result["hint"].is_null(), "hint field should be absent");
         assert!(
-            result["total_stdout_lines"].as_u64().unwrap() >= 100,
-            "total_stdout_lines should be >= 100: {}",
-            result["total_stdout_lines"]
-        );
-        let hint = result["hint"].as_str().expect("hint should be present");
-        assert!(
-            hint.contains(output_id),
-            "hint should reference the output_id"
+            result["total_stdout_lines"].is_null(),
+            "total_stdout_lines should be absent"
         );
         let entry = ctx.output_buffer.get(output_id).unwrap();
         assert!(
@@ -2319,9 +2248,8 @@ mod tests {
     // Fix C: when the first run_command looks like a plain file read (cat file),
     // the buffer creation hint should suggest read_file as an alternative.
     #[tokio::test]
-    async fn cat_file_buffer_hint_suggests_read_file() {
+    async fn cat_file_no_hint_field() {
         let (dir, ctx) = project_ctx().await;
-        // Write a markdown file with > 50 lines
         let md_path = dir.path().join("big_plan.md");
         let content: String = (1..=60).map(|i| format!("line {i}\n")).collect();
         std::fs::write(&md_path, content).unwrap();
@@ -2333,11 +2261,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let hint = result["hint"].as_str().unwrap_or("");
-        assert!(
-            hint.contains("read_file"),
-            "cat on a text file should suggest read_file in the hint, got: {hint}"
-        );
+        assert!(result["hint"].is_null(), "hint field should be absent");
     }
 
     #[tokio::test]

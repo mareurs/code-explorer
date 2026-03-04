@@ -184,7 +184,6 @@ impl Tool for ReadFile {
                     "siblings": result.siblings,
                     "format": "markdown",
                     "file_id": file_id,
-                    "hint": format!("Section content stored as {}. Query with: run_command(\"grep/sed {}\")", file_id, file_id),
                 }));
             }
             return Ok(json!({
@@ -269,7 +268,11 @@ impl Tool for ReadFile {
                 .into());
             }
             let content = extract_lines(&text, start as usize, end as usize);
-            return Ok(json!({ "content": content, "source": source_tag }));
+            let mut result = json!({ "content": content });
+            if source_tag != "project" {
+                result["source"] = json!(source_tag);
+            }
+            return Ok(result);
         }
 
         // No explicit range: buffer large files instead of truncating or erroring
@@ -309,10 +312,6 @@ impl Tool for ReadFile {
                 };
             let mut result = summary;
             result["file_id"] = json!(file_id);
-            result["hint"] = json!(format!(
-                "Full file stored as {}. Query with: run_command(\"grep/sed/awk {}\")",
-                file_id, file_id
-            ));
             return Ok(result);
         }
 
@@ -334,12 +333,18 @@ impl Tool for ReadFile {
                 by_file: None,
                 by_file_overflow: 0,
             };
-            let mut result =
-                json!({ "content": content, "total_lines": total_lines, "source": source_tag });
+            let mut result = json!({ "content": content, "total_lines": total_lines });
+            if source_tag != "project" {
+                result["source"] = json!(source_tag);
+            }
             result["overflow"] = OutputGuard::overflow_json(&overflow);
             Ok(result)
         } else {
-            Ok(json!({ "content": text, "total_lines": total_lines, "source": source_tag }))
+            let mut result = json!({ "content": text, "total_lines": total_lines });
+            if source_tag != "project" {
+                result["source"] = json!(source_tag);
+            }
+            Ok(result)
         }
     }
 
@@ -2426,7 +2431,11 @@ mod tests {
             .call(json!({ "path": "test.txt" }), &ctx)
             .await
             .unwrap();
-        assert_eq!(result["source"], "project");
+        // "project" source is the default — omitted to reduce noise
+        assert!(
+            result["source"].is_null(),
+            "source should be omitted for project files"
+        );
     }
 
     // ── ReadFile source code gate ────────────────────────────────────────────
@@ -2527,10 +2536,7 @@ mod tests {
             file_id.starts_with("@file_"),
             "file_id should start with @file_, got: {file_id}"
         );
-        assert!(
-            result["hint"].as_str().unwrap().contains("@file_"),
-            "hint should reference file_id"
-        );
+        assert!(result["hint"].is_null(), "hint field should be absent");
         let entry = ctx.output_buffer.get(file_id).unwrap();
         assert!(entry.stdout.contains("line 100"));
     }
