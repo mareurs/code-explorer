@@ -2,6 +2,8 @@
 
 Rust MCP server giving LLMs IDE-grade code intelligence — symbol navigation, semantic search, shell integration, persistent memory, and GitHub integration. Built for [Claude Code](https://code.claude.com/).
 
+**[Manual](docs/manual/src/introduction.md) · [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md)**
+
 ![Dashboard — Tool Stats page](docs/images/dashboard.png)
 
 *[Dashboard docs](docs/manual/src/concepts/dashboard.md) — tool usage charts, error log, memory browser, drift view. Run with `codescout dashboard --project .`*
