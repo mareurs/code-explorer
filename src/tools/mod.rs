@@ -180,21 +180,28 @@ pub async fn guard_worktree_write(ctx: &ToolContext) -> anyhow::Result<()> {
 /// Returns `text` verbatim when `text.len() <= soft_max`. Otherwise, finds the last `\n`
 /// within `hard_max` bytes and truncates there (keeping whole lines). When no newline
 /// exists within `hard_max`, truncates at `hard_max` bytes directly.
+/// Returns the largest byte offset `<= n` that lands on a UTF-8 char boundary.
+/// Prevents `&str[..n]` panics when `n` points into a multi-byte character.
+fn floor_char_boundary(s: &str, n: usize) -> usize {
+    let n = n.min(s.len());
+    (0..=n).rev().find(|&i| s.is_char_boundary(i)).unwrap_or(0)
+}
+
 /// Always appends `"\n… (truncated)"` when content is cut.
 fn truncate_compact(text: &str, soft_max: usize, hard_max: usize) -> String {
     if text.len() <= soft_max {
         return text.to_string();
     }
 
-    // Find the last newline within hard_max bytes — prefer to break at a line boundary
-    let search_end = hard_max.min(text.len());
+    // Find the last newline within hard_max bytes — prefer to break at a line boundary.
+    // floor_char_boundary ensures the slice never starts mid-char (e.g. box-drawing chars).
+    let search_end = floor_char_boundary(text, hard_max);
     if let Some(nl_pos) = text[..search_end].rfind('\n') {
         return format!("{}\n… (truncated)", &text[..nl_pos]);
     }
 
-    // No newline within hard_max — hard-truncate
-    let end = hard_max.min(text.len());
-    format!("{}… (truncated)", &text[..end])
+    // No newline within hard_max — hard-truncate at a char boundary.
+    format!("{}… (truncated)", &text[..search_end])
 }
 
 /// A single MCP tool exposed to the LLM.
@@ -629,7 +636,10 @@ mod tests {
         let parsed: serde_json::Value =
             serde_json::from_str(text).expect("call_content must return valid JSON");
         assert!(
-            parsed["output_id"].as_str().unwrap_or("").starts_with("@tool_"),
+            parsed["output_id"]
+                .as_str()
+                .unwrap_or("")
+                .starts_with("@tool_"),
             "must have output_id: {parsed}"
         );
         // The summary field must be capped. truncate_compact appends "\n… (truncated)"
@@ -714,5 +724,34 @@ mod tests {
         assert!(result.starts_with(&line1), "should keep line1");
         assert!(!result.contains(&line2), "should not include line2");
         assert!(result.contains("… (truncated)"));
+    }
+
+    #[test]
+    fn truncate_compact_unicode_does_not_panic() {
+        // Regression test for the read_file crash on docs/ARCHITECTURE.md.
+        // Box-drawing chars (─, │, ┌, etc.) are 3 bytes each in UTF-8.
+        // A hard_max that lands mid-char must NOT cause a panic.
+        let box_line: String = std::iter::repeat('─').take(700).collect(); // 2100 bytes
+        let prefix = "x".repeat(100);
+        let text = format!("{}\n{}", prefix, box_line); // >2000 bytes, no newline after 101
+
+        // Must not panic regardless of where hard_max falls inside multi-byte chars.
+        let result = super::truncate_compact(&text, 2_000, 3_000);
+        assert!(result.contains("… (truncated)"), "should be truncated");
+        // Result must be valid UTF-8 (no mid-char slices)
+        assert!(std::str::from_utf8(result.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn floor_char_boundary_lands_on_boundary() {
+        let s = "ab─cd"; // 'a'=1, 'b'=1, '─'=3 bytes (E2 94 80), 'c'=1, 'd'=1
+                         // bytes: 0='a', 1='b', 2-4='─', 5='c', 6='d'
+        assert_eq!(super::floor_char_boundary(s, 0), 0);
+        assert_eq!(super::floor_char_boundary(s, 2), 2); // before '─'
+        assert_eq!(super::floor_char_boundary(s, 3), 2); // inside '─' → back to 2
+        assert_eq!(super::floor_char_boundary(s, 4), 2); // inside '─' → back to 2
+        assert_eq!(super::floor_char_boundary(s, 5), 5); // after '─'
+        assert_eq!(super::floor_char_boundary(s, 6), 6);
+        assert_eq!(super::floor_char_boundary(s, 100), s.len()); // clamp to len
     }
 }

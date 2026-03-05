@@ -804,6 +804,40 @@ than the actual function body.
 Use `edit_file(old_string=<full function text>, new_string=<replacement>)` for test
 functions. `replace_symbol` is unreliable for functions inside `mod tests` blocks.
 
+### BUG-024 — `read_file`: panics on files with Unicode box-drawing chars, crashing the MCP server
+
+**Date:** 2026-03-05
+**Severity:** High — deterministic crash; any file >5 KB containing multi-byte UTF-8 characters kills the server
+**Status:** ✅ FIXED — `floor_char_boundary` helper added to `truncate_compact`; regression tests: `truncate_compact_unicode_does_not_panic`, `floor_char_boundary_lands_on_boundary`
+
+**What happened:**
+`read_file("docs/ARCHITECTURE.md")` returned `MCP error -32000: Connection closed` on every call.
+`list_symbols` and other tools worked fine. `read_file("Cargo.toml")` (ASCII-only) worked fine.
+
+**Reproduction hint:**
+Any file > `TOOL_OUTPUT_BUFFER_THRESHOLD` (5 KB) containing multi-byte UTF-8 characters
+(box-drawing chars `─│┌`, CJK, emoji, etc.) will crash `read_file`. `docs/ARCHITECTURE.md` (11 KB)
+has box-drawing chars (3 bytes each in UTF-8) in its ASCII diagram.
+
+**Root cause:**
+Call chain: `call_content` → JSON > 5 KB → `format_compact` → `format_read_file` (line-numbered
+output with Unicode chars) → `truncate_compact(text, soft_max=2000, hard_max=3000)`.
+
+`truncate_compact` had two unsafe byte slices:
+1. `text[..search_end]` where `search_end = hard_max` — used for `rfind('\n')`
+2. `text[..end]` where `end = hard_max` — the hard-truncate fallback
+
+Both slice at a raw byte offset. If that offset falls inside a multi-byte UTF-8 character,
+Rust panics with `byte index N is not a char boundary`. With `panic = "abort"` in
+`[profile.release]` (added as BUG-021 defence-in-depth), this aborts the process immediately
+instead of being silently absorbed by the detached tokio task.
+
+**Fix applied:**
+Added `floor_char_boundary(s, n)` which walks backward from `n` to the nearest valid char
+boundary. `truncate_compact` now uses it for both slice points.
+
+---
+
 ### BUG-023 — `run_command` (subagent): `git diff` without `--no-pager` hangs for 30s
 
 **Date:** 2026-03-04
