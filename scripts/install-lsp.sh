@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Install LSP servers for code-explorer.
+# Install LSP servers for codescout.
 #
 # Usage:
 #   ./scripts/install-lsp.sh --check          # show what's installed / missing
@@ -17,7 +17,7 @@ set -euo pipefail
 # ── Globals ──────────────────────────────────────────────────────────────────
 
 INSTALL_DIR="${HOME}/.local/bin"
-DOWNLOAD_DIR="${TMPDIR:-/tmp}/code-explorer-lsp-install"
+DOWNLOAD_DIR="${TMPDIR:-/tmp}/codescout-lsp-install"
 
 ALL_LANGS=(rust python typescript go java kotlin c csharp ruby)
 
@@ -382,7 +382,7 @@ usage() {
     cat <<EOF
 Usage: $(basename "$0") [OPTIONS] [LANGUAGES...]
 
-Install LSP servers for code-explorer.
+Install LSP servers for codescout.
 
 Options:
   --check   Show which LSP servers are installed / missing

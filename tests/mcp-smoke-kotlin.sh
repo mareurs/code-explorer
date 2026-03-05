@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end MCP smoke test for code-explorer against a Kotlin project.
+# End-to-end MCP smoke test for codescout against a Kotlin project.
 # Calls the real binary over stdio via the `mcp` CLI tool.
 # Run from the project root: ./tests/mcp-smoke-kotlin.sh
 #
@@ -51,13 +51,13 @@ fail() {
 
 # ── Setup ────────────────────────────────────────────────────────────────────
 
-echo "Building code-explorer (release)..."
+echo "Building codescout (release)..."
 cargo build --release 2>&1 | tail -1
 echo "done"
 echo ""
 
 export PATH="$HOME/.local/bin:$PATH"
-mcp alias add ce-kt-test ./target/release/code-explorer start --project "$KOTLIN_PROJECT"
+mcp alias add ce-kt-test ./target/release/codescout start --project "$KOTLIN_PROJECT"
 
 cleanup() {
     mcp alias remove ce-kt-test 2>/dev/null || true

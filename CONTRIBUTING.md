@@ -1,12 +1,12 @@
-# Contributing to code-explorer
+# Contributing to codescout
 
 We welcome contributions! Whether it's a bug fix, new language support, or documentation improvement — we're happy to review it.
 
 ## Getting Started
 
 ```bash
-git clone https://github.com/mareurs/code-explorer.git
-cd code-explorer
+git clone https://github.com/mareurs/codescout.git
+cd codescout
 cargo build
 cargo test
 ```
@@ -36,7 +36,7 @@ cargo test
 
 ## Using Claude Code?
 
-PRs generated with Claude Code are welcome. Just mention it in the PR description. If you're using code-explorer itself as an MCP server while contributing to code-explorer — that's the dream. Let us know how it went.
+PRs generated with Claude Code are welcome. Just mention it in the PR description. If you're using codescout itself as an MCP server while contributing to codescout — that's the dream. Let us know how it went.
 
 ## Project Structure
 

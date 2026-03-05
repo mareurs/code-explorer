@@ -4,13 +4,13 @@ All notable changes to codescout are documented here.
 
 ## [0.2.0] — codescout
 
-> **TL;DR:** The project was renamed from `code-explorer` to `codescout`. If you're
+> **TL;DR:** The project was renamed from `codescout` to `codescout`. If you're
 > migrating, update your MCP config and any scripts that reference the old binary name.
 > [Full story and migration guide →](docs/manual/src/history.md)
 
 ### Breaking changes
 
-- **Binary renamed:** `code-explorer` → `codescout`
+- **Binary renamed:** `codescout` → `codescout`
 - **MCP server ID renamed** — update `.mcp.json` or Claude Code settings accordingly
 - **Tool renames** (API consistency):
 
@@ -198,7 +198,7 @@ All notable changes to codescout are documented here.
 - `check_onboarding_performed` — check if onboarding has run
 
 ### Infrastructure
-- `.mcp.json` — Claude Code MCP config for using code-explorer on its own source
+- `.mcp.json` — Claude Code MCP config for using codescout on its own source
 - 141 tests: 136 unit + 5 end-to-end integration tests
 - Integration tests cover: read→search→replace, AST analysis, memory+config roundtrip,
   git history creation, onboarding+explore

@@ -7,9 +7,9 @@ OUTPUT="$PROJECT_ROOT/docs/images/dashboard.png"
 SCRIPTS_DIR="$PROJECT_ROOT/scripts"
 
 # --- Check binary ---
-BINARY=$(command -v code-explorer 2>/dev/null || echo "$PROJECT_ROOT/target/release/code-explorer")
+BINARY=$(command -v codescout 2>/dev/null || echo "$PROJECT_ROOT/target/release/codescout")
 if [[ ! -x "$BINARY" ]]; then
-  echo "ERROR: code-explorer binary not found."
+  echo "ERROR: codescout binary not found."
   echo "Build it first: cargo build --release"
   exit 1
 fi

@@ -1,7 +1,7 @@
 # Code Explorer — Embedding Setup on WSL2 Behind Zscaler
 
 This document captures the full journey of getting semantic search working in
-`code-explorer` on a WSL2 machine behind a Zscaler corporate proxy. It is
+`codescout` on a WSL2 machine behind a Zscaler corporate proxy. It is
 written as a troubleshooting narrative so that future developers can skip the
 trial-and-error and go straight to the working solution.
 
@@ -13,7 +13,7 @@ trial-and-error and go straight to the working solution.
 |---|---|
 | OS | Ubuntu on WSL2 (Windows host) |
 | Network proxy | Zscaler (SSL-inspecting corporate proxy) |
-| Tool | `code-explorer` MCP server (built from source) |
+| Tool | `codescout` MCP server (built from source) |
 | Target | `local:AllMiniLML6V2Q` — CPU-only, INT8-quantized, ~22 MB |
 
 ---
@@ -24,19 +24,19 @@ trial-and-error and go straight to the working solution.
 
 ```
 The local embedding model isn't available in this environment. The
-code-explorer server was built without the local-embed feature, so
+codescout server was built without the local-embed feature, so
 semantic search isn't supported here.
 ```
 
 ### Cause
 
-`code-explorer` has an optional Cargo feature `local-embed` that pulls in
+`codescout` has an optional Cargo feature `local-embed` that pulls in
 `fastembed-rs` and the ONNX Runtime. The default build omits it.
 
 ### Fix
 
 ```bash
-cd /home/vradu/work/tools/code-explorer
+cd /home/vradu/work/tools/codescout
 git pull
 cargo install --path . --features local-embed
 ```
@@ -125,7 +125,7 @@ Missing Input: encoder.layer.0.attention.output.LayerNorm.weight
 
 ### Cause
 
-`code-explorer` statically links ORT 1.20.0 via the `ort-download-binaries`
+`codescout` statically links ORT 1.20.0 via the `ort-download-binaries`
 Cargo feature. The Qdrant model `Qdrant/bge-small-en-v1.5-onnx-Q` was
 exported with:
 
@@ -173,10 +173,10 @@ not graph-fused operators.
 
 ### Step-by-step setup
 
-**1. Rebuild code-explorer with local-embed** (if not already done)
+**1. Rebuild codescout with local-embed** (if not already done)
 
 ```bash
-cd /home/vradu/work/tools/code-explorer
+cd /home/vradu/work/tools/codescout
 cargo install --path . --features local-embed
 ```
 
@@ -284,9 +284,9 @@ models, weights) are stored in XetHub LFS and always redirect to
 `cas-bridge.xethub.hf.co`, which Zscaler blocks. The workaround is to
 download from the Windows host browser and copy into WSL2.
 
-### 4 — ORT is statically compiled into code-explorer
+### 4 — ORT is statically compiled into codescout
 
 The `ort-download-binaries` Cargo feature downloads the ORT binary at build
 time and links it statically. You cannot swap the ORT runtime at runtime via
 `LD_PRELOAD` or environment variables. If a model requires a different ORT
-version, you must rebuild code-explorer targeting that version.
+version, you must rebuild codescout targeting that version.

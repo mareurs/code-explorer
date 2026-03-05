@@ -148,11 +148,11 @@ This project has a companion Claude Code plugin at **`../claude-plugins/code-exp
 The `PreToolUse` hook will **block** any attempt to use the native `Read`, `Grep`, or `Glob` tools on source code files (`.rs`, `.ts`, `.py`, etc). You will see `PreToolUse:Read hook error` if you try.
 
 **You MUST use codescout's own MCP tools to read source code:**
-- `mcp__code-explorer__list_symbols(path)` — see all symbols in a file/dir
-- `mcp__code-explorer__find_symbol(name, include_body=true)` — read a function body
-- `mcp__code-explorer__search_pattern(pattern)` — regex search
-- `mcp__code-explorer__semantic_search(query)` — concept-level search
-- `mcp__code-explorer__read_file(path)` — for non-source files (markdown, toml, json)
+- `mcp__codescout__list_symbols(path)` — see all symbols in a file/dir
+- `mcp__codescout__find_symbol(name, include_body=true)` — read a function body
+- `mcp__codescout__search_pattern(pattern)` — regex search
+- `mcp__codescout__semantic_search(query)` — concept-level search
+- `mcp__codescout__read_file(path)` — for non-source files (markdown, toml, json)
 
 **Configuration:**
 - Auto-detects codescout from `.mcp.json` or `~/.claude/settings.json`

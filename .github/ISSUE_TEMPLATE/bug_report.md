@@ -22,5 +22,5 @@ labels: bug
 
 - OS:
 - Rust version:
-- code-explorer version:
+- codescout version:
 - MCP client (e.g., Claude Code):
