@@ -9,7 +9,7 @@
 **Tech Stack:** Markdown only.
 
 **Important — what NOT to change:**
-- `.code-explorer/` directory path references — that is the actual config directory name on disk, correct and intentional
+- `.codescout/` directory path references — that is the actual config directory name on disk, correct and intentional
 - `code-explorer-routing` plugin references — that is the plugin's actual ID, not a stale reference
 - `history.md` and `CHANGELOG.md` — use `code-explorer` intentionally as historical context
 

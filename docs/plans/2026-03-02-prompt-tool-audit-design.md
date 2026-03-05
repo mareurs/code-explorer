@@ -61,7 +61,7 @@ is contained to `src/tools/output_buffer.rs` and `src/tools/workflow.rs`.
 | File | Change |
 |------|--------|
 | `server_instructions.md` | Remove `get_usage_stats` bullet (covered in §1) |
-| `.code-explorer/system-prompt.md` | `"interface for all 31 tools"` → `"interface for all 32 tools"` |
+| `.codescout/system-prompt.md` | `"interface for all 31 tools"` → `"interface for all 32 tools"` |
 | `CLAUDE.md` | `"30 tools registered"` → `"32 tools registered"` |
 | `src/prompts/onboarding_prompt.md` | `get_symbols_overview("src")` → `list_symbols("src/")` |
 
@@ -93,5 +93,5 @@ hard-block in `src/tools/mod.rs` is sufficient protection.
 - `src/tools/file.rs` — remove `worktree_hint` from 3 write sites
 - `src/tools/symbol.rs` — remove `worktree_hint` from 4 write sites
 - `src/util/path_security.rs` — delete `worktree_hint()` + 2 tests
-- `.code-explorer/system-prompt.md` — fix tool count
+- `.codescout/system-prompt.md` — fix tool count
 - `CLAUDE.md` — fix tool count

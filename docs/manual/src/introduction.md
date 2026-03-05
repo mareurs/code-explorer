@@ -95,7 +95,7 @@ For git history and diffs, use `run_command` with shell git commands (e.g. `run_
 ### Persistent Memory (1 tool)
 
 Agents are stateless across sessions by default. codescout provides a
-lightweight key-value store backed by markdown files in `.code-explorer/memories/`.
+lightweight key-value store backed by markdown files in `.codescout/memories/`.
 
 - `memory` — unified dispatch tool: `action: "read"` / `"write"` / `"list"` / `"delete"`
 

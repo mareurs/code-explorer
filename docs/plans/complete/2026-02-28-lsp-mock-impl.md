@@ -586,7 +586,7 @@ async fn ctx_with_mock(
     mock: MockLspClient,
 ) -> (tempfile::TempDir, ToolContext) {
     let dir = tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
     for (name, content) in files {
         let path = dir.path().join(name);
         if let Some(parent) = path.parent() {
@@ -639,7 +639,7 @@ async fn replace_symbol_preserves_preceding_close_brace() {
 #[tokio::test]
 async fn replace_symbol_preserves_preceding_close_brace_v2() {
     let dir = tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
 
     // Line 0 (0-indexed): `    }` — closing brace of preceding method
     // Line 1: blank
@@ -680,7 +680,7 @@ async fn replace_symbol_preserves_preceding_close_brace_v2() {
 async fn replace_symbol_clean_start_line() {
     // Normal case: LSP start_line points directly to `fn`, no lead-in.
     let dir = tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
 
     // Line 0: `fn foo() {`
     // Line 1: `    old();`
@@ -717,7 +717,7 @@ async fn insert_code_before_skips_lead_in() {
     // LSP reports target starting on the `}` of the preceding method.
     // insert_code("before") should land AFTER the `}`, not before it.
     let dir = tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
 
     // Line 0: `    }` — preceding close brace (lead-in)
     // Line 1: blank
@@ -759,7 +759,7 @@ async fn insert_code_before_skips_lead_in() {
 async fn insert_code_after_lands_past_symbol() {
     // Normal "after" case: symbol ends at line 2 (`}`), insertion goes after.
     let dir = tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
 
     let src = "fn foo() {\n}\n\n";
     let file = dir.path().join("src/lib.rs");
@@ -830,7 +830,7 @@ async fn replace_symbol_preserves_preceding_close_brace() {
 >     build_mock: impl FnOnce(&std::path::Path) -> MockLspClient,
 > ) -> (tempfile::TempDir, ToolContext) {
 >     let dir = tempdir().unwrap();
->     std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+>     std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
 >     for (name, content) in files {
 >         let path = dir.path().join(name);
 >         if let Some(parent) = path.parent() {

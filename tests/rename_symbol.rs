@@ -19,7 +19,7 @@ use tempfile::tempdir;
 
 async fn project(files: &[(&str, &str)]) -> (tempfile::TempDir, ToolContext) {
     let dir = tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
     for (name, content) in files {
         let path = dir.path().join(name);
         if let Some(parent) = path.parent() {

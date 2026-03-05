@@ -84,7 +84,7 @@ can tell where each result came from.
 ## [Memory](memory.md)
 
 Persistent key-value store backed by markdown files in
-`.code-explorer/memories/`. Survives across sessions.
+`.codescout/memories/`. Survives across sessions.
 
 | Tool | Description |
 |------|-------------|

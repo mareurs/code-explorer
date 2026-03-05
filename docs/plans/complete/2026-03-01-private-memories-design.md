@@ -5,7 +5,7 @@
 
 ## Problem
 
-All memories written via `write_memory` live in `.code-explorer/memories/` and are committed to git —
+All memories written via `write_memory` live in `.codescout/memories/` and are committed to git —
 shared with every contributor. There is no place for developer-personal context: local machine config,
 personal workflow preferences, WIP notes, and per-developer debugging history.
 
@@ -18,13 +18,13 @@ shared memories, with the LLM taught via system prompt rules when to use each st
 
 ## Storage
 
-**New directory:** `.code-explorer/private-memories/`
+**New directory:** `.codescout/private-memories/`
 
-- Same layout as `.code-explorer/memories/` — one Markdown file per topic, path-like hierarchy
+- Same layout as `.codescout/memories/` — one Markdown file per topic, path-like hierarchy
 - `MemoryStore` is unchanged; a second instance is created pointing at `private-memories/`
 - `ActiveProject` gets a second field: `private_memory: MemoryStore`
 - When the private directory is **first created**, the code auto-appends
-  `.code-explorer/private-memories/` to the project's `.gitignore` (creating `.gitignore` if absent)
+  `.codescout/private-memories/` to the project's `.gitignore` (creating `.gitignore` if absent)
 
 ### What belongs in private memories
 
@@ -94,13 +94,13 @@ If `private_memories` is empty, the field is omitted and the message makes no me
 ## Onboarding: `system_prompt_draft` Injection
 
 `build_system_prompt_draft()` in `src/tools/workflow.rs` gains a new section appended to the
-generated `.code-explorer/system-prompt.md`:
+generated `.codescout/system-prompt.md`:
 
 ```markdown
 ## Private Memory Rules
 
 Private memories are gitignored — personal to this developer, not shared with the team.
-They live in `.code-explorer/private-memories/`.
+They live in `.codescout/private-memories/`.
 
 **Write to the private store** (`write_memory(topic, content, private=true)`) for:
 - Personal preferences and workflow rules for this developer

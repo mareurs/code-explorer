@@ -214,7 +214,7 @@ mod tests {
         content: &str,
     ) -> (tempfile::TempDir, ToolContext) {
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         std::fs::write(dir.path().join(filename), content).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         (
@@ -320,7 +320,7 @@ mod tests {
     #[tokio::test]
     async fn list_functions_file_not_found() {
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         let ctx = ToolContext {
             agent,

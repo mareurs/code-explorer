@@ -1,14 +1,14 @@
 # Project Configuration
 
 Every project managed by codescout has an optional configuration file at
-`.code-explorer/project.toml`. The file uses [TOML](https://toml.io/) syntax.
+`.codescout/project.toml`. The file uses [TOML](https://toml.io/) syntax.
 
 ## File Location and Auto-Creation
 
 The file lives at:
 
 ```
-<project-root>/.code-explorer/project.toml
+<project-root>/.codescout/project.toml
 ```
 
 If the file does not exist when a project is first activated, codescout creates it with
@@ -86,7 +86,7 @@ patterns = [
     ".venv",
     "dist",
     "build",
-    ".code-explorer",
+    ".codescout",
 ]
 ```
 
@@ -107,7 +107,7 @@ patterns = [
     ".venv",
     "dist",
     "build",
-    ".code-explorer",
+    ".codescout",
     "vendor",
     "generated",
     "*.pb.go",
@@ -228,7 +228,7 @@ patterns = [
     ".venv",
     "dist",
     "build",
-    ".code-explorer",
+    ".codescout",
     "vendor",
     "migrations/archive",
 ]
@@ -249,7 +249,7 @@ indexing_enabled = true
 
 At startup and whenever `activate_project` is called, codescout:
 
-1. Looks for `.code-explorer/project.toml` in the project root.
+1. Looks for `.codescout/project.toml` in the project root.
 2. If found, parses it. Any section that is missing falls back to its defaults.
 3. If not found, constructs a default config using the directory name as the project name.
 

@@ -153,7 +153,7 @@ pub async fn create_embedder(model: &str) -> Result<Box<dyn Embedder>> {
                 const FALLBACK: &str = "BGESmallENV15Q";
                 tracing::warn!(
                     "{e}. Falling back to local:{FALLBACK} (CPU-friendly, ~20 MB). \
-                     Set embeddings.model in .code-explorer/project.toml to suppress this."
+                     Set embeddings.model in .codescout/project.toml to suppress this."
                 );
                 return Ok(Box::new(local::LocalEmbedder::new(FALLBACK)?));
             }

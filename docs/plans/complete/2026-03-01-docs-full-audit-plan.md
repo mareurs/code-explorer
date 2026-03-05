@@ -236,7 +236,7 @@ code. Build one with `index_library`:
 ```
 
 This is a one-time cost per library. The index persists in
-`.code-explorer/libraries/<name>/embeddings.db`.
+`.codescout/libraries/<name>/embeddings.db`.
 
 ## When to Use Library Navigation
 
@@ -290,10 +290,10 @@ rediscovery entirely.
 
 ## Storage Layout
 
-Memories are plain Markdown files in `.code-explorer/memories/`:
+Memories are plain Markdown files in `.codescout/memories/`:
 
 ```
-.code-explorer/memories/
+.codescout/memories/
   architecture.md
   conventions/
     error-handling.md

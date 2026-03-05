@@ -293,7 +293,7 @@ mod tests {
 
     async fn make_ctx() -> (tempfile::TempDir, ToolContext) {
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         let lsp = Arc::new(LspManager::new());
         let ctx = ToolContext { agent, lsp };

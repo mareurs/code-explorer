@@ -321,7 +321,7 @@ pub fn check_tool_access(tool_name: &str, config: &PathSecurityConfig) -> Result
         "run_command" => {
             if !config.shell_enabled {
                 bail!(
-                    "Shell commands are disabled. Set security.shell_enabled = true in .code-explorer/project.toml to enable."
+                    "Shell commands are disabled. Set security.shell_enabled = true in .codescout/project.toml to enable."
                 );
             }
         }
@@ -329,14 +329,14 @@ pub fn check_tool_access(tool_name: &str, config: &PathSecurityConfig) -> Result
         | "remove_symbol" => {
             if !config.file_write_enabled {
                 bail!(
-                    "File write tools are disabled. Set security.file_write_enabled = true in .code-explorer/project.toml to enable."
+                    "File write tools are disabled. Set security.file_write_enabled = true in .codescout/project.toml to enable."
                 );
             }
         }
         "semantic_search" | "index_project" => {
             if !config.indexing_enabled {
                 bail!(
-                    "Indexing tools are disabled. Set security.indexing_enabled = true in .code-explorer/project.toml to enable."
+                    "Indexing tools are disabled. Set security.indexing_enabled = true in .codescout/project.toml to enable."
                 );
             }
         }

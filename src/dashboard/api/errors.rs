@@ -13,7 +13,7 @@ pub async fn get_errors(
     State(state): State<DashboardState>,
     Query(params): Query<ErrorParams>,
 ) -> Json<Value> {
-    let db_path = state.project_root.join(".code-explorer").join("usage.db");
+    let db_path = state.project_root.join(".codescout").join("usage.db");
     if !db_path.exists() {
         return Json(json!({ "available": false, "errors": [] }));
     }

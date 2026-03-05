@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Move system_prompt from inline TOML to `.code-explorer/system-prompt.md`, auto-generate it during onboarding with user confirmation, and include project-specific navigation guidance.
+**Goal:** Move system_prompt from inline TOML to `.codescout/system-prompt.md`, auto-generate it during onboarding with user confirmation, and include project-specific navigation guidance.
 
 **Architecture:** `project_status()` in `agent.rs` reads the file (TOML fallback). `build_server_instructions()` already handles `system_prompt: Option<String>` — no change needed there. Onboarding returns a `system_prompt_draft` and the prompt instructs the LLM to confirm with the user before writing the file.
 
@@ -27,7 +27,7 @@ Add to the `tests` module in `src/agent.rs`:
 async fn project_status_reads_system_prompt_file() {
     let dir = tempfile::tempdir().unwrap();
     // Create minimal project.toml (no system_prompt field)
-    let config_dir = dir.path().join(".code-explorer");
+    let config_dir = dir.path().join(".codescout");
     std::fs::create_dir_all(&config_dir).unwrap();
     std::fs::write(
         config_dir.join("project.toml"),
@@ -61,7 +61,7 @@ Expected: FAIL — `project_status()` currently reads from `config.project.syste
 #[tokio::test]
 async fn project_status_falls_back_to_toml_system_prompt() {
     let dir = tempfile::tempdir().unwrap();
-    let config_dir = dir.path().join(".code-explorer");
+    let config_dir = dir.path().join(".codescout");
     std::fs::create_dir_all(&config_dir).unwrap();
     std::fs::write(
         config_dir.join("project.toml"),
@@ -82,7 +82,7 @@ async fn project_status_falls_back_to_toml_system_prompt() {
 #[tokio::test]
 async fn project_status_file_takes_precedence_over_toml() {
     let dir = tempfile::tempdir().unwrap();
-    let config_dir = dir.path().join(".code-explorer");
+    let config_dir = dir.path().join(".codescout");
     std::fs::create_dir_all(&config_dir).unwrap();
     std::fs::write(
         config_dir.join("project.toml"),
@@ -115,7 +115,7 @@ pub async fn project_status(&self) -> Option<crate::prompts::ProjectStatus> {
     // Read system prompt: file takes precedence over TOML field
     let prompt_file = project
         .root
-        .join(".code-explorer")
+        .join(".codescout")
         .join("system-prompt.md");
     let system_prompt = if prompt_file.exists() {
         std::fs::read_to_string(&prompt_file).ok()
@@ -164,7 +164,7 @@ git commit -m "feat: read system-prompt.md with TOML fallback in project_status"
 Insert before the `## Gathered Project Data` line (at the end of the memories section):
 
 ```markdown
-### 7. System Prompt — `.code-explorer/system-prompt.md`
+### 7. System Prompt — `.codescout/system-prompt.md`
 
 After creating the 6 memories above, synthesize a concise system prompt (15-30 lines)
 for this project. This prompt is injected into EVERY code-explorer session
@@ -206,7 +206,7 @@ provided to you separately.
 ```
 
 **Process:** Present the draft to the user and ask: "Does this system prompt look
-right? I'll save it to `.code-explorer/system-prompt.md`." After confirmation, write
+right? I'll save it to `.codescout/system-prompt.md`." After confirmation, write
 the file using `create_file`. Inform the user they can edit it anytime.
 
 ## After Everything Is Created
@@ -217,7 +217,7 @@ After confirming all 6 memories and the system prompt with the user, deliver thi
 
 **Your code-explorer setup is complete.**
 
-- **System prompt** (`.code-explorer/system-prompt.md`) — always-on project guidance,
+- **System prompt** (`.codescout/system-prompt.md`) — always-on project guidance,
   injected into every session. Edit anytime to refine how AI navigates your codebase.
 - **Memories** — reference material read on demand via `read_memory(topic)`. Update
   with `write_memory(topic, content)`.
@@ -441,7 +441,7 @@ git commit -m "docs: update onboarding tool description to mention system prompt
 On the `system_prompt` field in `ProjectSection`, add a comment:
 
 ```rust
-    /// Deprecated: use `.code-explorer/system-prompt.md` instead.
+    /// Deprecated: use `.codescout/system-prompt.md` instead.
     /// This field is still read as a fallback if the file doesn't exist.
     /// Will be removed in a future version.
     #[serde(default)]
@@ -483,7 +483,7 @@ introductory section. Add a line like:
 ```markdown
 ## Project Customization
 
-If `.code-explorer/system-prompt.md` exists, its contents appear below as
+If `.codescout/system-prompt.md` exists, its contents appear below as
 "Custom Instructions" — project-specific guidance from the user.
 ```
 

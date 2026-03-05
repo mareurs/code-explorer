@@ -127,7 +127,7 @@ mod tests {
     #[tokio::test]
     async fn config_returns_json() {
         let dir = tempfile::TempDir::new().unwrap();
-        let ce_dir = dir.path().join(".code-explorer");
+        let ce_dir = dir.path().join(".codescout");
         std::fs::create_dir_all(&ce_dir).unwrap();
         std::fs::write(
             ce_dir.join("project.toml"),

@@ -30,7 +30,7 @@ See [`FEATURES.md`](FEATURES.md) for the full feature reference. Summary:
 - **edit_file / remove_symbol** — find-and-replace and symbol deletion with security gating
 - **Worktree write guard** — advisory `worktree_hint` field prevents silent cross-worktree corruption
 - **Symbol signatures** — LSP `detail` field captured; `signature` synthesized for display
-- **Project customization** — `.code-explorer/system-prompt.md` injects project-specific agent guidance
+- **Project customization** — `.codescout/system-prompt.md` injects project-specific agent guidance
 - **Onboarding** — language-specific nav hints, system-prompt draft generation
 - **RecoverableError** — non-fatal tool failures don't abort sibling parallel calls
 - **Dashboard** — `codescout dashboard` web UI with tool stats and project health ([concept page](manual/src/concepts/dashboard.md))
@@ -105,7 +105,7 @@ Maintain project glossaries and documentation that stay in sync with the codebas
 
 **Core mechanism:**
 
-1. **Hash tracking** — Store a content hash (e.g. SHA-256) for every file that contributes to a glossary or documentation entry. Persist in `.code-explorer/doc-hashes.db` (SQLite, same pattern as `embeddings.db`).
+1. **Hash tracking** — Store a content hash (e.g. SHA-256) for every file that contributes to a glossary or documentation entry. Persist in `.codescout/doc-hashes.db` (SQLite, same pattern as `embeddings.db`).
 
 2. **Change detection** — On a `check_docs` or `sync_docs` tool call (or automatically during `onboarding`), compare stored hashes against current file content. Files with mismatched hashes are flagged as stale.
 
@@ -116,7 +116,7 @@ Maintain project glossaries and documentation that stay in sync with the codebas
 **Glossary features:**
 - **Term extraction** — Build a glossary from codebase symbols, domain concepts, and abbreviations (combining AST/LSP data with semantic search)
 - **Cross-reference** — Link glossary terms to source locations (file:line), kept accurate via hash tracking
-- **Scope** — Per-project glossary in `.code-explorer/glossary.md` or structured `.code-explorer/glossary.json`
+- **Scope** — Per-project glossary in `.codescout/glossary.md` or structured `.codescout/glossary.json`
 
 **Documentation management features:**
 - **Doc registration** — `register_doc(path, sources: [file globs])` links a documentation file to the source files it describes

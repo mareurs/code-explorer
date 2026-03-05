@@ -12,7 +12,7 @@ use tempfile::tempdir;
 /// Create a project context with files pre-populated.
 async fn project_with_files(files: &[(&str, &str)]) -> (tempfile::TempDir, ToolContext) {
     let dir = tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
     for (name, content) in files {
         let path = dir.path().join(name);
         if let Some(parent) = path.parent() {
@@ -230,7 +230,7 @@ async fn workflow_git_blame() {
 
     // Initialize a git repo
     let repo = git2::Repository::init(dir.path()).unwrap();
-    std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
 
     let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
     let ctx = ToolContext {
@@ -316,7 +316,7 @@ async fn workflow_ollama_index_and_search() {
              }\n",
         ),
         (
-            ".code-explorer/project.toml",
+            ".codescout/project.toml",
             "[project]\nname = \"test\"\n\n\
              [embeddings]\nmodel = \"ollama:nomic-embed-text\"\n",
         ),
@@ -533,7 +533,7 @@ async fn write_allowed_when_project_provided_at_startup_even_with_worktrees() {
 
     // 1. Create a temp project dir with fake worktree metadata
     let dir = tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
 
     // Simulate a linked worktree: .git/worktrees/feat/gitdir pointing to some path
     let wt_entry = dir.path().join(".git").join("worktrees").join("feat");

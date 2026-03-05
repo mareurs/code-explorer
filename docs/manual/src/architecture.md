@@ -195,7 +195,7 @@ rather than by name. It has four stages:
      external service needed.
 
 3. **Storage** (`src/embed/index.rs`) -- Vectors and chunk metadata are stored
-   in a SQLite database at `.code-explorer/embeddings.db`. Each chunk records
+   in a SQLite database at `.codescout/embeddings.db`. Each chunk records
    its file path, line range, content hash, and embedding vector as a blob.
 
 4. **Search** (`src/embed/index.rs`) -- Query text is embedded using the same
@@ -211,7 +211,7 @@ that changed since the last index build are re-chunked and re-embedded.
 **Source:** `src/memory/`
 
 A lightweight key-value store backed by markdown files in
-`.code-explorer/memories/`. Topics are path-like strings (e.g.,
+`.codescout/memories/`. Topics are path-like strings (e.g.,
 `debugging/async-patterns`) that map to files on disk.
 
 The store supports four operations: write, read, list, and delete. There is no
@@ -260,11 +260,11 @@ multiple clients need to share a single server.
 
 ## Storage
 
-All persistent data lives in `.code-explorer/` within the project root:
+All persistent data lives in `.codescout/` within the project root:
 
 ```
 <project-root>/
-└── .code-explorer/
+└── .codescout/
     ├── project.toml      # Configuration
     ├── embeddings.db      # SQLite vector index
     └── memories/          # Markdown knowledge files
@@ -274,7 +274,7 @@ All persistent data lives in `.code-explorer/` within the project root:
 ```
 
 This directory is created automatically when a project is first activated.
-Add `.code-explorer/` to your `.gitignore` -- it contains machine-local state
+Add `.codescout/` to your `.gitignore` -- it contains machine-local state
 (embedding vectors, memory notes) that should not be committed.
 
 The `project.toml` file is an exception: you may want to commit it so that

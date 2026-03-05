@@ -3,17 +3,17 @@
 /target
 /.mcp.json
 # code-explorer data dir: ignore generated/personal files, track shareable ones
-/.code-explorer/project.toml
-/.code-explorer/embeddings.db
-/.code-explorer/embeddings.db-wal
-/.code-explorer/embeddings.db-shm
-/.code-explorer/usage.db
-/.code-explorer/usage.db-wal
-/.code-explorer/usage.db-shm
+/.codescout/project.toml
+/.codescout/embeddings.db
+/.codescout/embeddings.db-wal
+/.codescout/embeddings.db-shm
+/.codescout/usage.db
+/.codescout/usage.db-wal
+/.codescout/usage.db-shm
 # memories/ and system-prompt.md are intentionally tracked
 /docs/research/
 /docs/observations.md
 /scripts/node_modules/
 /scripts/package-lock.json
-.code-explorer/private-memories/
+.codescout/private-memories/
 /temp-docs/

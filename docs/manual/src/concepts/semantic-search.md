@@ -27,7 +27,7 @@ numbers) by the configured embedding model. Semantically similar text produces
 vectors that point in similar directions in high-dimensional space.
 The default model is `ollama:mxbai-embed-large`; see
 [Embedding Backends](../configuration/embedding-backends.md) to change it.
-The vectors are stored in `.code-explorer/embeddings.db`.
+The vectors are stored in `.codescout/embeddings.db`.
 
 **3. Search** — Your query is embedded with the same model and compared to every
 stored chunk using cosine similarity. The closest chunks are returned, ranked by
@@ -79,7 +79,7 @@ Check its health:
 { "tool": "project_status", "arguments": {} }
 ```
 
-The index is stored in `.code-explorer/embeddings.db` and excluded from version
+The index is stored in `.codescout/embeddings.db` and excluded from version
 control by default. Each team member builds their own local copy.
 
 **Drift detection:** `project_status` can report per-file drift scores — a measure

@@ -2510,7 +2510,7 @@ async fn tag_external_path(
                 crate::library::registry::DiscoveryMethod::LspFollowThrough,
             );
             // Best-effort save — don't fail the tool call if this fails
-            let registry_path = project.root.join(".code-explorer").join("libraries.json");
+            let registry_path = project.root.join(".codescout").join("libraries.json");
             let _ = project.library_registry.save(&registry_path);
         }
         format!("lib:{}", name)
@@ -2565,7 +2565,7 @@ edition = "2021"
         )
         .unwrap();
         std::fs::create_dir_all(dir.path().join("src")).unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         std::fs::write(
             dir.path().join("src/main.rs"),
             r#"fn main() {
@@ -3043,7 +3043,7 @@ impl Point {
     #[tokio::test]
     async fn path_not_found_is_recoverable_error() {
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         let ctx = ToolContext {
             agent,
@@ -3068,7 +3068,7 @@ impl Point {
     #[tokio::test]
     async fn path_not_found_hint_mentions_list_dir() {
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         let ctx = ToolContext {
             agent,
@@ -3095,7 +3095,7 @@ impl Point {
     #[tokio::test]
     async fn glob_no_match_is_recoverable_error() {
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         let ctx = ToolContext {
             agent,
@@ -3169,7 +3169,7 @@ impl Point {
         // that kicks in when workspace/symbol returns empty.
         let dir = tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("src")).unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         std::fs::write(
             dir.path().join("src/lib.rs"),
             "pub fn unique_benchmark_fn() -> i32 { 42 }\n\npub struct UniqueTestStruct { x: i32 }\n",
@@ -3222,7 +3222,7 @@ impl Point {
         // Source files ONLY in subdirectories (not at root).
         let dir = tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("src")).unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         std::fs::write(
             dir.path().join("src/lib.rs"),
             "pub fn nested_function() -> i32 { 42 }\n",
@@ -3266,7 +3266,7 @@ impl Point {
         // When targeting a specific subdirectory (not root), should NOT recurse.
         let dir = tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("src/deep/nested")).unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         std::fs::write(dir.path().join("src/top.rs"), "pub fn top_level() {}\n").unwrap();
         std::fs::write(
             dir.path().join("src/deep/nested/hidden.rs"),
@@ -3572,7 +3572,7 @@ edition = "2021"
         )
         .unwrap();
         std::fs::create_dir_all(dir.path().join("src")).unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         // Write a file where `add` is defined and called twice
         std::fs::write(
             dir.path().join("src/main.rs"),
@@ -3693,7 +3693,7 @@ fn main() {
     #[tokio::test]
     async fn tag_external_path_returns_project_for_internal() {
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         let root = agent.require_project_root().await.unwrap();
         let internal = root.join("src/main.rs");
@@ -3704,7 +3704,7 @@ fn main() {
     #[tokio::test]
     async fn tag_external_path_discovers_and_registers() {
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         let root = agent.require_project_root().await.unwrap();
 
@@ -3812,7 +3812,7 @@ fn main() {
         let dir = tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("src/utils")).unwrap();
         std::fs::create_dir_all(dir.path().join("src/empty")).unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         std::fs::write(
             dir.path().join("Cargo.toml"),
             "[package]\nname = \"test-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
@@ -5357,7 +5357,7 @@ fn main() {
         let dir = tempfile::tempdir().unwrap();
         let src_dir = dir.path().join("src");
         std::fs::create_dir_all(&src_dir).unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let file = src_dir.join("lib.rs");
         std::fs::write(
             &file,
@@ -5544,7 +5544,7 @@ fn main() {
         let lsp = MockLspProvider::with_client(mock);
 
         // Use the same ToolContext setup pattern as the other test
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         let ctx = ToolContext {
             agent,

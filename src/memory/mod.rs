@@ -1,8 +1,8 @@
 //! Markdown-based persistent memory store (mirrors Serena's memory system).
 //!
-//! Memories are stored as `.md` files in `.code-explorer/memories/`.
+//! Memories are stored as `.md` files in `.codescout/memories/`.
 //! They are organized hierarchically via path-like topics:
-//! e.g. "debugging/async-patterns" → `.code-explorer/memories/debugging/async-patterns.md`
+//! e.g. "debugging/async-patterns" → `.codescout/memories/debugging/async-patterns.md`
 
 pub mod classify;
 
@@ -18,18 +18,18 @@ pub struct MemoryStore {
 impl MemoryStore {
     /// Open (or create) the memory store for a project root.
     pub fn open(project_root: &Path) -> Result<Self> {
-        let memories_dir = project_root.join(".code-explorer").join("memories");
+        let memories_dir = project_root.join(".codescout").join("memories");
         std::fs::create_dir_all(&memories_dir)?;
         Ok(Self { memories_dir })
     }
 
     /// Open (or create) the private memory store for a project root.
     /// Private memories are gitignored — not shared with teammates.
-    /// Automatically adds `.code-explorer/private-memories/` to `.gitignore`.
+    /// Automatically adds `.codescout/private-memories/` to `.gitignore`.
     pub fn open_private(project_root: &Path) -> Result<Self> {
-        let memories_dir = project_root.join(".code-explorer").join("private-memories");
+        let memories_dir = project_root.join(".codescout").join("private-memories");
         std::fs::create_dir_all(&memories_dir)?;
-        Self::ensure_gitignored(project_root, ".code-explorer/private-memories/")?;
+        Self::ensure_gitignored(project_root, ".codescout/private-memories/")?;
         Ok(Self { memories_dir })
     }
 
@@ -131,7 +131,7 @@ mod tests {
     fn open_private_creates_private_memories_dir() {
         let dir = tempdir().unwrap();
         let _store = MemoryStore::open_private(dir.path()).unwrap();
-        assert!(dir.path().join(".code-explorer/private-memories").is_dir());
+        assert!(dir.path().join(".codescout/private-memories").is_dir());
     }
 
     #[test]
@@ -139,7 +139,7 @@ mod tests {
         let dir = tempdir().unwrap();
         MemoryStore::open_private(dir.path()).unwrap();
         let content = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
-        assert!(content.contains(".code-explorer/private-memories/"));
+        assert!(content.contains(".codescout/private-memories/"));
     }
 
     #[test]
@@ -150,7 +150,7 @@ mod tests {
         let content = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
         let count = content
             .lines()
-            .filter(|l| l.trim() == ".code-explorer/private-memories/")
+            .filter(|l| l.trim() == ".codescout/private-memories/")
             .count();
         assert_eq!(count, 1);
     }
@@ -162,7 +162,7 @@ mod tests {
         MemoryStore::open_private(dir.path()).unwrap();
         let content = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
         assert!(content.contains("target/\n"));
-        assert!(content.contains(".code-explorer/private-memories/"));
+        assert!(content.contains(".codescout/private-memories/"));
     }
 
     #[test]

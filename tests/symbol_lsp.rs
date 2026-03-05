@@ -24,7 +24,7 @@ async fn ctx_with_mock(
     build_mock: impl FnOnce(&std::path::Path) -> MockLspClient,
 ) -> (tempfile::TempDir, ToolContext) {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
     for (name, content) in files {
         let path = dir.path().join(name);
         if let Some(parent) = path.parent() {

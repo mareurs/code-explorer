@@ -77,7 +77,7 @@ All notable changes to codescout are documented here.
   sibling parallel tool calls are not aborted when one tool returns an expected error
 - Dynamic server instructions injected into the MCP `initialize` response so Claude
   sees guidance before the first tool call
-- `system_prompt` field in `.code-explorer/project.toml` for project-specific guidance
+- `system_prompt` field in `.codescout/project.toml` for project-specific guidance
 - Auto-detect project root from the server's working directory on startup
 - Configurable per-language LSP init timeout via `lsp_init_timeout_secs`
 - `text_sweep` helper: after `rename_symbol`, scans for residual textual occurrences

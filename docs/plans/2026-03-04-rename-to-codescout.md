@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Rename the crate, binary, and project identity from `code-explorer` to `codescout` across all source files, docs, and the companion plugin — while keeping `.code-explorer/` config directories unchanged.
+**Goal:** Rename the crate, binary, and project identity from `code-explorer` to `codescout` across all source files, docs, and the companion plugin — while keeping `.codescout/` config directories unchanged.
 
-**Architecture:** Pure rename/refactor — no behaviour changes. Three categories of change: (1) Cargo identity (`Cargo.toml`, `src/main.rs` lib path), (2) internal Rust identifiers (`CodeExplorerServer`), (3) string literals and prose in source, prompts, and docs. Config directories stay as `.code-explorer/` to avoid breaking existing user data.
+**Architecture:** Pure rename/refactor — no behaviour changes. Three categories of change: (1) Cargo identity (`Cargo.toml`, `src/main.rs` lib path), (2) internal Rust identifiers (`CodeExplorerServer`), (3) string literals and prose in source, prompts, and docs. Config directories stay as `.codescout/` to avoid breaking existing user data.
 
 **Tech Stack:** Rust (cargo), sed/grep for verification, companion plugin shell scripts.
 
@@ -131,7 +131,7 @@ git commit -m "refactor: rename CodeExplorerServer to CodeScoutServer"
 
 ### Task 4: Update string literals in source files
 
-These are error messages and comments that say "code-explorer" but don't refer to the config directory. The `.code-explorer/` directory references are intentionally left alone.
+These are error messages and comments that say "code-explorer" but don't refer to the config directory. The `.codescout/` directory references are intentionally left alone.
 
 **Files:**
 - Modify: `src/util/path_security.rs`
@@ -140,9 +140,9 @@ These are error messages and comments that say "code-explorer" but don't refer t
 **Step 1: Update path_security.rs error messages**
 
 Find lines with "code-explorer tools" (3 occurrences):
-- `"Shell commands are disabled. Set security.shell_enabled = true in .code-explorer/project.toml to enable."` — keep `.code-explorer/` as-is ✓
-- `"File write tools are disabled. Set security.file_write_enabled = true in .code-explorer/project.toml to enable."` — keep ✓
-- `"Indexing tools are disabled. Set security.indexing_enabled = true in .code-explorer/project.toml to enable."` — keep ✓
+- `"Shell commands are disabled. Set security.shell_enabled = true in .codescout/project.toml to enable."` — keep `.codescout/` as-is ✓
+- `"File write tools are disabled. Set security.file_write_enabled = true in .codescout/project.toml to enable."` — keep ✓
+- `"Indexing tools are disabled. Set security.indexing_enabled = true in .codescout/project.toml to enable."` — keep ✓
 - Comment on line ~403: `/// Source file extensions that should be accessed via code-explorer tools,` → `/// Source file extensions that should be accessed via codescout tools,`
 - Comment on line ~414: `/// present in the command string. Use code-explorer tools instead:` → `/// Use codescout tools instead:`
 
@@ -177,22 +177,22 @@ These are injected into every MCP session — they are user-visible and need the
 Line 1: `code-explorer MCP server:` → `codescout MCP server:`
 Line 5-6: `code-explorer too` / `code-explorer tools` → `codescout too` / `codescout tools`
 
-All `.code-explorer/system-prompt.md` references — leave as-is (config directory).
+All `.codescout/system-prompt.md` references — leave as-is (config directory).
 
 **Step 2: onboarding_prompt.md**
 
-Replace all occurrences of `code-explorer` that refer to the tool name (not the `.code-explorer/` directory):
+Replace all occurrences of `code-explorer` that refer to the tool name (not the `.codescout/` directory):
 - `"use code-explorer tools"` → `"use codescout tools"`
 - `"code-explorer session"` → `"codescout session"`
 - `"Your code-explorer setup is complete."` → `"Your codescout setup is complete."`
 - `"code-explorer tools to fill gaps"` → `"codescout tools to fill gaps"`
 
-Keep all `.code-explorer/` directory references exactly as-is.
+Keep all `.codescout/` directory references exactly as-is.
 
-**Step 3: Verify no `.code-explorer` directory references were accidentally changed**
+**Step 3: Verify no `.codescout` directory references were accidentally changed**
 
-Run: `grep -n "\.code-explorer" src/prompts/*.md`
-Expected: all original `.code-explorer/` paths still present.
+Run: `grep -n "\.codescout" src/prompts/*.md`
+Expected: all original `.codescout/` paths still present.
 
 **Step 4: Verify tests pass**
 
@@ -232,7 +232,7 @@ Replace every `code-explorer` that refers to the tool/binary/project name with `
 
 **Step 3: Verify**
 
-Run: `grep -n "code-explorer" README.md | grep -v "code-explorer-routing" | grep -v "\.code-explorer"`
+Run: `grep -n "code-explorer" README.md | grep -v "code-explorer-routing" | grep -v "\.codescout"`
 Expected: zero results (all tool-name references updated; companion plugin and config dir refs untouched).
 
 **Step 4: Commit**
@@ -267,7 +267,7 @@ git commit -m "docs: rename code-explorer → codescout in README"
 
 **Step 3: Verify**
 
-Run: `grep -rn "code-explorer" CLAUDE.md docs/ROADMAP.md | grep -v "code-explorer-routing" | grep -v "mcp__code-explorer" | grep -v "\.code-explorer"`
+Run: `grep -rn "code-explorer" CLAUDE.md docs/ROADMAP.md | grep -v "code-explorer-routing" | grep -v "mcp__code-explorer" | grep -v "\.codescout"`
 Expected: zero results.
 
 **Step 4: Commit**
@@ -341,7 +341,7 @@ Expected: no changes (or apply any minor formatting).
 
 **Step 4: Check for stray references**
 
-Run: `grep -rn "code.explorer\|CodeExplorer\|code_explorer" src/ --include="*.rs" | grep -v "\.code-explorer" | grep -v "code-explorer-routing" | grep -v "code_explorer_secret_test"`
+Run: `grep -rn "code.explorer\|CodeExplorer\|code_explorer" src/ --include="*.rs" | grep -v "\.codescout" | grep -v "code-explorer-routing" | grep -v "code_explorer_secret_test"`
 Expected: zero results (the test temp dir name `code_explorer_secret_test` can stay — it's an internal test artifact, not a user-facing name).
 
 **Step 5: Rename GitHub repo**
@@ -366,5 +366,5 @@ Draft the one-liner to send:
 > ```bash
 > cargo install --path /path/to/codescout
 > # In your Claude Code MCP config, change "command": "code-explorer" → "command": "codescout"
-> # Your .code-explorer/ directories and memories are untouched.
+> # Your .codescout/ directories and memories are untouched.
 > ```

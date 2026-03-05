@@ -43,13 +43,13 @@ src/
 ├── main.rs          # CLI: start (MCP server) and index subcommands
 ├── server.rs        # rmcp ServerHandler — bridges Tool trait to MCP, signal handling + graceful LSP shutdown
 ├── agent.rs         # Orchestrator: active project, config, memory
-├── config/          # ProjectConfig (.code-explorer/project.toml), modes
+├── config/          # ProjectConfig (.codescout/project.toml), modes
 ├── lsp/             # LSP types, server configs (9 langs), JSON-RPC client
 ├── ast/             # Language detection (20+ exts), tree-sitter parser
 ├── git/             # git2: blame, file_log, open_repo
 ├── embed/           # Chunker, SQLite index, RemoteEmbedder, schema, drift detection
 ├── library/         # LibraryRegistry, Scope enum, manifest discovery
-├── memory/          # Markdown-based MemoryStore (.code-explorer/memories/)
+├── memory/          # Markdown-based MemoryStore (.codescout/memories/)
 ├── prompts/         # LLM guidance: server_instructions.md, onboarding_prompt.md
 ├── tools/           # Tool implementations by category
 │   ├── output.rs    #   OutputGuard: progressive disclosure (exploring/focused)
@@ -120,9 +120,9 @@ See `did_change_refreshes_stale_symbol_positions` in `src/lsp/client.rs` for the
 
 Use `RecoverableError` for expected, input-driven failures (path not found, unsupported file type, empty glob). Use plain `anyhow::bail!` for genuine tool failures (LSP crash, security violation, programming error).
 
-**Config** (`.code-explorer/project.toml`): Per-project settings including embedding model, chunk size, ignored paths. `ProjectConfig::load_or_default()` handles missing config gracefully.
+**Config** (`.codescout/project.toml`): Per-project settings including embedding model, chunk size, ignored paths. `ProjectConfig::load_or_default()` handles missing config gracefully.
 
-**Embedding pipeline**: `chunker::split()` → `RemoteEmbedder::embed()` → `index::insert_chunk()` → `index::search()` (cosine similarity). All stored in `.code-explorer/embeddings.db`. Incremental updates via `find_changed_files()`: git diff → mtime → SHA-256 fallback chain. `semantic_search` warns when the index is behind HEAD.
+**Embedding pipeline**: `chunker::split()` → `RemoteEmbedder::embed()` → `index::insert_chunk()` → `index::search()` (cosine similarity). All stored in `.codescout/embeddings.db`. Incremental updates via `find_changed_files()`: git diff → mtime → SHA-256 fallback chain. `semantic_search` warns when the index is behind HEAD.
 
 ## Prompt Surface Consistency
 

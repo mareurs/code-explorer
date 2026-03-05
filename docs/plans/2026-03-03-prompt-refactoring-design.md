@@ -132,7 +132,7 @@ Key changes from current:
 ### Section 7: Project Management (updated)
 
 - Worktree section: kept minimal (edge case, one critical gotcha)
-- Project customization: .code-explorer/system-prompt.md reference
+- Project customization: .codescout/system-prompt.md reference
 - Removed: standalone memory section (now in Tool Reference)
 - Removed: standalone index/config sections (now project_status)
 

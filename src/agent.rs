@@ -59,7 +59,7 @@ impl Agent {
             let config = ProjectConfig::load_or_default(&root)?;
             let memory = MemoryStore::open(&root)?;
             let private_memory = MemoryStore::open_private(&root)?;
-            let registry_path = root.join(".code-explorer").join("libraries.json");
+            let registry_path = root.join(".codescout").join("libraries.json");
             let library_registry = LibraryRegistry::load(&registry_path).unwrap_or_default();
             Some(ActiveProject {
                 root,
@@ -91,7 +91,7 @@ impl Agent {
         let config = ProjectConfig::load_or_default(&root)?;
         let memory = MemoryStore::open(&root)?;
         let private_memory = MemoryStore::open_private(&root)?;
-        let registry_path = root.join(".code-explorer").join("libraries.json");
+        let registry_path = root.join(".codescout").join("libraries.json");
         let library_registry = LibraryRegistry::load(&registry_path).unwrap_or_default();
         let mut inner = self.inner.write().await;
         inner.active_project = Some(ActiveProject {
@@ -150,7 +150,7 @@ impl Agent {
         let has_index = crate::embed::index::db_path(&project.root).exists();
 
         // Read system prompt: file takes precedence over TOML field
-        let prompt_file = project.root.join(".code-explorer").join("system-prompt.md");
+        let prompt_file = project.root.join(".codescout").join("system-prompt.md");
         let system_prompt = if prompt_file.exists() {
             std::fs::read_to_string(&prompt_file).ok()
         } else {
@@ -217,7 +217,7 @@ impl Agent {
             .active_project
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No active project"))?;
-        let path = project.root.join(".code-explorer").join("libraries.json");
+        let path = project.root.join(".codescout").join("libraries.json");
         project.library_registry.save(&path)
     }
 }
@@ -237,7 +237,7 @@ mod tests {
     #[tokio::test]
     async fn new_with_valid_project() {
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         let root = agent.require_project_root().await.unwrap();
         assert_eq!(root, dir.path());
@@ -249,7 +249,7 @@ mod tests {
         assert!(agent.require_project_root().await.is_err());
 
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         agent.activate(dir.path().to_path_buf()).await.unwrap();
 
         let root = agent.require_project_root().await.unwrap();
@@ -260,8 +260,8 @@ mod tests {
     async fn activate_replaces_previous_project() {
         let dir1 = tempdir().unwrap();
         let dir2 = tempdir().unwrap();
-        std::fs::create_dir_all(dir1.path().join(".code-explorer")).unwrap();
-        std::fs::create_dir_all(dir2.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir1.path().join(".codescout")).unwrap();
+        std::fs::create_dir_all(dir2.path().join(".codescout")).unwrap();
 
         let agent = Agent::new(Some(dir1.path().to_path_buf())).await.unwrap();
         assert_eq!(agent.require_project_root().await.unwrap(), dir1.path());
@@ -291,7 +291,7 @@ mod tests {
     #[tokio::test]
     async fn with_project_runs_closure() {
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
 
         let name = agent
@@ -311,7 +311,7 @@ mod tests {
     #[tokio::test]
     async fn project_status_returns_some_with_project() {
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
 
         let status = agent.project_status().await;
@@ -325,7 +325,7 @@ mod tests {
     async fn agent_is_clone_safe() {
         // Agent wraps Arc<RwLock<...>> so clones share state
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(None).await.unwrap();
         let agent2 = agent.clone();
 
@@ -338,7 +338,7 @@ mod tests {
     #[tokio::test]
     async fn activate_creates_empty_library_registry() {
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
 
         let reg = agent.library_registry().await.unwrap();
@@ -357,7 +357,7 @@ mod tests {
     #[tokio::test]
     async fn project_status_reads_system_prompt_file() {
         let dir = tempfile::tempdir().unwrap();
-        let config_dir = dir.path().join(".code-explorer");
+        let config_dir = dir.path().join(".codescout");
         std::fs::create_dir_all(&config_dir).unwrap();
         std::fs::write(
             config_dir.join("project.toml"),
@@ -378,7 +378,7 @@ mod tests {
     #[tokio::test]
     async fn project_status_falls_back_to_toml_system_prompt() {
         let dir = tempfile::tempdir().unwrap();
-        let config_dir = dir.path().join(".code-explorer");
+        let config_dir = dir.path().join(".codescout");
         std::fs::create_dir_all(&config_dir).unwrap();
         std::fs::write(
             config_dir.join("project.toml"),
@@ -395,7 +395,7 @@ mod tests {
     #[tokio::test]
     async fn project_status_file_takes_precedence_over_toml() {
         let dir = tempfile::tempdir().unwrap();
-        let config_dir = dir.path().join(".code-explorer");
+        let config_dir = dir.path().join(".codescout");
         std::fs::create_dir_all(&config_dir).unwrap();
         std::fs::write(
             config_dir.join("project.toml"),
@@ -419,7 +419,7 @@ mod tests {
     #[tokio::test]
     async fn activate_sets_explicitly_activated() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(None).await.unwrap();
         agent.activate(dir.path().to_path_buf()).await.unwrap();
         assert!(agent.is_project_explicitly_activated().await);
@@ -428,7 +428,7 @@ mod tests {
     #[tokio::test]
     async fn new_with_project_sets_explicitly_activated() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         assert!(agent.is_project_explicitly_activated().await);
     }

@@ -162,8 +162,8 @@ mod tests {
         repo.commit(Some("HEAD"), &sig, &sig, "initial commit", &tree, &[])
             .unwrap();
 
-        // Create .code-explorer dir for agent
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        // Create .codescout dir for agent
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         (
             dir,
@@ -288,7 +288,7 @@ mod tests {
             .unwrap();
 
         // Activate project root at the subdirectory (not the git repo root)
-        std::fs::create_dir_all(subdir.join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(subdir.join(".codescout")).unwrap();
         let agent = Agent::new(Some(subdir.clone())).await.unwrap();
         let ctx = ToolContext {
             agent,

@@ -4,7 +4,7 @@
 
 **Goal:** Add a gitignored per-developer private memory store alongside the existing shared store, surfaced every session via the onboarding status response, with LLM routing rules injected into `system-prompt.md` at onboarding time.
 
-**Architecture:** A second `MemoryStore` instance (pointing at `.code-explorer/private-memories/`) is added to `ActiveProject`. Four existing memory tools gain an optional `private` boolean that routes to the right store. The `onboarding` tool's already-onboarded fast path lists private topics alongside shared ones. `build_system_prompt_draft` appends Private Memory Rules to the generated `system-prompt.md`.
+**Architecture:** A second `MemoryStore` instance (pointing at `.codescout/private-memories/`) is added to `ActiveProject`. Four existing memory tools gain an optional `private` boolean that routes to the right store. The `onboarding` tool's already-onboarded fast path lists private topics alongside shared ones. `build_system_prompt_draft` appends Private Memory Rules to the generated `system-prompt.md`.
 
 **Tech Stack:** Rust, serde_json, tempfile (tests), existing `MemoryStore` / `Agent` / `Tool` patterns.
 
@@ -15,7 +15,7 @@
 **Files:**
 - Modify: `src/memory/mod.rs`
 
-**Background:** `MemoryStore` is a thin wrapper around a `memories_dir: PathBuf`. The `open` constructor points it at `.code-explorer/memories/`. We add `open_private` pointing at `.code-explorer/private-memories/`, plus a private helper `ensure_gitignored` that idempotently adds an entry to `.gitignore`.
+**Background:** `MemoryStore` is a thin wrapper around a `memories_dir: PathBuf`. The `open` constructor points it at `.codescout/memories/`. We add `open_private` pointing at `.codescout/private-memories/`, plus a private helper `ensure_gitignored` that idempotently adds an entry to `.gitignore`.
 
 **Step 1: Write the failing tests**
 
@@ -26,7 +26,7 @@ Add to the `tests` module in `src/memory/mod.rs` (before the closing `}`):
 fn open_private_creates_private_memories_dir() {
     let dir = tempdir().unwrap();
     let _store = MemoryStore::open_private(dir.path()).unwrap();
-    assert!(dir.path().join(".code-explorer/private-memories").exists());
+    assert!(dir.path().join(".codescout/private-memories").exists());
 }
 
 #[test]
@@ -34,7 +34,7 @@ fn open_private_adds_to_gitignore() {
     let dir = tempdir().unwrap();
     MemoryStore::open_private(dir.path()).unwrap();
     let content = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
-    assert!(content.contains(".code-explorer/private-memories/"));
+    assert!(content.contains(".codescout/private-memories/"));
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn open_private_does_not_duplicate_gitignore_entry() {
     let content = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
     let count = content
         .lines()
-        .filter(|l| l.trim() == ".code-explorer/private-memories/")
+        .filter(|l| l.trim() == ".codescout/private-memories/")
         .count();
     assert_eq!(count, 1);
 }
@@ -57,7 +57,7 @@ fn open_private_appends_to_existing_gitignore() {
     MemoryStore::open_private(dir.path()).unwrap();
     let content = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
     assert!(content.contains("target/\n"));
-    assert!(content.contains(".code-explorer/private-memories/"));
+    assert!(content.contains(".codescout/private-memories/"));
 }
 ```
 
@@ -76,13 +76,13 @@ Add to `impl MemoryStore` in `src/memory/mod.rs`, after the existing `open` meth
 ```rust
 /// Open (or create) the private memory store for a project root.
 /// Private memories are gitignored — not shared with teammates.
-/// Automatically adds `.code-explorer/private-memories/` to `.gitignore`.
+/// Automatically adds `.codescout/private-memories/` to `.gitignore`.
 pub fn open_private(project_root: &Path) -> Result<Self> {
     let memories_dir = project_root
-        .join(".code-explorer")
+        .join(".codescout")
         .join("private-memories");
     std::fs::create_dir_all(&memories_dir)?;
-    Self::ensure_gitignored(project_root, ".code-explorer/private-memories/")?;
+    Self::ensure_gitignored(project_root, ".codescout/private-memories/")?;
     Ok(Self { memories_dir })
 }
 
@@ -734,9 +734,9 @@ async fn onboarding_status_includes_private_memories_when_present() {
         .await
         .unwrap();
     // Create project.toml (also required for fast path)
-    std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
     std::fs::write(
-        dir.path().join(".code-explorer/project.toml"),
+        dir.path().join(".codescout/project.toml"),
         "[project]\nname = \"test\"\n",
     )
     .unwrap();
@@ -757,9 +757,9 @@ async fn onboarding_status_omits_private_memories_field_when_empty() {
         .with_project(|p| p.memory.write("onboarding", "done"))
         .await
         .unwrap();
-    std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
     std::fs::write(
-        dir.path().join(".code-explorer/project.toml"),
+        dir.path().join(".codescout/project.toml"),
         "[project]\nname = \"test\"\n",
     )
     .unwrap();
@@ -784,7 +784,7 @@ Find the already-onboarded block (around line 277 in `src/tools/workflow.rs`). R
 let status = ctx
     .agent
     .with_project(|p| {
-        let has_config = p.root.join(".code-explorer").join("project.toml").exists();
+        let has_config = p.root.join(".codescout").join("project.toml").exists();
         let memories = p.memory.list()?;
         let has_onboarding_memory = memories.iter().any(|m| m == "onboarding");
         let private_memories = p.private_memory.list()?;
@@ -839,7 +839,7 @@ git commit -m "feat(onboarding): surface private memories in already-onboarded s
 **Files:**
 - Modify: `src/tools/workflow.rs`
 
-**Background:** `build_system_prompt_draft` generates the scaffold for `.code-explorer/system-prompt.md` during a fresh `onboarding`. We append a "Private Memory Rules" section so every session (where `system-prompt.md` is loaded as custom instructions) teaches the LLM when to use each store.
+**Background:** `build_system_prompt_draft` generates the scaffold for `.codescout/system-prompt.md` during a fresh `onboarding`. We append a "Private Memory Rules" section so every session (where `system-prompt.md` is loaded as custom instructions) teaches the LLM when to use each store.
 
 **Step 1: Write the failing test**
 
@@ -873,7 +873,7 @@ At the end of `build_system_prompt_draft` in `src/tools/workflow.rs`, just befor
 draft.push_str("## Private Memory Rules\n\n");
 draft.push_str(
     "Private memories are gitignored — personal to this developer, not shared with the team.\n\
-     They live in `.code-explorer/private-memories/`.\n\n\
+     They live in `.codescout/private-memories/`.\n\n\
      **Write to the private store** (`write_memory(topic, content, private=true)`) for:\n\
      - Personal preferences and workflow rules for this developer\n\
      - Machine-specific config (local ports, paths, GPU type, env quirks)\n\
@@ -983,6 +983,6 @@ In a second terminal, call `onboarding` via MCP. Verify:
 1. Fresh onboarding: `system_prompt_draft` contains "Private Memory Rules"
 2. Write a private memory: `write_memory("test", "hello", private=true)`
 3. `list_memories(include_private=true)` shows `{ shared: [...], private: ["test"] }`
-4. `.code-explorer/private-memories/test.md` exists
-5. `.gitignore` contains `.code-explorer/private-memories/`
+4. `.codescout/private-memories/test.md` exists
+5. `.gitignore` contains `.codescout/private-memories/`
 6. Re-run `onboarding` (fast path): response contains `private_memories: ["test"]`

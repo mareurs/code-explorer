@@ -17,11 +17,11 @@ pub fn find_ancestor_with(start: &Path, marker: &str) -> Option<PathBuf> {
     }
 }
 
-/// Auto-detect the project root by looking for `.code-explorer/`, `.git/`,
+/// Auto-detect the project root by looking for `.codescout/`, `.git/`,
 /// `Cargo.toml`, `pyproject.toml`, or `package.json` — in that priority order.
 pub fn detect_project_root(from: &Path) -> Option<PathBuf> {
     let markers = [
-        ".code-explorer",
+        ".codescout",
         ".git",
         "Cargo.toml",
         "pyproject.toml",
@@ -100,8 +100,8 @@ mod tests {
     fn detect_project_root_prefers_codescout_dir_over_git() {
         let dir = tempdir().unwrap();
         std::fs::create_dir(dir.path().join(".git")).unwrap();
-        std::fs::create_dir(dir.path().join(".code-explorer")).unwrap();
-        // .code-explorer takes priority (first in markers list)
+        std::fs::create_dir(dir.path().join(".codescout")).unwrap();
+        // .codescout takes priority (first in markers list)
         assert_eq!(
             detect_project_root(dir.path()),
             Some(dir.path().to_path_buf())

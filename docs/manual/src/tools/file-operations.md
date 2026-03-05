@@ -205,7 +205,7 @@ The search walks the directory tree using the same `.gitignore`-aware walker as 
 {
   "files": [
     "/home/user/project/Cargo.toml",
-    "/home/user/project/.code-explorer/project.toml"
+    "/home/user/project/.codescout/project.toml"
   ],
   "total": 2
 }

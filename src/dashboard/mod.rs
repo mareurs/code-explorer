@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 /// Launch the dashboard HTTP server.
 ///
-/// Reads project data from `.code-explorer/` and serves a web UI.
+/// Reads project data from `.codescout/` and serves a web UI.
 /// Does NOT start the MCP server, LSP, or tool machinery.
 #[cfg(feature = "dashboard")]
 pub async fn serve(

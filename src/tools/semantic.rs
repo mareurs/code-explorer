@@ -241,7 +241,7 @@ impl Tool for IndexProject {
                 if let Some(entry) = project.library_registry.lookup_mut(lib_name) {
                     entry.indexed = true;
                 }
-                let registry_path = project.root.join(".code-explorer").join("libraries.json");
+                let registry_path = project.root.join(".codescout").join("libraries.json");
                 project.library_registry.save(&registry_path)?;
             }
 
@@ -450,7 +450,7 @@ impl Tool for IndexStatus {
             if !drift_enabled {
                 result["drift"] = json!({
                     "status": "disabled",
-                    "hint": "Drift detection is opted out. Re-enable it in .code-explorer/project.toml:\n[embeddings]\ndrift_detection_enabled = true"
+                    "hint": "Drift detection is opted out. Re-enable it in .codescout/project.toml:\n[embeddings]\ndrift_detection_enabled = true"
                 });
             } else {
                 let threshold = input["threshold"].as_f64().map(|v| v as f32).unwrap_or(0.1);
@@ -705,7 +705,7 @@ mod tests {
 
     async fn project_ctx() -> (tempfile::TempDir, ToolContext) {
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         (
             dir,
@@ -722,7 +722,7 @@ mod tests {
 
     async fn drift_enabled_ctx() -> (tempfile::TempDir, ToolContext) {
         let dir = tempdir().unwrap();
-        let ce_dir = dir.path().join(".code-explorer");
+        let ce_dir = dir.path().join(".codescout");
         std::fs::create_dir_all(&ce_dir).unwrap();
         std::fs::write(
             ce_dir.join("project.toml"),
@@ -948,7 +948,7 @@ mod tests {
     async fn drift_disabled_when_opted_out() {
         // Explicit opt-out via project.toml should return "disabled" in drift key.
         let dir = tempdir().unwrap();
-        let ce_dir = dir.path().join(".code-explorer");
+        let ce_dir = dir.path().join(".codescout");
         std::fs::create_dir_all(&ce_dir).unwrap();
         std::fs::write(
             ce_dir.join("project.toml"),

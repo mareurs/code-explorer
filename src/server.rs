@@ -157,7 +157,7 @@ impl CodeScoutServer {
             .unwrap_or_else(|_| {
                 Err(anyhow::anyhow!(
                     "Tool '{}' timed out after {}s. \
-                     Increase tool_timeout_secs in .code-explorer/project.toml if needed.",
+                     Increase tool_timeout_secs in .codescout/project.toml if needed.",
                     req.name,
                     secs
                 ))
@@ -482,7 +482,7 @@ mod tests {
 
     async fn make_server() -> (tempfile::TempDir, CodeScoutServer) {
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         let server = CodeScoutServer::new(agent).await;
         (dir, server)

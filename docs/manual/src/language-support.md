@@ -199,5 +199,5 @@ internally and requires no configuration.
 
 ## Overriding LSP Server Configuration
 
-The defaults above can be overridden per-project in `.code-explorer/project.toml`.
+The defaults above can be overridden per-project in `.codescout/project.toml`.
 See [Project Configuration](configuration/project-toml.md) for details.

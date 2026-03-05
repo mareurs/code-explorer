@@ -15,7 +15,7 @@
 **Files:**
 - Modify: `src/prompts/server_instructions.md`
 - Modify: `src/prompts/onboarding_prompt.md`
-- Modify: `.code-explorer/system-prompt.md`
+- Modify: `.codescout/system-prompt.md`
 - Modify: `CLAUDE.md`
 
 No tests needed — these are plain text changes.
@@ -50,7 +50,7 @@ Replace with:
 `list_symbols("src/")` for architecture
 ```
 
-**Step 4: Edit `.code-explorer/system-prompt.md` — fix tool count**
+**Step 4: Edit `.codescout/system-prompt.md` — fix tool count**
 
 Find:
 ```
@@ -82,7 +82,7 @@ Expected: all tests pass (no code changed).
 
 ```bash
 git add src/prompts/server_instructions.md src/prompts/onboarding_prompt.md \
-        .code-explorer/system-prompt.md CLAUDE.md
+        .codescout/system-prompt.md CLAUDE.md
 git commit -m "docs: fix stale tool counts, remove get_usage_stats from prompt, fix get_symbols_overview"
 ```
 

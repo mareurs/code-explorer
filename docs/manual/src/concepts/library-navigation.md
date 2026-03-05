@@ -47,7 +47,7 @@ code. Build one with `index_project` pointed at the library's root path:
 ```
 
 This is a one-time cost per library. The index persists in
-`.code-explorer/libraries/<name>/embeddings.db`.
+`.codescout/libraries/<name>/embeddings.db`.
 
 ## When to Use Library Navigation
 

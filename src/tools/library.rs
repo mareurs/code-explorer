@@ -118,7 +118,7 @@ impl Tool for IndexLibrary {
             if let Some(entry) = project.library_registry.lookup_mut(name) {
                 entry.indexed = true;
             }
-            let registry_path = project.root.join(".code-explorer").join("libraries.json");
+            let registry_path = project.root.join(".codescout").join("libraries.json");
             project.library_registry.save(&registry_path)?;
         }
 
@@ -189,7 +189,7 @@ mod tests {
     async fn project_ctx() -> ToolContext {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_path_buf();
-        std::fs::create_dir_all(root.join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(root.join(".codescout")).unwrap();
         let agent = Agent::new(Some(root)).await.unwrap();
         // Leak the tempdir so it stays alive
         std::mem::forget(dir);

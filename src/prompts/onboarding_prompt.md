@@ -190,7 +190,7 @@ Now write the memories. Your Phase 1 exploration should inform every memory — 
 
 ---
 
-### 7. System Prompt — `.code-explorer/system-prompt.md`
+### 7. System Prompt — `.codescout/system-prompt.md`
 
 After creating the 6 memories above, synthesize a concise system prompt (15-30 lines)
 for this project. This prompt is injected into EVERY codescout session
@@ -232,7 +232,7 @@ provided to you separately.
 ```
 
 **Process:** Present the draft to the user and ask: "Does this system prompt look
-right? I'll save it to `.code-explorer/system-prompt.md`." After confirmation, write
+right? I'll save it to `.codescout/system-prompt.md`." After confirmation, write
 the file using `create_file`. Inform the user they can edit it anytime.
 
 ---
@@ -245,7 +245,7 @@ After confirming all 6 memories and the system prompt with the user, deliver thi
 
 **Your codescout setup is complete.**
 
-- **System prompt** (`.code-explorer/system-prompt.md`) — always-on project guidance,
+- **System prompt** (`.codescout/system-prompt.md`) — always-on project guidance,
   injected into every session. Edit anytime to refine how AI navigates your codebase.
 - **Memories** — reference material read on demand via `memory(action: "read", topic: ...)`. Update
   with `memory(action: "write", topic: ..., content: ...)`.

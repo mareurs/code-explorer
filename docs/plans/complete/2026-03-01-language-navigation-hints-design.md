@@ -5,7 +5,7 @@
 
 ## Problem
 
-The `build_system_prompt_draft()` function generates a scaffold for `.code-explorer/system-prompt.md` that is language-agnostic. It says "This is a rust/python project" but gives no guidance on how `name_path`, `kind` filters, or `find_symbol` patterns work for that specific language.
+The `build_system_prompt_draft()` function generates a scaffold for `.codescout/system-prompt.md` that is language-agnostic. It says "This is a rust/python project" but gives no guidance on how `name_path`, `kind` filters, or `find_symbol` patterns work for that specific language.
 
 Different languages structure code very differently:
 - Rust: `impl Trait for Type/method`, free functions, mod trees
@@ -23,7 +23,7 @@ Add a `fn language_navigation_hints(lang: &str) -> Option<&'static str>` functio
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Where to inject | `build_system_prompt_draft()` only | This becomes `.code-explorer/system-prompt.md`, loaded every session |
+| Where to inject | `build_system_prompt_draft()` only | This becomes `.codescout/system-prompt.md`, loaded every session |
 | Content scope | Navigation idioms only | name_path patterns, kind filters, concrete examples |
 | Storage | Inline Rust match block | Simplest thing that works; compiled into binary, easy to test |
 

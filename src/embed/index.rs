@@ -27,7 +27,7 @@ use super::schema::{CodeChunk, SearchResult};
 
 /// Path to the embedding database within a project.
 pub fn db_path(project_root: &Path) -> PathBuf {
-    project_root.join(".code-explorer").join("embeddings.db")
+    project_root.join(".codescout").join("embeddings.db")
 }
 
 /// Open (or create) the embedding database and apply the schema.
@@ -1108,7 +1108,7 @@ pub async fn build_index(project_root: &Path, force: bool) -> Result<IndexReport
 ///
 /// Similar to `build_index` but walks `library_path` instead of the project root,
 /// and tags all chunks with the given `source` string (e.g. "lib:serde").
-/// The DB is stored under `project_root/.code-explorer/embeddings.db` (shared with project).
+/// The DB is stored under `project_root/.codescout/embeddings.db` (shared with project).
 pub async fn build_library_index(
     project_root: &Path,
     library_path: &Path,
@@ -1366,7 +1366,7 @@ pub fn check_model_mismatch(conn: &Connection, configured: &str) -> Result<()> {
         Some(stored) => anyhow::bail!(
             "Index was built with model '{stored}'.\n\
              Configured model is '{configured}'.\n\
-             Delete .code-explorer/embeddings.db and re-run `index` to rebuild."
+             Delete .codescout/embeddings.db and re-run `index` to rebuild."
         ),
     }
 }

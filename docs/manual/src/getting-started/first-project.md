@@ -19,7 +19,7 @@ alongside Claude Code. You do not need to do anything to launch the MCP server.
 
 The first time codescout activates in a project it:
 
-1. Creates a configuration file at `.code-explorer/project.toml` with sensible defaults.
+1. Creates a configuration file at `.codescout/project.toml` with sensible defaults.
 2. Detects the languages present in the repository (based on file extensions and tree-sitter
    grammar support).
 3. Starts LSP servers for the detected languages, ready to answer symbol queries.
@@ -61,7 +61,7 @@ codebase changes:
 ```
 
 Indexing chunks every source file, embeds each chunk, and stores the vectors in
-`.code-explorer/embeddings.db`. For a project with ~100k lines of code this typically takes
+`.codescout/embeddings.db`. For a project with ~100k lines of code this typically takes
 1–3 minutes. The index is incremental — only changed files are re-embedded on subsequent runs.
 
 Verify the index was built successfully:
@@ -178,8 +178,8 @@ A practical sequence for exploring an unfamiliar codebase:
 6. From there, use `find_references` to trace callers and `list_symbols` to
    navigate deeper into subsystems.
 
-After the first session, onboarding memories persist in `.code-explorer/memories/` and the
-embedding index stays in `.code-explorer/embeddings.db`. Both are checked into `.gitignore`
+After the first session, onboarding memories persist in `.codescout/memories/` and the
+embedding index stays in `.codescout/embeddings.db`. Both are checked into `.gitignore`
 by default so team members build their own local copies.
 
 ## Next Steps

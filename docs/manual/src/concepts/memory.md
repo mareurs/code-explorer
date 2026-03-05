@@ -19,10 +19,10 @@ rediscovery entirely.
 
 ## Storage Layout
 
-Memories are plain Markdown files in `.code-explorer/memories/`:
+Memories are plain Markdown files in `.codescout/memories/`:
 
 ```
-.code-explorer/memories/
+.codescout/memories/
   architecture.md
   conventions/
     error-handling.md

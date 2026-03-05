@@ -107,7 +107,7 @@ than by name. It requires an embedding backend.
 ollama pull mxbai-embed-large
 ```
 
-Then create `.code-explorer/project.toml` in your project root:
+Then create `.codescout/project.toml` in your project root:
 
 ```toml
 [embeddings]

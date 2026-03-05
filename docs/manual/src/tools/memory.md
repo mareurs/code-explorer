@@ -123,7 +123,7 @@ Remove a memory entry that is no longer accurate or needed.
 
 ## Private Store
 
-Pass `private: true` to any action to target the gitignored private store at `.code-explorer/private-memories/`. Private memories are never surfaced in system instructions and are not shared with teammates:
+Pass `private: true` to any action to target the gitignored private store at `.codescout/private-memories/`. Private memories are never surfaced in system instructions and are not shared with teammates:
 
 ```json
 { "action": "write", "topic": "wip-notes", "content": "...", "private": true }
@@ -135,10 +135,10 @@ Pass `private: true` to any action to target the gitignored private store at `.c
 
 ### Storage layout
 
-Memories are stored as plain Markdown files in `.code-explorer/memories/` inside the project root. Each topic maps directly to a file path:
+Memories are stored as plain Markdown files in `.codescout/memories/` inside the project root. Each topic maps directly to a file path:
 
-- `"architecture"` → `.code-explorer/memories/architecture.md`
-- `"debugging/async-patterns"` → `.code-explorer/memories/debugging/async-patterns.md`
+- `"architecture"` → `.codescout/memories/architecture.md`
+- `"debugging/async-patterns"` → `.codescout/memories/debugging/async-patterns.md`
 
 You can inspect or version-control these files like any other project file.
 

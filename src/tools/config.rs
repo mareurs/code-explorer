@@ -161,7 +161,7 @@ impl Tool for ProjectStatus {
                         if !drift_enabled {
                             index_section["drift"] = json!({
                                 "status": "disabled",
-                                "hint": "Set embeddings.drift_detection_enabled = true in .code-explorer/project.toml"
+                                "hint": "Set embeddings.drift_detection_enabled = true in .codescout/project.toml"
                             });
                         } else {
                             let threshold =
@@ -277,7 +277,7 @@ mod tests {
     #[tokio::test]
     async fn activate_and_get_config() {
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let ctx = ToolContext {
             agent: Agent::new(None).await.unwrap(),
             lsp: lsp(),
@@ -329,8 +329,8 @@ mod tests {
     async fn activate_replaces_previous_project() {
         let dir1 = tempdir().unwrap();
         let dir2 = tempdir().unwrap();
-        std::fs::create_dir_all(dir1.path().join(".code-explorer")).unwrap();
-        std::fs::create_dir_all(dir2.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir1.path().join(".codescout")).unwrap();
+        std::fs::create_dir_all(dir2.path().join(".codescout")).unwrap();
 
         let ctx = ToolContext {
             agent: Agent::new(Some(dir1.path().to_path_buf())).await.unwrap(),
@@ -358,7 +358,7 @@ mod tests {
     #[tokio::test]
     async fn project_status_returns_all_sections() {
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         let ctx = ToolContext {
             agent,

@@ -593,8 +593,8 @@ mod tests {
 
     async fn test_ctx_with_project() -> (tempfile::TempDir, ToolContext) {
         let dir = tempdir().unwrap();
-        // Create .code-explorer dir so MemoryStore::open works
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        // Create .codescout dir so MemoryStore::open works
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
         (
             dir,

@@ -3,7 +3,7 @@ use rusqlite::{params, Connection};
 use std::path::Path;
 
 pub fn open_db(project_root: &Path) -> Result<Connection> {
-    let path = project_root.join(".code-explorer").join("usage.db");
+    let path = project_root.join(".codescout").join("usage.db");
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }

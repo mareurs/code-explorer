@@ -232,7 +232,7 @@ if let Some(lib_name) = scope_str.strip_prefix("lib:") {
         if let Some(entry) = project.library_registry.lookup_mut(lib_name) {
             entry.indexed = true;
         }
-        let registry_path = project.root.join(".code-explorer").join("libraries.json");
+        let registry_path = project.root.join(".codescout").join("libraries.json");
         project.library_registry.save(&registry_path)?;
     }
 
@@ -603,7 +603,7 @@ In `check_tool_access`, remove:
 "git_blame" => {
     if !config.git_enabled {
         bail!(
-            "Git tools are disabled. Set security.git_enabled = true in .code-explorer/project.toml to enable."
+            "Git tools are disabled. Set security.git_enabled = true in .codescout/project.toml to enable."
         );
     }
 }
@@ -654,7 +654,7 @@ In `src/tools/config.rs` tests module, add after `activate_and_get_config`:
 async fn project_status_returns_all_sections() {
     let (dir, ctx) = {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         let agent = crate::agent::Agent::new(Some(dir.path().to_path_buf()))
             .await
             .unwrap();
@@ -808,7 +808,7 @@ impl Tool for ProjectStatus {
                         if !drift_enabled {
                             index_section["drift"] = json!({
                                 "status": "disabled",
-                                "hint": "Set embeddings.drift_detection_enabled = true in .code-explorer/project.toml"
+                                "hint": "Set embeddings.drift_detection_enabled = true in .codescout/project.toml"
                             });
                         } else {
                             let threshold = input["threshold"].as_f64().map(|v| v as f32).unwrap_or(0.1);

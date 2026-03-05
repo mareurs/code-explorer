@@ -7,7 +7,7 @@ errors are serialized to JSON" — and the tool finds the most relevant code
 chunks in the project.
 
 The backend stores vector embeddings of your source code in a SQLite database
-at `.code-explorer/embeddings.db`. The embedding model is configurable (see
+at `.codescout/embeddings.db`. The embedding model is configurable (see
 [Project Configuration](../configuration/project-toml.md)); the default works
 with any OpenAI-compatible endpoint or a local Ollama server.
 
@@ -209,7 +209,7 @@ Pass `threshold: 0.1` to include drift data for files that changed semantically 
 { "tool": "project_status", "arguments": { "threshold": 0.1 } }
 ```
 
-Opt out of drift detection with `drift_detection_enabled = false` in `.code-explorer/project.toml`.
+Opt out of drift detection with `drift_detection_enabled = false` in `.codescout/project.toml`.
 
 > **See also:** [Dashboard](../concepts/dashboard.md) — the Overview page
 > surfaces index staleness and per-file drift scores visually, without a tool

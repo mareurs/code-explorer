@@ -52,7 +52,7 @@ Central orchestrator holding active project state behind `RwLock`. Manages:
 
 ### Config (`src/config/`)
 
-- `project.rs` — `ProjectConfig` loaded from `.code-explorer/project.toml` or sensible defaults. Holds embeddings config, ignored paths, project metadata.
+- `project.rs` — `ProjectConfig` loaded from `.codescout/project.toml` or sensible defaults. Holds embeddings config, ignored paths, project metadata.
 - `modes.rs` — `Mode` (Planning/Editing/Interactive/OneShot) and `Context` (Agent/DesktopApp/IdeAssistant) enums.
 
 ### LSP Client (`src/lsp/`)
@@ -88,17 +88,17 @@ Embedded semantic search with zero external services.
 
 Third-party library source code navigation (read-only).
 
-- `registry.rs` — `LibraryRegistry` persists known library paths in `.code-explorer/libraries.json`. CRUD + serialization.
+- `registry.rs` — `LibraryRegistry` persists known library paths in `.codescout/libraries.json`. CRUD + serialization.
 - `discovery.rs` — `discover_library_from_path()`: walks parent dirs to find package manifests (Cargo.toml, package.json, pyproject.toml, go.mod). Auto-triggered when LSP goto_definition returns a path outside the project root.
 - `scope.rs` — `Scope` enum: `Project`, `Library(name)`, `Libraries`, `All`. Parsed from the `scope` string parameter on symbol/semantic tools.
 
 ### Memory (`src/memory/`)
 
-Markdown-based persistent store in `.code-explorer/memories/`. Supports nested topics (path-like), directory traversal protection, CRUD operations.
+Markdown-based persistent store in `.codescout/memories/`. Supports nested topics (path-like), directory traversal protection, CRUD operations.
 
 ### Usage Recorder (`src/usage/`)
 
-Transparent wrapper around the tool dispatch loop in `server.rs`. Records every tool call to `.code-explorer/usage.db` (append-only SQLite). Captures: tool name, timestamp, outcome (success/error/overflow), latency (ms), and output mode. Accessible via the dashboard (`code-explorer dashboard`).
+Transparent wrapper around the tool dispatch loop in `server.rs`. Records every tool call to `.codescout/usage.db` (append-only SQLite). Captures: tool name, timestamp, outcome (success/error/overflow), latency (ms), and output mode. Accessible via the dashboard (`code-explorer dashboard`).
 
 ### Dashboard (`src/dashboard/`)
 

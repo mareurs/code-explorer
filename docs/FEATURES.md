@@ -167,7 +167,7 @@ Semantic search migrated from a pure-Rust cosine similarity loop to `sqlite-vec`
 
 Projects can ship their own navigation guidance that gets injected into the MCP server instructions at startup.
 
-**How to use:** Create `.code-explorer/system-prompt.md` in the project root. Its contents appear in the server instructions as "Custom Instructions" — project-specific hints for tool selection, entry points, search tips, etc.
+**How to use:** Create `.codescout/system-prompt.md` in the project root. Its contents appear in the server instructions as "Custom Instructions" — project-specific hints for tool selection, entry points, search tips, etc.
 
 `onboarding` generates a draft `system-prompt.md` as part of its output, pre-populated with detected languages, key files, and navigation strategy. The `system_prompt` field in `project.toml` can also point to a custom path.
 
@@ -240,7 +240,7 @@ Search and navigate third-party library/dependency source code. Read-only access
 | D | LSP-inferred discovery | Auto-register libraries from `goto_definition` responses |
 
 **Key concepts:**
-- `LibraryRegistry` (`.code-explorer/libraries.json`) tracks known library paths
+- `LibraryRegistry` (`.codescout/libraries.json`) tracks known library paths
 - All library access is read-only
 - Results tagged `"source": "lib:<name>"` to distinguish from project code
 - `list_libraries` — show registered libraries and status
@@ -281,7 +281,7 @@ Track tool call patterns to surface bugs, usage drift, and performance regressio
 - Latency (ms)
 - Output mode (exploring vs focused), result count
 
-**Storage:** Append-only SQLite table in `.code-explorer/usage.db`.
+**Storage:** Append-only SQLite table in `.codescout/usage.db`.
 
 **Surfacing via the dashboard** (`codescout dashboard`):
 - Per-tool call counts, error rates, p50/p99 latency

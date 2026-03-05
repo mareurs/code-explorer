@@ -117,7 +117,7 @@ mod tests {
     use tempfile::TempDir;
 
     async fn ctx_with_project(root: &std::path::Path) -> ToolContext {
-        std::fs::create_dir_all(root.join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(root.join(".codescout")).unwrap();
         let agent = Agent::new(Some(root.to_path_buf())).await.unwrap();
         ToolContext {
             agent,

@@ -66,7 +66,7 @@ export OLLAMA_HOST=http://192.168.1.10:11434
 
 ## Configuring codescout
 
-The `[embeddings]` section of `.code-explorer/project.toml` controls which
+The `[embeddings]` section of `.codescout/project.toml` controls which
 model is used and how files are chunked. The defaults work well for most
 projects:
 
@@ -101,7 +101,7 @@ What happens internally:
 
 1. codescout walks the project tree, skipping directories listed in
    `ignored_paths` (by default: `.git`, `node_modules`, `target`,
-   `__pycache__`, `.venv`, `dist`, `build`, `.code-explorer`).
+   `__pycache__`, `.venv`, `dist`, `build`, `.codescout`).
 2. Each source file is split into chunks using an AST-aware chunker. Each
    top-level function, method, or class becomes its own chunk. Oversized
    containers (impl blocks, classes) are recursively split into one chunk per
@@ -110,7 +110,7 @@ What happens internally:
 3. Each chunk is sent to the configured embedding backend, which returns a
    dense vector.
 4. The vectors and chunk metadata are stored in
-   `.code-explorer/embeddings.db` (SQLite).
+   `.codescout/embeddings.db` (SQLite).
 
 **How long it takes:** With Ollama on a modern laptop, expect roughly 80–120
 files per minute. OpenAI's API is faster in wall-clock time because requests

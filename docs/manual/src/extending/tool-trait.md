@@ -120,7 +120,7 @@ The `ActiveProject` struct (accessible via `with_project`) contains:
 | Field | Type | Description |
 |-------|------|-------------|
 | `root` | `PathBuf` | Project root directory |
-| `config` | `ProjectConfig` | Settings from `.code-explorer/project.toml` |
+| `config` | `ProjectConfig` | Settings from `.codescout/project.toml` |
 | `memory` | `MemoryStore` | Markdown-based key-value store |
 
 ### `lsp: Arc<LspManager>`

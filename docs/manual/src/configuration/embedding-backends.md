@@ -2,7 +2,7 @@
 
 Semantic search requires converting source code into vector embeddings. codescout supports
 four backends, selected at runtime by the `model` field in `[embeddings]` inside
-`.code-explorer/project.toml`. The prefix before the colon determines which backend is used.
+`.codescout/project.toml`. The prefix before the colon determines which backend is used.
 
 ```toml
 [embeddings]
@@ -90,7 +90,7 @@ it automatically falls back to `local:AllMiniLML6V2Q` and emits a warning:
 ```
 Ollama not reachable at http://localhost:11434: …
 Falling back to local:AllMiniLML6V2Q (CPU-safe, ~22 MB).
-Set embeddings.model in .code-explorer/project.toml to suppress this.
+Set embeddings.model in .codescout/project.toml to suppress this.
 ```
 
 This means machines without Ollama installed — or without a GPU — still get working semantic

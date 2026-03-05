@@ -1,4 +1,4 @@
-# Design: System Prompt via `.code-explorer/system-prompt.md`
+# Design: System Prompt via `.codescout/system-prompt.md`
 
 **Date:** 2026-02-28
 **Status:** Approved
@@ -18,7 +18,7 @@ MCP server instructions as `## Custom Instructions`. But:
 
 ## Solution
 
-A single file — `.code-explorer/system-prompt.md` — replaces the TOML field. It is:
+A single file — `.codescout/system-prompt.md` — replaces the TOML field. It is:
 
 - **Auto-generated** at onboarding (draft + user confirmation)
 - **Project-specific** code exploration guidance (entry points, key abstractions,
@@ -56,7 +56,7 @@ couldn't discover.
 
 ## Storage
 
-**Canonical:** `.code-explorer/system-prompt.md`
+**Canonical:** `.codescout/system-prompt.md`
 
 **Migration:** `build_server_instructions()` checks for the file first. If absent,
 falls back to `project.toml`'s `system_prompt` field. If both exist, file wins.
@@ -89,7 +89,7 @@ static tool guidance in `server_instructions.md`.
 2. Create 6 memories (existing, unchanged)
 3. **New:** Synthesize a system prompt draft from discovered context
 4. **New:** Present draft to user for confirmation
-5. **New:** After confirmation, write to `.code-explorer/system-prompt.md`
+5. **New:** After confirmation, write to `.codescout/system-prompt.md`
 6. **New:** Deliver post-onboarding cheat sheet
 
 ### Onboarding Prompt Addition
@@ -97,7 +97,7 @@ static tool guidance in `server_instructions.md`.
 New section in `onboarding_prompt.md`, after the 6 memory templates:
 
 ```markdown
-### 7. System Prompt — `.code-explorer/system-prompt.md`
+### 7. System Prompt — `.codescout/system-prompt.md`
 
 After creating the 6 memories, synthesize a concise system prompt (15-30 lines)
 for this project. This prompt is injected into EVERY session automatically —
@@ -116,7 +116,7 @@ it must be short and high-value.
 - Command lists, glossary, conventions details (memories handle these)
 
 **Format:** Present the draft to the user and ask for confirmation before
-writing. After confirmation, write to `.code-explorer/system-prompt.md`.
+writing. After confirmation, write to `.codescout/system-prompt.md`.
 ```
 
 ### Post-Onboarding Guide
@@ -126,7 +126,7 @@ After all memories + system prompt are confirmed, deliver:
 ```
 Your code-explorer setup is complete.
 
-- **System prompt** (.code-explorer/system-prompt.md) — always-on project
+- **System prompt** (.codescout/system-prompt.md) — always-on project
   guidance. Edit it anytime to refine how the AI navigates your codebase.
 - **Memories** — reference material read on demand. Update with
   write_memory(topic, content).
@@ -139,7 +139,7 @@ Your code-explorer setup is complete.
 In `build_server_instructions()` (or its caller):
 
 ```
-1. Check for .code-explorer/system-prompt.md → read contents
+1. Check for .codescout/system-prompt.md → read contents
 2. If not found, check config.project.system_prompt (TOML fallback)
 3. If content found, append as "## Custom Instructions"
 ```
@@ -152,11 +152,11 @@ in `agent.rs` reads the file and populates this field.
 | Component | Change |
 |-----------|--------|
 | `src/prompts/onboarding_prompt.md` | Add system prompt template + post-onboarding guide |
-| `src/prompts/mod.rs` | Read `.code-explorer/system-prompt.md` in `build_server_instructions()` or accept it from caller |
+| `src/prompts/mod.rs` | Read `.codescout/system-prompt.md` in `build_server_instructions()` or accept it from caller |
 | `src/agent.rs` | `project_status()` reads system-prompt.md, falls back to TOML field |
 | `src/tools/workflow.rs` | Onboarding returns `system_prompt_draft` in JSON output |
 | `src/config/project.rs` | Document `system_prompt` field as deprecated |
-| Plugin `session-start.sh` | Read `.code-explorer/system-prompt.md` for subagent injection (plugin team) |
+| Plugin `session-start.sh` | Read `.codescout/system-prompt.md` for subagent injection (plugin team) |
 
 ## What We're NOT Doing
 

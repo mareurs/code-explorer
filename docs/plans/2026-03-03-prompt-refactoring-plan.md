@@ -216,7 +216,7 @@ modify the main repo. To clean up: `git worktree prune` from the main repo root.
 
 ### Project Customization
 
-If `.code-explorer/system-prompt.md` exists, its contents appear below as "Custom
+If `.codescout/system-prompt.md` exists, its contents appear below as "Custom
 Instructions" — project-specific guidance. Edit the file to customize AI behavior.
 
 ## Rules

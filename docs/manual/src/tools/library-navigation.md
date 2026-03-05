@@ -82,7 +82,7 @@ semantic index has been built for each.
 
 - Libraries with `"indexed": false` support symbol navigation (LSP + tree-sitter)
   but not `semantic_search`. Run `index_project` with the library's root path to add semantic search.
-- The registry is stored in `.code-explorer/libraries.json`. You can inspect it
+- The registry is stored in `.codescout/libraries.json`. You can inspect it
   directly if you need to edit or remove an entry.
 
 ---

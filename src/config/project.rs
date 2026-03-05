@@ -1,4 +1,4 @@
-//! Per-project configuration loaded from `.code-explorer/project.toml`.
+//! Per-project configuration loaded from `.codescout/project.toml`.
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,7 @@ pub struct ProjectSection {
     pub encoding: String,
     #[serde(default = "default_timeout")]
     pub tool_timeout_secs: u64,
-    /// Deprecated: use `.code-explorer/system-prompt.md` instead.
+    /// Deprecated: use `.codescout/system-prompt.md` instead.
     /// This field is still read as a fallback if the file doesn't exist.
     #[serde(default)]
     pub system_prompt: Option<String>,
@@ -73,7 +73,7 @@ pub struct EmbeddingsSection {
     /// Experimental — reads all old embeddings before deletion, adding memory and
     /// DB overhead proportional to the number of changed files.
     ///
-    /// Opt out in `.code-explorer/project.toml`:
+    /// Opt out in `.codescout/project.toml`:
     /// ```toml
     /// [embeddings]
     /// drift_detection_enabled = false
@@ -207,17 +207,17 @@ fn default_ignored_patterns() -> Vec<String> {
         ".venv".into(),
         "dist".into(),
         "build".into(),
-        ".code-explorer".into(),
+        ".codescout".into(),
         ".worktrees".into(),
         ".claude".into(),
     ]
 }
 
 impl ProjectConfig {
-    /// Load from `.code-explorer/project.toml`, or return a sensible default
+    /// Load from `.codescout/project.toml`, or return a sensible default
     /// derived from the directory name.
     pub fn load_or_default(root: &Path) -> Result<Self> {
-        let config_path = root.join(".code-explorer").join("project.toml");
+        let config_path = root.join(".codescout").join("project.toml");
         if config_path.exists() {
             let text = std::fs::read_to_string(&config_path)?;
             Ok(toml::from_str(&text)?)
@@ -248,7 +248,7 @@ impl ProjectConfig {
 
     /// Path to the per-project data directory.
     pub fn data_dir(root: &Path) -> PathBuf {
-        root.join(".code-explorer")
+        root.join(".codescout")
     }
 }
 
@@ -286,7 +286,7 @@ mod tests {
 
     #[test]
     fn project_config_default_for_enables_write_tools() {
-        // default_for() is used when no .code-explorer/project.toml exists.
+        // default_for() is used when no .codescout/project.toml exists.
         let cfg = ProjectConfig::default_for("test-project".into());
         assert!(cfg.security.file_write_enabled);
         assert!(cfg.security.git_enabled);

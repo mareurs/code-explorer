@@ -30,13 +30,13 @@ Tracking remaining work items for the first public release of codescout.
 
 - [ ] **Rate limiting** — Throttle tool calls to prevent runaway LLM loops. Configurable per-tool or global rate.
 - [ ] **Audit logging** — Log all tool invocations (tool name, args, result status) to a file for post-incident review.
-- [ ] **ActivateProject restrictions** — Currently accepts any directory. Consider requiring a marker file (`.git/`, `.code-explorer/`, `Cargo.toml`) to prevent activating arbitrary system directories.
+- [ ] **ActivateProject restrictions** — Currently accepts any directory. Consider requiring a marker file (`.git/`, `.codescout/`, `Cargo.toml`) to prevent activating arbitrary system directories.
 - [ ] **Symlink deny-list for writes** — While `canonicalize()` catches symlinks pointing outside the project, consider an explicit `follow_symlinks: false` option for extra safety.
 - [ ] **Content-type validation for file writes** — Prevent writing binary/executable content through `create_file` (e.g., reject files with null bytes or shebang lines to unexpected paths).
 
 ## Configuration Reference
 
-All security settings live in `.code-explorer/project.toml` under `[security]`:
+All security settings live in `.codescout/project.toml` under `[security]`:
 
 ```toml
 [security]

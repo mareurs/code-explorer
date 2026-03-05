@@ -251,7 +251,7 @@ fn build_system_prompt_draft(
     draft.push_str("\n## Private Memory Rules\n\n");
     draft.push_str(
         "Private memories are gitignored — personal to this developer, not shared with the team.\n\
-         They live in `.code-explorer/private-memories/`.\n\n\
+         They live in `.codescout/private-memories/`.\n\n\
          **Write to the private store** (`memory(action=\"write\", topic=..., content=..., private=true)`) for:\n\
          - Personal preferences and workflow rules for this developer\n\
          - Machine-specific config (local ports, paths, GPU type, env quirks)\n\
@@ -339,7 +339,7 @@ impl Tool for Onboarding {
             let status = ctx
                 .agent
                 .with_project(|p| {
-                    let has_config = p.root.join(".code-explorer").join("project.toml").exists();
+                    let has_config = p.root.join(".codescout").join("project.toml").exists();
                     let memories = p.memory.list()?;
                     let has_onboarding_memory = memories.iter().any(|m| m == "onboarding");
                     let private_memories = p.private_memory.list()?;
@@ -409,8 +409,8 @@ impl Tool for Onboarding {
         }
         top_level.sort();
 
-        // Create .code-explorer/project.toml if it doesn't exist
-        let config_dir = root.join(".code-explorer");
+        // Create .codescout/project.toml if it doesn't exist
+        let config_dir = root.join(".codescout");
         let config_path = config_dir.join("project.toml");
         let created_config = if !config_path.exists() {
             std::fs::create_dir_all(&config_dir)?;
@@ -836,7 +836,7 @@ async fn run_command_inner(
             "disabled" => {
                 return Err(super::RecoverableError::with_hint(
                     "shell commands are disabled",
-                    "Set security.shell_command_mode = \"warn\" or \"unrestricted\" in .code-explorer/project.toml",
+                    "Set security.shell_command_mode = \"warn\" or \"unrestricted\" in .codescout/project.toml",
                 ).into());
             }
             "unrestricted" | "warn" | "" => {} // allowed
@@ -1202,7 +1202,7 @@ mod tests {
 
     async fn project_ctx() -> (tempfile::TempDir, ToolContext) {
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         // Create some source files for language detection
         std::fs::write(dir.path().join("main.rs"), "fn main() {}").unwrap();
         std::fs::write(dir.path().join("lib.py"), "def hello(): pass").unwrap();
@@ -1238,17 +1238,17 @@ mod tests {
     async fn onboarding_creates_config() {
         let (dir, ctx) = project_ctx().await;
         // Remove the config if it exists
-        let _ = std::fs::remove_file(dir.path().join(".code-explorer/project.toml"));
+        let _ = std::fs::remove_file(dir.path().join(".codescout/project.toml"));
 
         let result = Onboarding.call(json!({}), &ctx).await.unwrap();
         assert_eq!(result["config_created"], true);
-        assert!(dir.path().join(".code-explorer/project.toml").exists());
+        assert!(dir.path().join(".codescout/project.toml").exists());
     }
 
     #[tokio::test]
     async fn onboarding_returns_status_when_already_done() {
         let (dir, ctx) = project_ctx().await;
-        let _ = std::fs::remove_file(dir.path().join(".code-explorer/project.toml"));
+        let _ = std::fs::remove_file(dir.path().join(".codescout/project.toml"));
 
         // First call does full onboarding
         let result = Onboarding.call(json!({}), &ctx).await.unwrap();
@@ -1492,7 +1492,7 @@ mod tests {
     #[tokio::test]
     async fn onboarding_returns_gathered_context_fields() {
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".code-explorer")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
         std::fs::write(dir.path().join("main.rs"), "fn main() {}").unwrap();
         std::fs::write(dir.path().join("README.md"), "# Test Project").unwrap();
         std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();

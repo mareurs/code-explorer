@@ -26,7 +26,7 @@ Requires an active project (set one with `activate_project` first).
 {
   "languages": ["rust", "toml", "markdown"],
   "top_level": [
-    ".code-explorer/",
+    ".codescout/",
     ".git/",
     "Cargo.lock",
     "Cargo.toml",
@@ -39,7 +39,7 @@ Requires an active project (set one with `activate_project` first).
 }
 ```
 
-`config_created` is `true` when `.code-explorer/project.toml` did not exist and was created by this call. The `instructions` field contains a prompt with guidance for working on this project — read it before starting work.
+`config_created` is `true` when `.codescout/project.toml` did not exist and was created by this call. The `instructions` field contains a prompt with guidance for working on this project — read it before starting work.
 
 **Tips:** Call `onboarding` once per project, the first time you work on it. It writes a memory entry under the topic `"onboarding"` with a summary of what it found. On subsequent sessions, call `onboarding` with `force: false` (the default) — it detects previous onboarding and returns existing memories without re-running discovery.
 
@@ -101,7 +101,7 @@ Requires an active project (set one with `activate_project` first).
 
 > See [Security & Permissions](../concepts/security.md) for the full permission model, including write sandboxing and the built-in credential deny list.
 
-Shell execution is **disabled by default**. To enable it, add to `.code-explorer/project.toml`:
+Shell execution is **disabled by default**. To enable it, add to `.codescout/project.toml`:
 
 ```toml
 [security]
@@ -217,5 +217,5 @@ The tool returns an error if the path does not exist or is not a directory.
 
 - Use `project_status` to verify which project is active and to check security settings before attempting shell commands or indexing.
 - Pass `threshold: 0.1` after re-indexing to surface files that changed semantically — a whitespace reformat scores near `0.0`, a full function rewrite approaches `1.0`.
-- If you need to change configuration, edit `.code-explorer/project.toml` directly — the config is re-read on each tool call, so changes take effect immediately without restarting the server.
+- If you need to change configuration, edit `.codescout/project.toml` directly — the config is re-read on each tool call, so changes take effect immediately without restarting the server.
 - For full per-tool call stats with charts and time-window filtering, see the [Dashboard](../concepts/dashboard.md).

@@ -180,7 +180,7 @@ cd /home/vradu/work/tools/code-explorer
 cargo install --path . --features local-embed
 ```
 
-**2. Update `.code-explorer/project.toml`**
+**2. Update `.codescout/project.toml`**
 
 ```toml
 [embeddings]

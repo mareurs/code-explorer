@@ -136,7 +136,7 @@ uses are fully offline.
 cargo install codescout --features remote-embed,local-embed
 ```
 
-Switch between backends per-project by setting `embed_backend` in `.code-explorer/project.toml`.
+Switch between backends per-project by setting `embed_backend` in `.codescout/project.toml`.
 See [Embedding Backends](../configuration/embedding-backends.md) for details.
 
 ### Minimal Install (No Embeddings)

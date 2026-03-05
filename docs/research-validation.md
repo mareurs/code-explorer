@@ -132,7 +132,7 @@ repository-level coding agents. Validates the embedding pipeline in `src/embed/`
 ## 5. Memory & Project Context
 
 **Design**: Per-project persistent memory (`src/memory/`), configuration
-(`.code-explorer/project.toml`), and project instructions (`CLAUDE.md`) that
+(`.codescout/project.toml`), and project instructions (`CLAUDE.md`) that
 survive across sessions.
 
 ### "Codified Context: Infrastructure for AI Agents in a Complex Codebase"

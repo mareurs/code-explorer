@@ -77,7 +77,7 @@ decide whether to read it.
 After onboarding creates memories, the interaction ends with a summary and a "does anything need
 correction?" check. But users — especially new ones — often don't know:
 
-1. That `system_prompt` in `.code-explorer/project.toml` exists and lets them inject global
+1. That `system_prompt` in `.codescout/project.toml` exists and lets them inject global
    project rules into every AI session (not just code-explorer sessions)
 2. That the `custom-code-explorer-prompt` memory they just got can be updated anytime with
    `write_memory("custom-code-explorer-prompt", ...)` or via the dashboard
@@ -95,7 +95,7 @@ is more useful than a reference manual at that moment.
 
 **`session-start.sh` and `subagent-guidance.sh`:**
 - Read `system_prompt` from `project.toml` (if set), inject verbatim before guidance.txt
-- Read `.code-explorer/memories/custom-code-explorer-prompt.md` (if exists), inject verbatim
+- Read `.codescout/memories/custom-code-explorer-prompt.md` (if exists), inject verbatim
 - Injection order (our current thinking — debatable):
   1. system_prompt (user's global project rules — frames everything)
   2. custom-code-explorer-prompt (navigation hints — project-specific)
@@ -158,7 +158,7 @@ After confirming memories with the user, deliver this brief guide:
 **Your code-explorer setup is complete. A few things worth knowing:**
 
 **System prompt** — You can add project-wide rules for all AI sessions by editing
-`.code-explorer/project.toml` and setting:
+`.codescout/project.toml` and setting:
 ```toml
 [project]
 system_prompt = "Always use conventional commits. Never edit generated files in build/."

@@ -6,10 +6,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 pub async fn get_index(State(state): State<DashboardState>) -> Json<Value> {
-    let db_path = state
-        .project_root
-        .join(".code-explorer")
-        .join("embeddings.db");
+    let db_path = state.project_root.join(".codescout").join("embeddings.db");
     if !db_path.exists() {
         return Json(json!({
             "available": false,
@@ -62,10 +59,7 @@ pub async fn get_drift(
     State(state): State<DashboardState>,
     Query(params): Query<DriftParams>,
 ) -> Json<Value> {
-    let db_path = state
-        .project_root
-        .join(".code-explorer")
-        .join("embeddings.db");
+    let db_path = state.project_root.join(".codescout").join("embeddings.db");
     if !db_path.exists() {
         return Json(json!({ "available": false, "files": [] }));
     }
