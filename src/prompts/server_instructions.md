@@ -203,22 +203,42 @@ Overflow produces: `{ "overflow": { "shown": N, "total": M, "hint": "...", "by_f
 
 ### Output Buffers
 
-Large content is stored in an `OutputBuffer` — you get a smart summary + `@ref` handle.
-The full content costs nothing to hold.
+Large content is stored in an `OutputBuffer`. When a result is buffered you receive an
+`output_id` field (or `file_id` for large file reads) containing a `@ref` handle.
+The full content costs nothing to hold — query it on demand.
 
-**Primary:** pass `@ref` handles back to `read_file` with line ranges:
+#### How to recognise which ref type you have
 
-| Ref pattern | Source | Read back with |
+| Signal in tool result | Ref type | Content |
 |---|---|---|
-| `@file_*` | Large file reads (>200 lines) | `read_file("@file_abc", start_line=42, end_line=80)` |
-| `@cmd_*` | `run_command` output | `read_file("@cmd_abc", start_line=1, end_line=50)` |
-| `@tool_*` | Large tool responses (>10 KB) | `read_file("@tool_abc", start_line=10, end_line=30)` |
+| `"output_id": "@cmd_abc"` in `run_command` result | `@cmd_*` | **plain text** — raw command stdout |
+| `"file_id": "@file_abc"` in `read_file` result | `@file_*` | **plain text** — raw file content |
+| `"output_id": "@tool_abc"` in any other tool result | `@tool_*` | **structured JSON** — pretty-printed tool result |
 
-**Fallback:** complex queries via `run_command` + Unix tools:
-`grep FAILED @cmd_id`, `jq '.key' @tool_id`, `diff @cmd_a @cmd_b`
+#### Access patterns by ref type
 
-Buffer queries via `run_command` return ≤ 100 lines inline. Truncation hints show the
+| Ref | Content type | Primary access | Secondary access |
+|---|---|---|---|
+| `@file_*` | plain text | `run_command("grep pattern @file_abc")` | `read_file("@file_abc", start_line=N, end_line=M)` |
+| `@cmd_*` | plain text | `run_command("grep pattern @cmd_abc")` | `read_file("@cmd_abc", start_line=N, end_line=M)` |
+| `@tool_*` | JSON object | `read_file("@tool_abc", json_path="$.field")` | `read_file("@tool_abc", start_line=N, end_line=M)` |
+
+**Key distinction:** `@file_*` and `@cmd_*` contain plain text — grep/sed are the natural
+tools. `@tool_*` contains a JSON object (pretty-printed, multi-line) — use `json_path` to
+extract a specific field, or `start_line`/`end_line` to browse sections.
+
+**`@tool_*` json_path examples:**
+- `find_symbol` result → `json_path="$.symbols[0].body"` extracts the function body as plain text
+- `list_symbols` result → `json_path="$.files[0].symbols"` extracts the symbol list
+- Any result → browse with `start_line=1, end_line=50` to see the structure first
+
+**Buffer queries via `run_command`** return ≤ 100 lines inline. Truncation hints show the
 exact `sed` command to continue. Do NOT pipe buffer queries — run targeted commands directly.
+
+**Never grep a `@tool_*` ref for code content** — function bodies are JSON string values
+(`"body": "fn foo() {\n..."`); grep on code inside them will not work. Use
+`json_path="$.symbols[N].body"` instead, or read the source file directly using
+`start_line`/`end_line` from the symbol metadata.
 
 ## Project Management
 

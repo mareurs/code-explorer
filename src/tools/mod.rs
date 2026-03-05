@@ -254,10 +254,23 @@ pub trait Tool: Send + Sync {
                 COMPACT_SUMMARY_MAX_BYTES,
                 COMPACT_SUMMARY_HARD_MAX_BYTES,
             );
-            return Ok(vec![Content::text(format!(
-                "{}\nFull result: {}",
-                summary, ref_id
-            ))]);
+            // Return a *structured* JSON response so agents consistently look for
+            // the `output_id` field — the same field name `run_command` uses for its
+            // `@cmd_*` refs.  The previous prose format ("summary\nFull result: @ref")
+            // caused agents to either miss the ref or confuse it with the summary text.
+            let hint = format!(
+                "read_file(\"{ref_id}\", json_path=\"$.field\") to extract a specific field, \
+                 or read_file(\"{ref_id}\", start_line=N, end_line=M) to browse sections"
+            );
+            let buffered = serde_json::json!({
+                "output_id": ref_id,
+                "summary": summary,
+                "hint": hint,
+            });
+            return Ok(vec![Content::text(
+                serde_json::to_string_pretty(&buffered)
+                    .unwrap_or_else(|_| format!("{{\"output_id\":\"{ref_id}\"}}")),
+            )]);
         }
 
         // Small output — return pretty JSON to the assistant.
@@ -611,17 +624,32 @@ mod tests {
             .await
             .unwrap();
         let text = content[0].as_text().map(|t| t.text.as_str()).unwrap_or("");
-        assert!(text.contains("@tool_"), "must be buffered");
-        // The inline text must be bounded; +100 slack for "Full result: @tool_xxx\n"
+
+        // Output is now a JSON object — parse it to check individual fields
+        let parsed: serde_json::Value =
+            serde_json::from_str(text).expect("call_content must return valid JSON");
         assert!(
-            text.len() <= 3_000 + 100,
+            parsed["output_id"].as_str().unwrap_or("").starts_with("@tool_"),
+            "must have output_id: {parsed}"
+        );
+        // The summary field must be capped. truncate_compact appends "\n… (truncated)"
+        // (~15 bytes) after the hard-max boundary, so allow a small suffix slack.
+        let summary = parsed["summary"].as_str().unwrap_or("");
+        assert!(
+            summary.len() <= COMPACT_SUMMARY_HARD_MAX_BYTES + 20,
             "summary must be capped; got {} bytes",
-            text.len()
+            summary.len()
         );
         assert!(
-            text.contains("truncated"),
+            summary.contains("truncated"),
             "must include truncation note: {}",
-            &text[..text.len().min(200)]
+            &summary[..summary.len().min(200)]
+        );
+        // hint must be present and reference the output_id
+        let hint = parsed["hint"].as_str().unwrap_or("");
+        assert!(
+            hint.contains("@tool_"),
+            "hint must reference the output_id: {hint}"
         );
     }
 
