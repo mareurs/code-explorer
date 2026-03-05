@@ -938,6 +938,19 @@ impl Tool for FindSymbol {
     fn format_compact(&self, result: &Value) -> Option<String> {
         Some(format_find_symbol(result))
     }
+
+    fn json_path_hint(&self, val: &Value) -> String {
+        let has_body = val["symbols"]
+            .as_array()
+            .and_then(|a| a.first())
+            .map(|s| s["body"].is_string())
+            .unwrap_or(false);
+        if has_body {
+            "$.symbols[0].body".to_string()
+        } else {
+            "$.symbols".to_string()
+        }
+    }
 }
 
 // ── find_referencing_symbols ───────────────────────────────────────────────
@@ -2047,10 +2060,25 @@ fn format_find_symbol(val: &Value) -> String {
         out.push_str(&row.name_path);
 
         if let Some(body) = &row.body {
-            out.push('\n');
-            for line in body.lines() {
-                out.push_str("\n      ");
-                out.push_str(line);
+            // Short bodies are shown inline. Long bodies are replaced with a
+            // navigation hint — embedding a 300-line function in the compact
+            // summary only causes truncation mid-body, which misleads agents
+            // into thinking the body is incomplete rather than available via
+            // json_path. The threshold is intentionally well below the
+            // COMPACT_SUMMARY_MAX_BYTES (2000) so even a single long function
+            // leaves room for the rest of the summary.
+            const INLINE_BODY_LIMIT: usize = 500;
+            if body.len() <= INLINE_BODY_LIMIT {
+                out.push('\n');
+                for line in body.lines() {
+                    out.push_str("\n      ");
+                    out.push_str(line);
+                }
+            } else {
+                let line_count = body.lines().count();
+                out.push_str(&format!(
+                    "\n      ({line_count}-line body — use json_path=\"$.symbols[0].body\" to extract)"
+                ));
             }
         }
     }
@@ -5014,6 +5042,44 @@ fn main() {
         assert!(result.contains("      pub fn cap_items(&self) -> Option<OverflowInfo> {"));
         assert!(result.contains("      // impl"));
         assert!(result.contains("      }"));
+    }
+
+    #[test]
+    fn find_symbol_with_long_body_shows_hint_not_truncated_body() {
+        // A body > 500 chars should not be inlined — it would get truncated by
+        // COMPACT_SUMMARY_MAX_BYTES mid-function, misleading agents into thinking
+        // the body is incomplete. Instead, show a navigation hint.
+        let long_body = "fun convert() {\n".to_string() + &"    val x = 1\n".repeat(50) + "}";
+        assert!(
+            long_body.len() > 500,
+            "test body should exceed INLINE_BODY_LIMIT"
+        );
+        let val = serde_json::json!({
+            "symbols": [
+                {
+                    "name": "convert", "name_path": "Stage1ToStage2Converter/convert",
+                    "kind": "Method", "file": "src/Converter.kt",
+                    "start_line": 160, "end_line": 490,
+                    "body": long_body
+                }
+            ],
+            "total": 1
+        });
+        let result = format_find_symbol(&val);
+        // Must mention the line count and the extraction path
+        assert!(
+            result.contains("52-line body"),
+            "expected line count in hint, got: {result}"
+        );
+        assert!(
+            result.contains("$.symbols[0].body"),
+            "expected json_path hint, got: {result}"
+        );
+        // Must NOT inline the body content
+        assert!(
+            !result.contains("val x = 1"),
+            "body content must not appear inline"
+        );
     }
 
     #[test]

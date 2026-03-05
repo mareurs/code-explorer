@@ -1816,7 +1816,8 @@ mod tests {
         .await;
         let err = result.unwrap_err();
         assert!(
-            err.downcast_ref::<crate::tools::RecoverableError>().is_some(),
+            err.downcast_ref::<crate::tools::RecoverableError>()
+                .is_some(),
             "expected RecoverableError, got: {err}"
         );
         assert!(

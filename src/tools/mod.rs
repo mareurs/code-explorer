@@ -249,6 +249,16 @@ pub trait Tool: Send + Sync {
         self.format_compact(result)
     }
 
+    /// Returns the JSON path to the most useful field in a buffered result.
+    ///
+    /// Used to build a specific, actionable hint when the tool result is stored
+    /// in an `@tool_*` buffer. The default (`"$.field"`) is a generic placeholder;
+    /// override to guide agents directly to the right extraction path (e.g.
+    /// `"$.symbols[0].body"` for `find_symbol` with `include_body=true`).
+    fn json_path_hint(&self, _val: &Value) -> String {
+        "$.field".to_string()
+    }
+
     /// Returns MCP content blocks for this tool call.
     ///
     /// Large output (> threshold) is stored in the output buffer and a compact
@@ -273,8 +283,9 @@ pub trait Tool: Send + Sync {
             // the `output_id` field — the same field name `run_command` uses for its
             // `@cmd_*` refs.  The previous prose format ("summary\nFull result: @ref")
             // caused agents to either miss the ref or confuse it with the summary text.
+            let jp = self.json_path_hint(&val);
             let hint = format!(
-                "read_file(\"{ref_id}\", json_path=\"$.field\") to extract a specific field, \
+                "read_file(\"{ref_id}\", json_path=\"{jp}\") to extract a specific field, \
                  or read_file(\"{ref_id}\", start_line=N, end_line=M) to browse sections"
             );
             let buffered = serde_json::json!({
