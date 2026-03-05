@@ -11,10 +11,9 @@ pub struct RunCommand;
 /// Context gathered from well-known project files during onboarding.
 #[derive(Debug, Default)]
 struct GatheredContext {
-    readme: Option<String>,
+    readme_path: Option<String>,
     build_file_name: Option<String>,
-    build_file_content: Option<String>,
-    claude_md: Option<String>,
+    claude_md_exists: bool,
     ci_files: Vec<String>,
     entry_points: Vec<String>,
     test_dirs: Vec<String>,
@@ -22,42 +21,28 @@ struct GatheredContext {
     features_md: Option<String>,
 }
 
-const MAX_GATHERED_FILE_BYTES: u64 = 32_000;
-
-/// Read a file if it exists and is within the size cap.
-fn read_capped(path: &std::path::Path) -> Option<String> {
-    let meta = std::fs::metadata(path).ok()?;
-    if meta.len() > MAX_GATHERED_FILE_BYTES {
-        let content = std::fs::read_to_string(path).ok()?;
-        let truncated: String = content
-            .chars()
-            .take(MAX_GATHERED_FILE_BYTES as usize)
-            .collect();
-        Some(format!(
-            "{}\n\n[... truncated at {} bytes ...]",
-            truncated, MAX_GATHERED_FILE_BYTES
-        ))
-    } else {
-        std::fs::read_to_string(path).ok()
-    }
-}
-
 /// Read key project files up-front so the onboarding prompt can include them.
+/// Detect well-known project files during onboarding.
+///
+/// File *contents* are intentionally not read here — inlining README/CLAUDE.md
+/// into the onboarding response causes "⚠ Large MCP response" warnings and
+/// duplicates CLAUDE.md that may already be in the agent's context. The agent
+/// reads these files via `read_file` during Phase 1 exploration.
 fn gather_project_context(root: &std::path::Path) -> GatheredContext {
     let mut ctx = GatheredContext::default();
 
-    // README (try common names)
+    // README (try common names — record path but don't read content)
     for name in &["README.md", "README.rst", "README.txt", "README"] {
-        if let Some(content) = read_capped(&root.join(name)) {
-            ctx.readme = Some(content);
+        if root.join(name).exists() {
+            ctx.readme_path = Some(name.to_string());
             break;
         }
     }
 
     // CLAUDE.md
-    ctx.claude_md = read_capped(&root.join("CLAUDE.md"));
+    ctx.claude_md_exists = root.join("CLAUDE.md").exists();
 
-    // Build file (first match wins, ordered by popularity)
+    // Build file (first match wins, ordered by popularity — name only)
     let build_files = [
         "Cargo.toml",
         "package.json",
@@ -73,9 +58,8 @@ fn gather_project_context(root: &std::path::Path) -> GatheredContext {
         "Gemfile",
     ];
     for name in &build_files {
-        if let Some(content) = read_capped(&root.join(name)) {
+        if root.join(name).exists() {
             ctx.build_file_name = Some(name.to_string());
-            ctx.build_file_content = Some(content);
             break;
         }
     }
@@ -449,8 +433,8 @@ impl Tool for Onboarding {
                 let summary = format!(
                     "Languages: {}\nHas README: {}\nHas CLAUDE.md: {}\nBuild file: {}\nEntry points: {}\nTest dirs: {}",
                     lang_list.join(", "),
-                    gathered.readme.is_some(),
-                    gathered.claude_md.is_some(),
+                    gathered.readme_path.is_some(),
+                    gathered.claude_md_exists,
                     gathered.build_file_name.as_deref().unwrap_or("none"),
                     if gathered.entry_points.is_empty() { "none".to_string() } else { gathered.entry_points.join(", ") },
                     if gathered.test_dirs.is_empty() { "none".to_string() } else { gathered.test_dirs.join(", ") },
@@ -460,16 +444,23 @@ impl Tool for Onboarding {
             })
             .await?;
 
+        // Build the key-files manifest for the prompt (paths only, no content)
+        let mut key_files: Vec<String> = Vec::new();
+        if let Some(ref p) = gathered.readme_path {
+            key_files.push(p.clone());
+        }
+        if gathered.claude_md_exists {
+            key_files.push("CLAUDE.md".to_string());
+        }
+        if let Some(ref p) = gathered.build_file_name {
+            key_files.push(p.clone());
+        }
+
         // Build the onboarding instruction prompt
         let prompt = crate::prompts::build_onboarding_prompt(
             &lang_list,
             &top_level,
-            gathered.readme.as_deref(),
-            gathered
-                .build_file_name
-                .as_deref()
-                .zip(gathered.build_file_content.as_deref()),
-            gathered.claude_md.as_deref(),
+            &key_files,
             &gathered.ci_files,
             &gathered.entry_points,
             &gathered.test_dirs,
@@ -489,8 +480,8 @@ impl Tool for Onboarding {
             "languages": lang_list,
             "top_level": top_level,
             "config_created": created_config,
-            "has_readme": gathered.readme.is_some(),
-            "has_claude_md": gathered.claude_md.is_some(),
+            "has_readme": gathered.readme_path.is_some(),
+            "has_claude_md": gathered.claude_md_exists,
             "build_file": gathered.build_file_name,
             "entry_points": gathered.entry_points,
             "test_dirs": gathered.test_dirs,
@@ -886,15 +877,25 @@ async fn run_command_inner(
         root.to_path_buf()
     };
 
-    // --- Step 4.7: Background spawn ---
+    // --- Step 4.7: Background spawn with warm return ---
     if run_in_background {
+        if buffer_only {
+            return Err(super::RecoverableError::with_hint(
+                "run_in_background cannot be used with buffer queries",
+                "Remove run_in_background, or run the query as a plain command without @ref interpolation.",
+            )
+            .into());
+        }
+
         let log_tmp = tempfile::Builder::new()
             .prefix("codescout-bg-")
             .suffix(".log")
             .tempfile()?;
-        let log_path = log_tmp.path().to_string_lossy().to_string();
+        let log_path = log_tmp.path().to_path_buf();
         let (log_file, _) = log_tmp.keep()?;
         let log_stderr = log_file.try_clone()?;
+
+        // Child handle dropped intentionally — process runs detached, adopted by init.
         tokio::process::Command::new("sh")
             .arg("-c")
             .arg(resolved_command)
@@ -902,10 +903,26 @@ async fn run_command_inner(
             .stdout(std::process::Stdio::from(log_file))
             .stderr(std::process::Stdio::from(log_stderr))
             .spawn()?;
+
+        // Warm return: 5s window captures startup output and fast failures.
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+        let log_content = std::fs::read_to_string(&log_path).unwrap_or_default();
+        let tail_50: String = {
+            let lines: Vec<&str> = log_content.lines().collect();
+            let start = lines.len().saturating_sub(50);
+            lines[start..].join("\n")
+        };
+
+        let ref_id = ctx.output_buffer.store_background(log_path);
+
         return Ok(serde_json::json!({
-            "background": true,
-            "log": log_path,
-            "hint": format!("Monitor with: run_command(\"tail -50 {}\")", log_path)
+            "output_id": ref_id,
+            "stdout": tail_50,
+            "hint": format!(
+                "Process running. Output captured in {} — use run_command(\"tail -50 {}\") or grep/cat as needed.",
+                ref_id, ref_id
+            )
         }));
     }
 
@@ -1486,10 +1503,9 @@ mod tests {
         )
         .unwrap();
         let ctx = gather_project_context(dir.path());
-        assert_eq!(ctx.readme.as_deref(), Some("# My Project\nA test project."));
+        assert_eq!(ctx.readme_path.as_deref(), Some("README.md"));
         assert_eq!(ctx.build_file_name.as_deref(), Some("Cargo.toml"));
-        assert!(ctx.build_file_content.as_ref().unwrap().contains("test"));
-        assert!(ctx.claude_md.is_none());
+        assert!(!ctx.claude_md_exists);
     }
 
     #[test]
@@ -1516,9 +1532,9 @@ mod tests {
     fn gather_context_handles_empty_project() {
         let dir = tempdir().unwrap();
         let ctx = gather_project_context(dir.path());
-        assert!(ctx.readme.is_none());
+        assert!(ctx.readme_path.is_none());
         assert!(ctx.build_file_name.is_none());
-        assert!(ctx.claude_md.is_none());
+        assert!(!ctx.claude_md_exists);
         assert!(ctx.ci_files.is_empty());
         assert!(ctx.entry_points.is_empty());
         assert!(ctx.test_dirs.is_empty());
@@ -1548,9 +1564,9 @@ mod tests {
             .unwrap()
             .iter()
             .any(|v| v == "tests"));
-        // Verify the instructions now contain the gathered README content
+        // Verify the instructions reference key files (paths, not embedded content)
         let instructions = result["instructions"].as_str().unwrap();
-        assert!(instructions.contains("# Test Project"));
+        assert!(instructions.contains("README.md"));
     }
 
     #[tokio::test]
@@ -1745,6 +1761,68 @@ mod tests {
         );
         assert!(result.get("reason").is_some(), "should have reason key");
         assert!(result.get("hint").is_some(), "should have hint key");
+    }
+
+    #[tokio::test]
+    async fn run_in_background_returns_bg_handle() {
+        let (dir, ctx) = project_ctx().await;
+        let root = dir.path().to_path_buf();
+        let security = Default::default();
+
+        let result = run_command_inner(
+            "echo hello-bg-test",
+            "echo hello-bg-test",
+            30,
+            false, // acknowledge_risk
+            None,  // cwd_param
+            false, // buffer_only
+            true,  // run_in_background
+            &root,
+            &security,
+            &ctx,
+        )
+        .await
+        .expect("should succeed");
+
+        let output_id = result["output_id"].as_str().expect("output_id missing");
+        assert!(
+            output_id.starts_with("@bg_"),
+            "expected @bg_ prefix, got {output_id}"
+        );
+        let stdout = result["stdout"].as_str().unwrap_or("");
+        assert!(
+            stdout.contains("hello-bg-test"),
+            "expected stdout to contain echo output, got: {stdout}"
+        );
+        let hint = result["hint"].as_str().unwrap_or("");
+        assert!(
+            hint.contains(output_id),
+            "hint should reference the handle, got: {hint}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_in_background_rejects_buffer_only() {
+        let (dir, ctx) = project_ctx().await;
+        let root = dir.path().to_path_buf();
+        let security = crate::util::path_security::PathSecurityConfig::default();
+        let result = run_command_inner(
+            "echo x", "echo x", 30, false, // acknowledge_risk
+            None,  // cwd_param
+            true,  // buffer_only
+            true,  // run_in_background
+            &root, &security, &ctx,
+        )
+        .await;
+        let err = result.unwrap_err();
+        assert!(
+            err.downcast_ref::<crate::tools::RecoverableError>().is_some(),
+            "expected RecoverableError, got: {err}"
+        );
+        assert!(
+            err.to_string().contains("buffer queries"),
+            "error should mention buffer queries, got: {err}"
+        );
     }
 
     #[tokio::test]

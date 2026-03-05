@@ -72,16 +72,13 @@ pub const ONBOARDING_PROMPT: &str = include_str!("onboarding_prompt.md");
 pub fn build_onboarding_prompt(
     languages: &[String],
     top_level: &[String],
-    readme: Option<&str>,
-    build_file: Option<(&str, &str)>, // (name, content)
-    claude_md: Option<&str>,
+    key_files: &[String], // paths of detected files (README, CLAUDE.md, build file, etc.)
     ci_files: &[String],
     entry_points: &[String],
     test_dirs: &[String],
 ) -> String {
     let mut prompt = ONBOARDING_PROMPT.to_string();
 
-    // Append gathered data after the "Gathered Project Data" section header
     prompt.push_str("\n\n---\n\n");
 
     if !languages.is_empty() {
@@ -116,21 +113,14 @@ pub fn build_onboarding_prompt(
         prompt.push_str(&format!("**CI config files:** {}\n\n", ci_files.join(", ")));
     }
 
-    if let Some(content) = readme {
-        prompt.push_str(&format!("**README.md:**\n```\n{}\n```\n\n", content));
-    }
-
-    if let Some((name, content)) = build_file {
+    if !key_files.is_empty() {
         prompt.push_str(&format!(
-            "**Build file (`{}`):**\n```\n{}\n```\n\n",
-            name, content
-        ));
-    }
-
-    if let Some(content) = claude_md {
-        prompt.push_str(&format!(
-            "**CLAUDE.md (loaded every session — do NOT duplicate this in memories):**\n```\n{}\n```\n\n",
-            content
+            "**Key files to read during Phase 1:**\n{}\n\n",
+            key_files
+                .iter()
+                .map(|f| format!("- `{f}`"))
+                .collect::<Vec<_>>()
+                .join("\n")
         ));
     }
 
@@ -206,9 +196,7 @@ mod tests {
         let result = build_onboarding_prompt(
             &["rust".into(), "python".into()],
             &["src/".into(), "tests/".into()],
-            None,
-            None,
-            None,
+            &[],
             &[],
             &[],
             &[],
@@ -219,7 +207,7 @@ mod tests {
 
     #[test]
     fn build_onboarding_handles_empty() {
-        let result = build_onboarding_prompt(&[], &[], None, None, None, &[], &[], &[]);
+        let result = build_onboarding_prompt(&[], &[], &[], &[], &[], &[]);
         assert!(result.contains("## Rules"));
         assert!(!result.contains("Detected languages"));
     }
@@ -229,19 +217,15 @@ mod tests {
         let result = build_onboarding_prompt(
             &["rust".into(), "python".into()],
             &["src/".into(), "tests/".into()],
-            Some("# My Project\nA cool thing."),
-            Some(("Cargo.toml", "[package]\nname = \"cool\"")),
-            Some("# CLAUDE.md\nDev commands here."),
+            &["README.md".into(), "Cargo.toml".into(), "CLAUDE.md".into()],
             &[".github/workflows/ci.yml".into()],
             &["src/main.rs".into()],
             &["tests".into()],
         );
-        assert!(result.contains("# My Project"));
         assert!(result.contains("Cargo.toml"));
         assert!(result.contains("ci.yml"));
         assert!(result.contains("src/main.rs"));
         assert!(result.contains("Detected languages"));
-        assert!(result.contains("CLAUDE.md (loaded every session"));
     }
 
     #[test]

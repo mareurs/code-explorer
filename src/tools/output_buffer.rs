@@ -65,6 +65,9 @@ struct BufferInner {
     pending_edits: HashMap<String, PendingAckEdit>,
     pending_edits_order: Vec<String>,
     max_pending: usize,
+    // --- background job store ---
+    background_jobs: HashMap<String, PathBuf>,
+    background_order: Vec<String>,
 }
 
 impl OutputBuffer {
@@ -81,6 +84,8 @@ impl OutputBuffer {
                 pending_edits: HashMap::new(),
                 pending_edits_order: Vec::new(),
                 max_pending: 20,
+                background_jobs: HashMap::new(),
+                background_order: Vec::new(),
             }),
         }
     }
@@ -354,6 +359,31 @@ impl OutputBuffer {
         inner.pending_edits.get(handle).cloned()
     }
 
+    /// Store a background job log path and return a `@bg_<8hex>` handle.
+    pub fn store_background(&self, log_path: PathBuf) -> String {
+        let mut inner = self.inner.lock().unwrap();
+        inner.counter = inner.counter.wrapping_add(1);
+        let id = format!("@bg_{:08x}", inner.counter as u32);
+
+        // Evict oldest if at capacity
+        if inner.background_jobs.len() >= inner.max_pending {
+            if let Some(oldest) = inner.background_order.first().cloned() {
+                inner.background_order.remove(0);
+                inner.background_jobs.remove(&oldest);
+            }
+        }
+
+        inner.background_jobs.insert(id.clone(), log_path);
+        inner.background_order.push(id.clone());
+        id
+    }
+
+    /// Look up the log path for a background job handle.
+    pub fn get_background(&self, id: &str) -> Option<PathBuf> {
+        let inner = self.inner.lock().unwrap();
+        inner.background_jobs.get(id).cloned()
+    }
+
     /// Resolve `@cmd_<8hex>` (and `@cmd_<8hex>.err`) references in a command string.
     ///
     /// Each reference is replaced with a path to a read-only temp file containing
@@ -378,7 +408,7 @@ impl OutputBuffer {
             .into());
         }
 
-        let re = Regex::new(r"@(?:cmd|file|tool)_[0-9a-f]{8}(\.err)?").expect("valid regex");
+        let re = Regex::new(r"@(?:cmd|file|tool|bg)_[0-9a-f]{8}(\.err)?").expect("valid regex");
 
         let refs: Vec<&str> = re.find_iter(command).map(|m| m.as_str()).collect();
         if refs.is_empty() {
@@ -401,6 +431,49 @@ impl OutputBuffer {
             } else {
                 token
             };
+
+            // @bg_* refs always read fresh from disk — no snapshot caching.
+            if base_id.starts_with("@bg_") {
+                if is_stderr {
+                    return Err(RecoverableError::with_hint(
+                        format!("@bg_* refs do not support the .err suffix: {}", token),
+                        "Background job logs capture stdout and stderr in one file. Use the bare handle (without .err).",
+                    )
+                    .into());
+                }
+                let log_path = self.get_background(base_id).ok_or_else(|| {
+                    RecoverableError::with_hint(
+                        format!("background job ref not found: {}", token),
+                        "Buffer refs expire when the session resets. Re-run the original command to get a fresh handle.",
+                    )
+                })?;
+                let content = std::fs::read_to_string(&log_path).map_err(|e| {
+                    RecoverableError::with_hint(
+                        format!("background job log unavailable: {}", e),
+                        format!(
+                            "Check if the process is still running. Log path: {}",
+                            log_path.display()
+                        ),
+                    )
+                })?;
+                let mut tmp = NamedTempFile::new()?;
+                tmp.write_all(content.as_bytes())?;
+                tmp.flush()?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let perms = std::fs::Permissions::from_mode(0o444);
+                    std::fs::set_permissions(tmp.path(), perms)?;
+                }
+                let temp_path = tmp.into_temp_path();
+                let path = temp_path.to_path_buf();
+                std::mem::forget(temp_path);
+                let path_str = path.to_string_lossy().to_string();
+                result = result.replace(token, &path_str);
+                temp_path_strings.push(path_str);
+                temp_paths.push(path);
+                continue;
+            }
 
             let (entry, was_refreshed) = self
                 .get_with_refresh_flag(base_id)
@@ -1150,5 +1223,73 @@ mod tests {
         let cmd = format!("grep foo {}", id);
         let (_resolved, _temps, _buffer_only, refreshed) = buf.resolve_refs(&cmd).unwrap();
         assert!(refreshed.is_empty(), "cmd handles never refresh");
+    }
+
+    #[test]
+    fn store_background_returns_bg_prefix() {
+        let buf = OutputBuffer::new(10);
+        let path = std::path::PathBuf::from("/tmp/test-codescout.log");
+        let id = buf.store_background(path.clone());
+        assert!(id.starts_with("@bg_"), "expected @bg_ prefix, got {id}");
+        assert_eq!(buf.get_background(&id), Some(path));
+    }
+
+    #[test]
+    fn get_background_missing_returns_none() {
+        let buf = OutputBuffer::new(10);
+        assert_eq!(buf.get_background("@bg_00000000"), None);
+    }
+
+    #[test]
+    fn resolve_refs_bg_reads_fresh_from_disk() {
+        use std::io::Write;
+        let buf = OutputBuffer::new(10);
+
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        write!(tmp, "first content").unwrap();
+        tmp.flush().unwrap();
+        let log_path = tmp.path().to_path_buf();
+
+        let id = buf.store_background(log_path.clone());
+
+        // First resolve — reads "first content"
+        let (resolved1, temps1, _, _) = buf.resolve_refs(&id).unwrap();
+        let got1 = std::fs::read_to_string(&resolved1).unwrap();
+        OutputBuffer::cleanup_temp_files(&temps1);
+        assert_eq!(got1.trim(), "first content");
+
+        // Overwrite log — simulates process writing more output
+        std::fs::write(&log_path, "second content").unwrap();
+
+        // Second resolve — must read fresh "second content", not the snapshot
+        let (resolved2, temps2, _, _) = buf.resolve_refs(&id).unwrap();
+        let got2 = std::fs::read_to_string(&resolved2).unwrap();
+        OutputBuffer::cleanup_temp_files(&temps2);
+        assert_eq!(got2.trim(), "second content");
+    }
+
+    #[test]
+    fn resolve_refs_bg_missing_file_errors() {
+        let buf = OutputBuffer::new(10);
+        let id = buf.store_background(std::path::PathBuf::from(
+            "/tmp/nonexistent-codescout-bg-test-xyz.log",
+        ));
+        let err = buf.resolve_refs(&id).unwrap_err();
+        assert!(
+            err.to_string().contains("background job log unavailable"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn resolve_refs_bg_rejects_err_suffix() {
+        let buf = OutputBuffer::new(10);
+        let id = buf.store_background(std::path::PathBuf::from("/tmp/fake.log"));
+        let err_ref = format!("{}.err", id);
+        let err = buf.resolve_refs(&err_ref).unwrap_err();
+        assert!(
+            err.to_string().contains("do not support the .err suffix"),
+            "unexpected error: {err}"
+        );
     }
 }
