@@ -147,6 +147,15 @@ impl Tool for ReadFile {
         let start_line = as_u64_lenient(&input["start_line"]);
         let end_line = as_u64_lenient(&input["end_line"]);
 
+        // Both start_line and end_line must be provided together
+        if start_line.is_some() != end_line.is_some() {
+            return Err(RecoverableError::with_hint(
+                "both start_line and end_line are required",
+                "Provide both start_line and end_line for a line range, e.g. start_line=1, end_line=50",
+            )
+            .into());
+        }
+
         // Navigation parameters
         let heading = input["heading"].as_str();
         let json_path = input["json_path"].as_str();

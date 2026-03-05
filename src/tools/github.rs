@@ -1,4 +1,4 @@
-use anyhow::Context as _;
+use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::process::Command;
@@ -70,6 +70,16 @@ fn require_owner_repo(owner: &str, repo: &str) -> Result<(), RecoverableError> {
         ));
     }
     Ok(())
+}
+
+fn require_number<'a>(number: &'a Option<String>, method: &str) -> Result<&'a str> {
+    number.as_deref().ok_or_else(|| {
+        RecoverableError::with_hint(
+            "number is required",
+            format!("{method} requires the 'number' parameter (issue/PR number)"),
+        )
+        .into()
+    })
 }
 
 // ── Stub tool structs ─────────────────────────────────────────────────────────
@@ -245,9 +255,7 @@ impl Tool for GithubIssue {
                 Ok(maybe_buffer(check_gh_output(out)?, "github_issue", ctx))
             }
             "get" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the issue number")
-                })?;
+                let num = require_number(&number, "get")?;
                 let mut args = vec![
                     "issue",
                     "view",
@@ -262,9 +270,7 @@ impl Tool for GithubIssue {
                 Ok(maybe_buffer(check_gh_output(out)?, "github_issue", ctx))
             }
             "get_comments" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the issue number")
-                })?;
+                let num = require_number(&number, "get_comments")?;
                 let mut args = vec!["issue", "view", num, "--json", "comments"];
                 if !repo_flag.is_empty() {
                     args.extend(["--repo", &repo_flag]);
@@ -273,9 +279,7 @@ impl Tool for GithubIssue {
                 Ok(maybe_buffer(check_gh_output(out)?, "github_issue", ctx))
             }
             "get_labels" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the issue number")
-                })?;
+                let num = require_number(&number, "get_labels")?;
                 let mut args = vec!["issue", "view", num, "--json", "labels"];
                 if !repo_flag.is_empty() {
                     args.extend(["--repo", &repo_flag]);
@@ -284,9 +288,7 @@ impl Tool for GithubIssue {
                 Ok(maybe_buffer(check_gh_output(out)?, "github_issue", ctx))
             }
             "get_sub_issues" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the issue number")
-                })?;
+                let num = require_number(&number, "get_sub_issues")?;
                 require_owner_repo(owner, repo)?;
                 let endpoint = format!("/repos/{owner}/{repo}/issues/{num}/sub_issues");
                 let out = run_gh(&["api", &endpoint]).await?;
@@ -313,9 +315,7 @@ impl Tool for GithubIssue {
                 Ok(json!(check_gh_output(out)?))
             }
             "update" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the issue number")
-                })?;
+                let num = require_number(&number, "update")?;
                 require_owner_repo(owner, repo)?;
                 let mut args = vec!["issue", "edit", num, "--repo", &repo_flag];
                 if let Some(t) = params["title"].as_str() {
@@ -337,9 +337,7 @@ impl Tool for GithubIssue {
                 Ok(json!(check_gh_output(out)?))
             }
             "add_comment" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the issue number")
-                })?;
+                let num = require_number(&number, "add_comment")?;
                 let body = params["body"].as_str().ok_or_else(|| {
                     RecoverableError::with_hint("body required", "Provide the comment body")
                 })?;
@@ -351,12 +349,7 @@ impl Tool for GithubIssue {
                 Ok(json!(check_gh_output(out)?))
             }
             "add_sub_issue" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint(
-                        "number required",
-                        "Provide the parent issue number",
-                    )
-                })?;
+                let num = require_number(&number, "add_sub_issue")?;
                 let sub_id = params["sub_issue_id"].as_u64().ok_or_else(|| {
                     RecoverableError::with_hint(
                         "sub_issue_id required",
@@ -371,12 +364,7 @@ impl Tool for GithubIssue {
                 Ok(json!(check_gh_output(out)?))
             }
             "remove_sub_issue" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint(
-                        "number required",
-                        "Provide the parent issue number",
-                    )
-                })?;
+                let num = require_number(&number, "remove_sub_issue")?;
                 let sub_id = params["sub_issue_id"].as_u64().ok_or_else(|| {
                     RecoverableError::with_hint(
                         "sub_issue_id required",
@@ -499,9 +487,7 @@ impl Tool for GithubPr {
                 Ok(maybe_buffer(check_gh_output(out)?, "github_pr", ctx))
             }
             "get" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the PR number")
-                })?;
+                let num = require_number(&number, "get")?;
                 let mut args = vec![
                     "pr",
                     "view",
@@ -517,9 +503,7 @@ impl Tool for GithubPr {
                 Ok(maybe_buffer(check_gh_output(out)?, "github_pr", ctx))
             }
             "get_diff" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the PR number")
-                })?;
+                let num = require_number(&number, "get_diff")?;
                 let mut args = vec!["pr", "diff", num];
                 if !repo_flag.is_empty() {
                     args.extend(["--repo", &repo_flag]);
@@ -528,9 +512,7 @@ impl Tool for GithubPr {
                 Ok(always_buffer(check_gh_output(out)?, "github_pr", ctx))
             }
             "get_files" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the PR number")
-                })?;
+                let num = require_number(&number, "get_files")?;
                 let mut args = vec!["pr", "view", num, "--json", "files"];
                 if !repo_flag.is_empty() {
                     args.extend(["--repo", &repo_flag]);
@@ -539,9 +521,7 @@ impl Tool for GithubPr {
                 Ok(maybe_buffer(check_gh_output(out)?, "github_pr", ctx))
             }
             "get_comments" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the PR number")
-                })?;
+                let num = require_number(&number, "get_comments")?;
                 let mut args = vec!["pr", "view", num, "--json", "comments"];
                 if !repo_flag.is_empty() {
                     args.extend(["--repo", &repo_flag]);
@@ -550,27 +530,21 @@ impl Tool for GithubPr {
                 Ok(maybe_buffer(check_gh_output(out)?, "github_pr", ctx))
             }
             "get_reviews" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the PR number")
-                })?;
+                let num = require_number(&number, "get_reviews")?;
                 require_owner_repo(owner, repo)?;
                 let endpoint = format!("/repos/{owner}/{repo}/pulls/{num}/reviews");
                 let out = run_gh(&["api", &endpoint]).await?;
                 Ok(maybe_buffer(check_gh_output(out)?, "github_pr", ctx))
             }
             "get_review_comments" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the PR number")
-                })?;
+                let num = require_number(&number, "get_review_comments")?;
                 require_owner_repo(owner, repo)?;
                 let endpoint = format!("/repos/{owner}/{repo}/pulls/{num}/comments");
                 let out = run_gh(&["api", &endpoint]).await?;
                 Ok(maybe_buffer(check_gh_output(out)?, "github_pr", ctx))
             }
             "get_status" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the PR number")
-                })?;
+                let num = require_number(&number, "get_status")?;
                 let mut args = vec!["pr", "checks", num];
                 if !repo_flag.is_empty() {
                     args.extend(["--repo", &repo_flag]);
@@ -612,9 +586,7 @@ impl Tool for GithubPr {
                 Ok(json!(check_gh_output(out)?))
             }
             "update" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the PR number")
-                })?;
+                let num = require_number(&number, "update")?;
                 let mut args = vec!["pr", "edit", num];
                 if !repo_flag.is_empty() {
                     args.extend(["--repo", &repo_flag]);
@@ -632,9 +604,7 @@ impl Tool for GithubPr {
                 Ok(json!(check_gh_output(out)?))
             }
             "merge" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the PR number")
-                })?;
+                let num = require_number(&number, "merge")?;
                 let merge_method = params["merge_method"].as_str().unwrap_or("merge");
                 let mut args = vec!["pr", "merge", num];
                 if !repo_flag.is_empty() {
@@ -649,18 +619,14 @@ impl Tool for GithubPr {
                 Ok(json!(check_gh_output(out)?))
             }
             "update_branch" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the PR number")
-                })?;
+                let num = require_number(&number, "update_branch")?;
                 require_owner_repo(owner, repo)?;
                 let endpoint = format!("/repos/{owner}/{repo}/pulls/{num}/update-branch");
                 let out = run_gh(&["api", "--method", "PUT", &endpoint]).await?;
                 Ok(json!(check_gh_output(out)?))
             }
             "create_review" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the PR number")
-                })?;
+                let num = require_number(&number, "create_review")?;
                 require_owner_repo(owner, repo)?;
                 let endpoint = format!("/repos/{owner}/{repo}/pulls/{num}/reviews");
                 // Pre-compute owned strings to avoid &format!() temporaries
@@ -677,9 +643,7 @@ impl Tool for GithubPr {
                 Ok(json!(check_gh_output(out)?))
             }
             "submit_review" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the PR number")
-                })?;
+                let num = require_number(&number, "submit_review")?;
                 let rev_id = params["review_id"].as_u64().ok_or_else(|| {
                     RecoverableError::with_hint("review_id required", "Provide the review ID")
                 })?;
@@ -704,9 +668,7 @@ impl Tool for GithubPr {
                 Ok(json!(check_gh_output(out)?))
             }
             "delete_review" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the PR number")
-                })?;
+                let num = require_number(&number, "delete_review")?;
                 let rev_id = params["review_id"].as_u64().ok_or_else(|| {
                     RecoverableError::with_hint("review_id required", "Provide the review ID")
                 })?;
@@ -716,9 +678,7 @@ impl Tool for GithubPr {
                 Ok(json!(check_gh_output(out)?))
             }
             "add_review_comment" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the PR number")
-                })?;
+                let num = require_number(&number, "add_review_comment")?;
                 let body = params["body"].as_str().ok_or_else(|| {
                     RecoverableError::with_hint("body required", "Provide the comment body")
                 })?;
@@ -746,9 +706,7 @@ impl Tool for GithubPr {
                 Ok(json!(check_gh_output(out)?))
             }
             "add_reply_to_comment" => {
-                let num = number.as_deref().ok_or_else(|| {
-                    RecoverableError::with_hint("number required", "Provide the PR number")
-                })?;
+                let num = require_number(&number, "add_reply_to_comment")?;
                 let cid = params["comment_id"].as_u64().ok_or_else(|| {
                     RecoverableError::with_hint(
                         "comment_id required",
@@ -806,7 +764,7 @@ impl Tool for GithubFile {
                 "message": { "type": "string",  "description": "create_or_update/delete/push_files: commit message" },
                 "sha":     { "type": "string",  "description": "create_or_update/delete: blob SHA of existing file" },
                 "branch":  { "type": "string",  "description": "create_or_update/delete/push_files: target branch" },
-                "files":   { "type": "array",   "description": "push_files: [{path, content}] array" }
+                "files":   { "type": "array",   "description": "push_files: Array of {path, content} objects. Content is plaintext (not base64) — the Trees API handles encoding." }
             },
             "required": ["method"]
         })
@@ -1096,7 +1054,13 @@ impl Tool for GithubRepo {
                 let name = params["name"].as_str().ok_or_else(|| {
                     RecoverableError::with_hint("name required", "Provide the repository name")
                 })?;
-                let mut args = vec!["repo", "create", name, "--json"];
+                let mut args = vec![
+                    "repo",
+                    "create",
+                    name,
+                    "--json",
+                    "name,url,description,visibility",
+                ];
                 if params["private"].as_bool().unwrap_or(false) {
                     args.push("--private");
                 } else {
@@ -1107,7 +1071,7 @@ impl Tool for GithubRepo {
             }
             "fork" => {
                 require_owner_repo(owner, repo)?;
-                let out = run_gh(&["repo", "fork", &repo_flag, "--json"]).await?;
+                let out = run_gh(&["repo", "fork", &repo_flag, "--json", "name,url,owner"]).await?;
                 Ok(json!(check_gh_output(out)?))
             }
             "list_branches" => {

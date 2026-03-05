@@ -667,6 +667,11 @@ mod tests {
 
     #[test]
     fn write_within_cwd_allowed_even_outside_project_root() {
+        // NOTE: This test changes the process-global CWD via set_current_dir().
+        // It could interfere with parallel tests that depend on current_dir().
+        // If flaky failures occur, consider adding the serial_test crate and
+        // #[serial] attribute.
+
         // Simulate the case where Claude Code launches the MCP server from
         // a project directory different from --project.  The CWD at server
         // startup should be an additional allowed write root.
@@ -675,7 +680,15 @@ mod tests {
         std::fs::create_dir_all(cwd_project.path().join("src")).unwrap();
 
         // Temporarily change the process CWD to cwd_project.
+        // We use a guard struct to ensure CWD is restored even on panic.
         let original_cwd = std::env::current_dir().unwrap();
+        struct CwdGuard(std::path::PathBuf);
+        impl Drop for CwdGuard {
+            fn drop(&mut self) {
+                let _ = std::env::set_current_dir(&self.0);
+            }
+        }
+        let _guard = CwdGuard(original_cwd);
         std::env::set_current_dir(cwd_project.path()).unwrap();
 
         let target = cwd_project.path().join("src/Routing.kt");
@@ -684,9 +697,6 @@ mod tests {
             project.path(), // active project root is different
             &default_config(),
         );
-
-        // Restore CWD before asserting so a failure doesn't leave it changed.
-        std::env::set_current_dir(original_cwd).unwrap();
 
         assert!(
             result.is_ok(),

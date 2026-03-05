@@ -427,8 +427,8 @@ impl OutputBuffer {
             let pretty_content: String;
             let write_content: &str = if base_id.starts_with("@tool_") && !is_stderr {
                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(content) {
-                    pretty_content = serde_json::to_string_pretty(&v)
-                        .unwrap_or_else(|_| content.to_string());
+                    pretty_content =
+                        serde_json::to_string_pretty(&v).unwrap_or_else(|_| content.to_string());
                     &pretty_content
                 } else {
                     content

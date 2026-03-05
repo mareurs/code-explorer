@@ -1,37 +1,37 @@
 # Development Commands
 
-See CLAUDE.md for primary commands (926 tests passing as of 2026-03-03). This memory adds gotchas and extras.
+See CLAUDE.md for primary commands. This supplements with gotchas.
 
-## Extras Not in CLAUDE.md
-
-### Feature-specific builds
+## Build & Run
 ```bash
-cargo build --features local-embed       # Local ONNX embedding
-cargo build --no-default-features        # Minimal (no remote-embed, no dashboard)
+cargo build                          # debug build
+cargo run -- start --project .       # run MCP server on stdio
+cargo run -- index --project .       # build embedding index
+cargo run -- dashboard --project .   # web UI (default port 8099)
 ```
 
-### E2E tests (require real LSP servers)
+## Features
 ```bash
-cargo test --features e2e-rust           # Rust LSP tests
-cargo test --features e2e-python         # Python LSP tests
-cargo test --features e2e                # All languages
+cargo build --features local-embed   # local ONNX embeddings (fastembed)
+cargo test --features e2e-rust       # E2E tests (requires rust-analyzer installed)
+cargo test --features e2e            # all E2E (requires all LSP servers)
 ```
 
-### Dashboard
+## LSP Server Install
 ```bash
-cargo run -- dashboard --project .       # Launch web UI on port 8099
-```
-
-### LSP server management
-```bash
-./scripts/install-lsp.sh --check         # See what's installed/missing
-./scripts/install-lsp.sh --all           # Install all LSP servers
-./scripts/install-lsp.sh rust python     # Install specific ones
+./scripts/install-lsp.sh --check    # what's installed
+./scripts/install-lsp.sh --all      # install all
+./scripts/install-lsp.sh rust       # specific language
 ```
 
 ## Before Completing Work
-1. `cargo fmt`
-2. `cargo clippy -- -D warnings`
-3. `cargo test`
-4. Check `docs/TODO-tool-misbehaviors.md` — log any tool issues found during work
-5. Batch changes into a single commit — don't commit intermediate steps
+1. `cargo fmt` — format
+2. `cargo clippy -- -D warnings` — zero warnings required
+3. `cargo test` — all tests must pass (baseline ~932)
+4. Check `docs/TODO-tool-misbehaviors.md` — log any unexpected tool behavior encountered
+
+## Gotchas
+- `panic = "abort"` in release profile — panics kill the process immediately (intentional: prevents zombie MCP state)
+- E2E tests need real LSP servers; they're excluded from default `cargo test`
+- Dashboard is behind the `dashboard` feature (enabled by default)
+- Remote embeddings need `OPENAI_API_KEY` or Ollama running; `local-embed` feature avoids this

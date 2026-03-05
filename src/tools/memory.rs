@@ -222,7 +222,9 @@ fn extract_title(content: &str) -> String {
         .map(|i| i + 1)
         .unwrap_or(content.len());
     let end = first_sentence_end.min(80).min(content.len());
-    let mut title = content[..end].to_string();
+    // Use safe_truncate to avoid panicking on multi-byte char boundaries
+    let truncated = crate::tools::safe_truncate(content, end);
+    let mut title = truncated.to_string();
     if end < content.len() && !title.ends_with('.') {
         title.push_str("...");
     }
@@ -1108,6 +1110,24 @@ mod tests {
             extract_title("Three layer architecture design."),
             "Three layer architecture design."
         );
+    }
+
+    #[test]
+    fn extract_title_multibyte_at_boundary() {
+        // \u{2500} (box drawing char) is 3 bytes each. 27 chars = 81 bytes.
+        // Byte 80 falls inside the 27th char (bytes 78..81), so naive
+        // content[..80] would panic. safe_truncate rounds down to byte 78.
+        let content: String = "\u{2500}".repeat(27);
+        let title = extract_title(&content);
+        // Should not panic and should end with "..."
+        assert!(
+            title.ends_with("..."),
+            "expected trailing '...', got: {title}"
+        );
+        // Title body (minus the "...") should be valid UTF-8 and <= 80 bytes
+        let body = &title[..title.len() - 3];
+        assert!(body.len() <= 80);
+        assert!(body.len() % 3 == 0, "should truncate at char boundary");
     }
 
     #[tokio::test]

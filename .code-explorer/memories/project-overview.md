@@ -1,28 +1,30 @@
-# code-explorer
+# codescout
 
 ## Purpose
-Rust MCP server that gives LLMs IDE-grade code intelligence — symbol-level navigation, semantic search, git integration. Designed for Claude Code as the host agent. Inspired by Serena.
+Rust MCP server giving LLMs IDE-grade code intelligence: symbol-level navigation via LSP, semantic search via embeddings, persistent memory, shell integration, and GitHub integration. Built as a Claude Code companion — 28 tools total.
 
 ## Tech Stack
 - **Language:** Rust (edition 2021, MSRV 1.75)
-- **Async runtime:** tokio (full features)
-- **MCP protocol:** rmcp (Rust MCP SDK) — server, macros, stdio + SSE transport
-- **LSP types:** lsp-types 0.97
-- **AST parsing:** tree-sitter (Rust, Python, Go, TS, Java, Kotlin grammars)
-- **Embedding storage:** rusqlite (bundled) + sqlite-vec for cosine similarity
-- **Embedding backends:** reqwest (remote/Ollama) or fastembed (local ONNX)
-- **Git:** git2 (libgit2 bindings)
-- **CLI:** clap 4 (derive)
-- **Dashboard:** axum 0.8 + tower-http (optional "dashboard" feature)
+- **MCP SDK:** rmcp 0.1 (stdio + SSE transports)
+- **Database:** SQLite (rusqlite bundled + sqlite-vec for cosine similarity)
+- **LSP protocol:** lsp-types 0.97, JSON-RPC over stdio child process
+- **AST:** tree-sitter (Rust, Python, Go, TypeScript, Java, Kotlin)
+- **Async runtime:** Tokio full
+- **Key deps:** git2 (git blame/log), anyhow/thiserror, clap, serde_json, reqwest (remote embeddings), fastembed (local embeddings, optional), axum (dashboard, optional)
+
+## Features (28 tools)
+| Category | Count |
+|---|---|
+| Symbol Navigation (LSP-backed) | 9 |
+| File Operations | 6 |
+| Semantic Search | 2 |
+| Memory | 1 |
+| Workflow (onboarding, run_command) | 2 |
+| Config & Navigation | 3 |
+| GitHub | 5 |
 
 ## Runtime Requirements
-- Rust toolchain (stable, 1.75+)
-- LSP servers for target languages (install via `./scripts/install-lsp.sh`)
-- For semantic search: Ollama with an embedding model, or local-embed feature
-- For dashboard: enabled by default via "dashboard" feature flag
-
-## Feature Flags
-- `remote-embed` (default) — HTTP-based embedding via Ollama/OpenAI API
-- `local-embed` — CPU embedding via fastembed/ONNX
-- `dashboard` (default) — web UI on port 8099
-- `e2e` / `e2e-rust` / `e2e-python` etc. — integration tests requiring real LSP servers
+- Rust toolchain (cargo build)
+- Optional: LSP servers installed per language (rust-analyzer, pyright, etc.) — `./scripts/install-lsp.sh`
+- Optional: Ollama or OpenAI-compatible API for remote embeddings; or fastembed feature for local
+- Dashboard: enabled by default via `dashboard` feature flag

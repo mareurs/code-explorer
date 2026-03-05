@@ -223,7 +223,8 @@ pub fn maybe_migrate_to_vec0(conn: &Connection) -> Result<()> {
 /// Lazily create the `vec_memories` vec0 virtual table for semantic memory
 /// search. Requires `embedding_dims` to be set in the `meta` table (which
 /// happens after the first `build_index` run). Safe to call multiple times
-/// (idempotent) — returns `Ok(())` if dims are unknown or table already exists.
+/// (idempotent) — returns `Ok(())` if the table already exists. Returns a
+/// `RecoverableError` if `embedding_dims` is not yet set.
 pub fn ensure_vec_memories(conn: &Connection) -> Result<()> {
     use rusqlite::OptionalExtension;
 
@@ -241,7 +242,13 @@ pub fn ensure_vec_memories(conn: &Connection) -> Result<()> {
 
     let dims = match get_meta(conn, "embedding_dims")? {
         Some(s) => s.parse::<usize>().unwrap_or(0),
-        None => return Ok(()),
+        None => {
+            return Err(crate::tools::RecoverableError::with_hint(
+                "semantic index not built yet — cannot store memory embeddings",
+                "Run index_project first, then try remember again.",
+            )
+            .into());
+        }
     };
     if dims == 0 {
         return Ok(());
@@ -319,18 +326,16 @@ pub fn search_memories(
         })
     };
 
-    let knn = "SELECT rowid, distance FROM vec_memories \
-               WHERE embedding MATCH vec_f32(?1) ORDER BY distance LIMIT ?2";
-
-    let sel = format!(
-        "SELECT m.id, m.bucket, m.title, m.content, m.created_at, \
-         COALESCE(knn.distance, 1.0) AS distance \
-         FROM memories m JOIN ({knn}) knn ON m.id = knn.rowid"
-    );
-
     match bucket_filter {
         None => {
-            let sql = format!("{sel} ORDER BY distance ASC");
+            let knn = "SELECT rowid, distance FROM vec_memories \
+                       WHERE embedding MATCH vec_f32(?1) ORDER BY distance LIMIT ?2";
+            let sql = format!(
+                "SELECT m.id, m.bucket, m.title, m.content, m.created_at, \
+                 COALESCE(knn.distance, 1.0) AS distance \
+                 FROM memories m JOIN ({knn}) knn ON m.id = knn.rowid \
+                 ORDER BY distance ASC"
+            );
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt
                 .query_map(params![query_blob, limit as i64], map_row)?
@@ -338,10 +343,25 @@ pub fn search_memories(
             Ok(rows)
         }
         Some(bucket) => {
-            let sql = format!("{sel} WHERE m.bucket = ?3 ORDER BY distance ASC");
+            // Over-fetch from KNN (limit * 5) so that post-filtering by bucket
+            // still has enough candidates to fill the requested limit.
+            let inner_limit = (limit * 5) as i64;
+            let knn = "SELECT rowid, distance FROM vec_memories \
+                       WHERE embedding MATCH vec_f32(?1) ORDER BY distance LIMIT ?2";
+            let sql = format!(
+                "SELECT m.id, m.bucket, m.title, m.content, m.created_at, \
+                 COALESCE(knn.distance, 1.0) AS distance \
+                 FROM memories m JOIN ({knn}) knn ON m.id = knn.rowid \
+                 WHERE m.bucket = ?3 \
+                 ORDER BY distance ASC \
+                 LIMIT ?4"
+            );
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt
-                .query_map(params![query_blob, limit as i64, bucket], map_row)?
+                .query_map(
+                    params![query_blob, inner_limit, bucket, limit as i64],
+                    map_row,
+                )?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             Ok(rows)
         }
@@ -350,8 +370,16 @@ pub fn search_memories(
 
 /// Delete a memory from both `vec_memories` and `memories` by id.
 pub fn delete_memory(conn: &Connection, id: i64) -> Result<()> {
-    conn.execute("DELETE FROM vec_memories WHERE rowid = ?1", params![id])?;
     conn.execute("DELETE FROM memories WHERE id = ?1", params![id])?;
+    if conn.changes() == 0 {
+        return Err(crate::tools::RecoverableError::with_hint(
+            format!("memory with id {} not found", id),
+            "Use recall to find memory IDs before deleting.",
+        )
+        .into());
+    }
+    // Then delete from vec_memories (best-effort, may not have embedding)
+    let _ = conn.execute("DELETE FROM vec_memories WHERE rowid = ?1", params![id]);
     Ok(())
 }
 
@@ -2926,14 +2954,19 @@ mod tests {
     }
 
     #[test]
-    fn delete_nonexistent_memory_succeeds() {
+    fn delete_nonexistent_memory_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let conn = open_db(dir.path()).unwrap();
         set_meta(&conn, "embedding_dims", "3").unwrap();
         ensure_vec_memories(&conn).unwrap();
 
-        // Deleting a memory that doesn't exist should not error
+        // Deleting a memory that doesn't exist should return a RecoverableError
         let result = delete_memory(&conn, 99999);
-        assert!(result.is_ok());
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("not found"),
+            "expected 'not found' in error: {err_msg}"
+        );
     }
 }

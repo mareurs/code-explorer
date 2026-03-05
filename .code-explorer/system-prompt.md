@@ -1,35 +1,37 @@
-# code-explorer — Code Explorer Guidance
+# codescout — Code Explorer Guidance
 
 ## Entry Points
-- `src/main.rs` — CLI entry: `Cli` struct, `Commands` enum (Start, Index, Dashboard)
-- `src/server.rs` — MCP server: `CodeExplorerServer`, `run()`, `route_tool_error()`
-- `src/tools/mod.rs` — `Tool` trait (line 167), `ToolContext`, `RecoverableError`
-- `src/agent.rs` — `Agent` orchestrator, `ActiveProject` state
+- `src/server.rs:run()` — tool registration + MCP server startup
+- `src/tools/mod.rs:Tool` (L209) — the central trait every capability implements
+- `src/agent.rs:Agent` — orchestrator holding active project + config
+- `src/tools/` — one file per tool category (file, symbol, semantic, memory, workflow, github, config)
 
 ## Key Abstractions
-- `Tool` trait (`src/tools/mod.rs`) — interface for all 32 tools
-- `OutputGuard` (`src/tools/output.rs:35`) — progressive disclosure: Exploring vs Focused
-- `LspClientOps` / `LspProvider` (`src/lsp/ops.rs`) — testable LSP abstraction
-- `Embedder` trait (`src/embed/mod.rs:33`) — embedding backend abstraction
-- `RecoverableError` (`src/tools/mod.rs:54`) — soft errors with hints
+- **`Tool` trait** (`src/tools/mod.rs:209`) — `name`, `description`, `input_schema`, `async call(Value, &ToolContext)`
+- **`ToolContext`** (`src/tools/mod.rs:47`) — agent + lsp + output_buffer + progress; injected into every call
+- **`Agent`** (`src/agent.rs:33`) — `Arc<RwLock<AgentInner>>`, holds `ActiveProject` (root, config, memory)
+- **`RecoverableError`** (`src/tools/mod.rs:67`) — expected failures → `isError: false`; `anyhow::bail!` → `isError: true`
+- **`OutputGuard`** (`src/tools/output.rs`) — enforces Exploring/Focused mode; do not bypass
 
 ## Search Tips
-- "tool dispatch" or "call_tool" → `src/server.rs`
-- "progressive disclosure" or "output mode" → `src/tools/output.rs`
-- "embedding pipeline" or "semantic index" → `src/embed/`
-- "symbol navigation" or "LSP" → `src/tools/symbol.rs` + `src/lsp/`
-- Avoid: "data", "utils", "handler" (too generic)
+- `semantic_search("progressive disclosure output")` — finds OutputGuard + format patterns
+- `semantic_search("LSP symbol navigation")` — finds symbol.rs tool implementations
+- `semantic_search("embedding index incremental")` — finds embed/ change detection
+- `semantic_search("error routing recoverable")` — finds RecoverableError + route_tool_error
+- Avoid: "tool", "server", "error" alone (too broad); prefer compound terms
 
 ## Navigation Strategy
-1. `read_memory("architecture")` — understand the layer structure
-2. `list_symbols("src/tools/")` — see all tool implementations
-3. For a specific tool: `find_symbol("ToolName", include_body=true)`
-4. For cross-cutting concerns: `semantic_search("your concept")`
-5. For LSP internals: start at `src/lsp/ops.rs` (traits), then `src/lsp/client.rs`
+For any new task:
+1. `memory(action="read", topic="architecture")` — orient
+2. `list_symbols("src/tools/<relevant_file>.rs")` — see what's in the tool file
+3. `semantic_search("your concept")` — find related code
+4. `find_symbol("Name", include_body=true)` — read implementation
+5. Check `docs/TODO-tool-misbehaviors.md` before starting
 
 ## Project Rules
-- Write responses must return `json!("ok")` — never echo content back
-- Use `RecoverableError` for input-driven failures, `anyhow::bail!` for system failures
-- All tools must go through `OutputGuard` for output sizing
-- Read `docs/PROGRESSIVE_DISCOVERABILITY.md` before adding/modifying tools
-- Check/update `docs/TODO-tool-misbehaviors.md` during every work session
+- Read `docs/PROGRESSIVE_DISCOVERABILITY.md` before adding or modifying any tool
+- Write tools must return `json!("ok")` — never echo input back
+- When renaming tools: update all 3 prompt surfaces (`server_instructions.md`, `onboarding_prompt.md`, `build_system_prompt_draft()`)
+- Use `RecoverableError` for bad input; `anyhow::bail!` only for genuine crashes
+- `cargo fmt && cargo clippy -- -D warnings && cargo test` before completing any task
+- Log unexpected tool behavior in `docs/TODO-tool-misbehaviors.md` immediately

@@ -1,15 +1,51 @@
-You have just onboarded this project. Below you'll find pre-gathered context from key project files. Your job is to **synthesize this into 6 memories** using `memory(action: "write", topic: ..., content: ...)`.
+You have just onboarded this project. Your job is to create 6 memories that give future AI sessions deep, accurate knowledge of this codebase — not a surface-level summary of its README.
 
-## Rules
+## ⛔ Phase 1: Explore the Code — REQUIRED BEFORE WRITING ANY MEMORIES
 
-1. **Do NOT duplicate CLAUDE.md** — If CLAUDE.md content is provided below, it's loaded every session automatically. Memories should *supplement* it, not repeat it. If CLAUDE.md already covers dev commands, your `development-commands` memory should only add what's missing.
-2. **Be specific** — Include file paths, exact command names, concrete patterns. "Uses clean architecture" is useless. "api/ → service/ → repository/ with interface+impl pattern" is useful.
-3. **Be concise** — Each memory should be 15–40 lines. Longer means too much detail.
-4. **Explore before writing** — The gathered data gives you a head start, but use codescout tools to verify and fill gaps: `list_symbols("src/")` for architecture, `find_symbol` for key abstractions, `list_symbols` for API surface.
-5. **Confirm with the user** — After creating all 6 memories, summarize what you wrote and ask if anything needs correction.
-6. **Private memories** — Use `memory(action: "write", topic: ..., content: ..., private: true)` for project-local notes that should not appear in system instructions (e.g. personal debugging notes, temporary state). Standard `memory(action: "write", ...)` creates shared memories visible to all agents.
+The gathered data below (README, build config, CLAUDE.md) is a **starting point, not a substitute for exploration**. Memories written from documentation alone are shallow and frequently wrong. Every future session will rely on what you write now.
 
-## Memories to Create
+**Do NOT call `memory(action: "write", ...)` until you have completed the steps below and written the exploration summary.**
+
+### Exploration Steps
+
+Run these in order. They apply to any project.
+
+1. **Map the structure** — Review the detected top-level structure or `list_dir(".")`. Identify: where is source code? tests? architecture docs?
+
+2. **Find key abstractions** — `list_symbols` on the main source directory (e.g. `list_symbols("src/")`). Identify the 3–5 types/traits/classes that appear central.
+
+3. **Read core implementations** — `find_symbol("CoreType", include_body=true)` for 2–3 of those abstractions. Understand how they actually work, not just what they're named.
+
+4. **Trace one data flow** — Follow a representative path through the system (a request, command, event). Use `find_references`, `goto_definition`, or `semantic_search("how X flows")`.
+
+5. **Read architecture docs** — If README or CLAUDE.md references any `docs/ARCHITECTURE.md`, design docs, or ADRs, `read_file` them now.
+
+### Exploration Summary (write this before proceeding)
+
+After completing steps 1–5, write 4–6 sentences covering:
+- What this system does (your own words, not the README's)
+- The 3–5 most important types/modules and their roles
+- How a typical operation flows through the system
+
+**This summary is your gate to Phase 2. If you cannot write it from memory after exploring, you haven't explored enough.**
+
+---
+
+## Phase 2: Write the 6 Memories
+
+Now write the memories. Your Phase 1 exploration should inform every memory — especially `architecture` and `conventions`, which cannot be written accurately from documentation alone.
+
+### Rules
+
+1. **Do NOT duplicate auto-loaded context** — CLAUDE.md, project README, and referenced docs are already available every session. Memories must *supplement* them, not repeat them. If something is already documented, write a pointer (`see CLAUDE.md § Key Patterns`) rather than copying it.
+2. **References over copies — drift is real** — Code and docs change. A memory that copies a code snippet or lists tool names will go stale silently and actively mislead future sessions. Prefer: `"see docs/ARCHITECTURE.md for the layer diagram"` over pasting the diagram. Reserve inline content for things that are NOT documented elsewhere.
+3. **Memories capture gaps, not summaries** — Ask: "Would a future AI session know this from CLAUDE.md, the README, or the referenced docs?" If yes, skip it or point to the source. Only write it if the answer is no.
+4. **Be specific where you do write** — Include file paths, exact command names, concrete patterns. "Uses clean architecture" is useless. "`api/ → service/ → repository/` with interface+impl pattern in `src/`" is useful.
+5. **Be concise** — Each memory should be 15–40 lines. Longer means too much detail or duplication.
+6. **Confirm with the user** — After creating all 6 memories, summarize what you wrote and ask if anything needs correction.
+7. **Private memories** — Use `memory(action: "write", topic: ..., content: ..., private: true)` for project-local notes that should not appear in system instructions (e.g. personal debugging notes, temporary state). Standard `memory(action: "write", ...)` creates shared memories visible to all agents.
+
+### Memories to Create
 
 ### 1. `project-overview`
 
@@ -32,7 +68,7 @@ You have just onboarded this project. Below you'll find pre-gathered context fro
 [What's needed to run: Node 20+, Java 21+, Docker, specific env vars, etc.]
 ```
 
-**Anti-patterns:** Don't list every dependency. Don't include directory listings. Don't copy the README.
+**Anti-patterns:** Don't copy the README or CLAUDE.md. Don't list every dependency — just the ones not obvious from the build file. Don't include directory listings (CLAUDE.md already has the src/ tree). Focus on what's missing from those sources: runtime env requirements, non-obvious feature flags, external service dependencies.
 
 ---
 
@@ -60,7 +96,7 @@ You have just onboarded this project. Below you'll find pre-gathered context fro
 [Only patterns actually in use: DI, repository, event-driven, etc.]
 ```
 
-**Anti-patterns:** Don't list every file. Don't describe standard library types. DO include file paths for every abstraction.
+**Anti-patterns:** Don't repeat what CLAUDE.md's "Project Structure" or "Key Patterns" sections already say — they're loaded every session. Don't copy layer diagrams from `docs/ARCHITECTURE.md`; reference them instead (`see docs/ARCHITECTURE.md`). Focus on what's NOT in those docs: internal struct shapes, concrete data flow with actual function/method names, non-obvious wiring. Inline content here goes stale as code evolves — keep it minimal and specific.
 
 ---
 
@@ -86,7 +122,7 @@ You have just onboarded this project. Below you'll find pre-gathered context fro
 [Framework, organization, how to write a new test]
 ```
 
-**Anti-patterns:** Don't describe language-standard conventions everyone knows. Focus on project-specific conventions.
+**Anti-patterns:** Don't repeat CLAUDE.md's "Design Principles" section (progressive disclosure, no echo, two modes, RecoverableError) — it's already loaded. Don't copy the "Prompt Surface Consistency" or "Testing Patterns" sections either. Reference them: `"see CLAUDE.md § Design Principles"`. Write only conventions that are absent from CLAUDE.md: naming tables, code templates, file organization patterns discovered during exploration.
 
 ---
 
@@ -113,7 +149,7 @@ You have just onboarded this project. Below you'll find pre-gathered context fro
 ...
 ```
 
-**Anti-patterns:** Don't duplicate commands already in CLAUDE.md (reference "see CLAUDE.md" instead). DO include non-obvious gotchas.
+**Anti-patterns:** Don't repeat commands from CLAUDE.md's "Development Commands" section — write `"see CLAUDE.md"` and only add what's missing: feature flags, optional tooling, environment setup not covered there. Don't copy the pre-completion checklist verbatim; CLAUDE.md's "Always run…" line already covers it.
 
 ---
 
@@ -131,7 +167,7 @@ You have just onboarded this project. Below you'll find pre-gathered context fro
 
 **What to include:** Domain model names with specific meaning, project-specific abbreviations, concepts requiring context.
 
-**Anti-patterns:** Don't define standard programming terms (API, REST, ORM). DO define terms used in project-specific ways.
+**Anti-patterns:** Don't define terms that CLAUDE.md already explains (RecoverableError, OutputGuard, the two output modes, three-query sandwich, three prompt surfaces are all in CLAUDE.md). Don't copy definitions from docs — link to them. **Drift risk is high here:** glossary entries that describe specific types or APIs go stale as the code evolves. Prefer: `"OutputGuard — see src/tools/output.rs and CLAUDE.md § Design Principles"` over a full description. Only write inline definitions for concepts that exist nowhere else.
 
 ---
 
@@ -150,7 +186,7 @@ You have just onboarded this project. Below you'll find pre-gathered context fro
 
 **What to include:** Config pitfalls, framework traps, build/test gotchas, flaky tests.
 
-**Anti-patterns:** Don't invent problems that don't exist. If nothing is obvious, write "No known gotchas discovered during onboarding. Update this memory as issues are found."
+**Anti-patterns:** Don't invent problems that don't exist. Don't re-document issues already called out in CLAUDE.md (e.g. worktree `activate_project` requirement, tool misbehavior log — those are in CLAUDE.md already). Gotchas here should be things discovered during exploration that aren't in CLAUDE.md. If nothing new was found, write: "No additional gotchas discovered during onboarding. Update as issues are found." **Note:** gotchas about specific tool behavior or config values are high drift-risk — add a note about where to verify them (e.g. the config file or source line) so they can be checked rather than blindly trusted.
 
 ---
 

@@ -823,19 +823,13 @@ impl Tool for FindSymbol {
                         let sym = if include_body {
                             match validate_symbol_range(&sym) {
                                 Ok(()) => sym,
-                                Err(_) => {
+                                Err(validation_err) => {
                                     match resolve_range_via_document_symbols(&sym, ctx).await {
                                         Some(resolved) => resolved,
                                         None => {
                                             // document_symbols fallback failed too — propagate
-                                            // original error. validate_symbol_range already failed
-                                            // once, but re-run to get the exact error message.
-                                            validate_symbol_range(&sym)?;
-                                            // Defensive: if file changed between calls, bail instead of panic
-                                            anyhow::bail!(RecoverableError::with_hint(
-                                                format!("Could not resolve body range for '{}'", sym.name),
-                                                "Try find_symbol with path= parameter to use document_symbols directly.",
-                                            ));
+                                            // the original validation error captured above.
+                                            return Err(validation_err);
                                         }
                                     }
                                 }

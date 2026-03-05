@@ -62,6 +62,7 @@ src/
 │   ├── library.rs   #   list_libraries
 │   ├── memory.rs    #   memory (action: read/write/list/delete)
 │   ├── ast.rs       #   list_functions, list_docs (not registered; tree-sitter offline tools)
+│   ├── command_summary.rs  #   Smart output summarization, terminal filter detection
 │   └── config.rs    #   activate_project, project_status
 └── util/            # fs helpers, text processing
 ```

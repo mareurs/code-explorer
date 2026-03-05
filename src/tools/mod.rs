@@ -187,6 +187,14 @@ fn floor_char_boundary(s: &str, n: usize) -> usize {
     (0..=n).rev().find(|&i| s.is_char_boundary(i)).unwrap_or(0)
 }
 
+/// Return `&s[..max_bytes]` rounded down to a UTF-8 char boundary.
+///
+/// Safe alternative to `&s[..n]` which panics when `n` falls inside a
+/// multi-byte character.
+pub fn safe_truncate(s: &str, max_bytes: usize) -> &str {
+    &s[..floor_char_boundary(s, max_bytes)]
+}
+
 /// Always appends `"\n… (truncated)"` when content is cut.
 fn truncate_compact(text: &str, soft_max: usize, hard_max: usize) -> String {
     if text.len() <= soft_max {
@@ -753,5 +761,16 @@ mod tests {
         assert_eq!(super::floor_char_boundary(s, 5), 5); // after '─'
         assert_eq!(super::floor_char_boundary(s, 6), 6);
         assert_eq!(super::floor_char_boundary(s, 100), s.len()); // clamp to len
+    }
+
+    #[test]
+    fn safe_truncate_avoids_mid_char_split() {
+        let s = "ab\u{2500}cd"; // 'a'=1, 'b'=1, '\u{2500}'=3 bytes, 'c'=1, 'd'=1
+        assert_eq!(super::safe_truncate(s, 0), "");
+        assert_eq!(super::safe_truncate(s, 2), "ab");
+        assert_eq!(super::safe_truncate(s, 3), "ab"); // inside 3-byte char → round down
+        assert_eq!(super::safe_truncate(s, 4), "ab"); // still inside
+        assert_eq!(super::safe_truncate(s, 5), "ab\u{2500}");
+        assert_eq!(super::safe_truncate(s, 100), s); // clamp to len
     }
 }

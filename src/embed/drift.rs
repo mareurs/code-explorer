@@ -102,47 +102,55 @@ pub fn compute_file_drift(
             "CREATE TEMP TABLE IF NOT EXISTS _drift_old (oi INTEGER, embedding BLOB); \
              DELETE FROM _drift_old;",
         )?;
-        for &oi in &unmatched_old {
-            let blob: Vec<u8> = old_chunks[oi]
-                .embedding
-                .iter()
-                .flat_map(|f| f.to_le_bytes())
-                .collect();
-            conn.execute(
-                "INSERT INTO _drift_old (oi, embedding) VALUES (?1, ?2)",
-                params![oi as i64, blob],
-            )?;
-        }
 
-        // One query per new chunk returns distances to all old chunks.
-        // vec_distance_cosine returns cosine distance ∈ [0,1] (0 = identical);
-        // COALESCE maps NULL (degenerate zero-vector) to 1.0 (maximum distance).
-        let mut pairs: Vec<(usize, usize, f32)> = Vec::new();
-        {
-            let mut stmt = conn.prepare(
-                "SELECT oi, \
-                 COALESCE(vec_distance_cosine(vec_f32(embedding), vec_f32(?1)), 1.0) \
-                 FROM _drift_old",
-            )?;
-            for &ni in &unmatched_new {
-                let b_blob: Vec<u8> = new_chunks[ni]
+        // SG-7: Wrap the query loop in a closure so _drift_old is dropped even
+        // if an early `?` fires. Without this, the temp table leaks on error.
+        let pairs_result = (|| -> Result<Vec<(usize, usize, f32)>> {
+            for &oi in &unmatched_old {
+                let blob: Vec<u8> = old_chunks[oi]
                     .embedding
                     .iter()
                     .flat_map(|f| f.to_le_bytes())
                     .collect();
-                let rows = stmt
-                    .query_map(params![b_blob], |r| {
-                        let oi: i64 = r.get(0)?;
-                        let dist: f64 = r.get(1)?;
-                        Ok((oi as usize, (1.0_f32 - dist as f32).clamp(0.0, 1.0)))
-                    })?
-                    .collect::<rusqlite::Result<Vec<_>>>()?;
-                for (oi, sim) in rows {
-                    pairs.push((oi, ni, sim));
+                conn.execute(
+                    "INSERT INTO _drift_old (oi, embedding) VALUES (?1, ?2)",
+                    params![oi as i64, blob],
+                )?;
+            }
+
+            // One query per new chunk returns distances to all old chunks.
+            // vec_distance_cosine returns cosine distance ∈ [0,1] (0 = identical);
+            // COALESCE maps NULL (degenerate zero-vector) to 1.0 (maximum distance).
+            let mut pairs: Vec<(usize, usize, f32)> = Vec::new();
+            {
+                let mut stmt = conn.prepare(
+                    "SELECT oi, \
+                     COALESCE(vec_distance_cosine(vec_f32(embedding), vec_f32(?1)), 1.0) \
+                     FROM _drift_old",
+                )?;
+                for &ni in &unmatched_new {
+                    let b_blob: Vec<u8> = new_chunks[ni]
+                        .embedding
+                        .iter()
+                        .flat_map(|f| f.to_le_bytes())
+                        .collect();
+                    let rows = stmt
+                        .query_map(params![b_blob], |r| {
+                            let oi: i64 = r.get(0)?;
+                            let dist: f64 = r.get(1)?;
+                            Ok((oi as usize, (1.0_f32 - dist as f32).clamp(0.0, 1.0)))
+                        })?
+                        .collect::<rusqlite::Result<Vec<_>>>()?;
+                    for (oi, sim) in rows {
+                        pairs.push((oi, ni, sim));
+                    }
                 }
             }
-        }
+            Ok(pairs)
+        })();
+        // Always clean up the temp table, even if the query loop failed.
         conn.execute_batch("DROP TABLE IF EXISTS _drift_old")?;
+        let mut pairs = pairs_result?;
 
         // Sort by similarity descending
         pairs.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));

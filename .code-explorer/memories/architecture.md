@@ -1,53 +1,60 @@
-# code-explorer Architecture
+# Architecture
 
 ## Layer Structure
-
 ```
-MCP Layer (rmcp) → 23 registered tools
-        ↓
-Agent / Orchestrator (Arc<RwLock<AgentInner>>)
-Active project state: root, config, memory, library_registry
-        ↓
-LSP Client | AST Engine | Git Engine | Embedding Engine
-        ↓
-Storage: SymbolIndex, EmbeddingIndex (sqlite-vec), MemoryStore, IncrementalCache
+MCP Layer (rmcp)
+  CodeScoutServer (src/server.rs) — ServerHandler impl, tool dispatch, error routing
+      ↓
+Agent / Orchestrator (src/agent.rs)
+  Agent { inner: Arc<RwLock<AgentInner>> } — holds ActiveProject, config, cached embedder
+      ↓ (via ToolContext)
+┌──────────┬──────────┬──────────┬──────────┐
+│ LSP      │ AST      │ Git      │ Embed    │
+│ src/lsp/ │ src/ast/ │ src/git/ │ src/embed│
+└──────────┴──────────┴──────────┴──────────┘
+      ↓
+Storage: .code-explorer/embeddings.db (sqlite-vec), .code-explorer/memories/
 ```
-
-## Tool Registry (23 tools)
-
-| Category | File | Tools |
-|---|---|---|
-| File (6) | `src/tools/file.rs` | read_file, list_dir, search_pattern, create_file, find_file, edit_file |
-| Workflow (2) | `src/tools/workflow.rs` | onboarding, run_command |
-| Symbol (9) | `src/tools/symbol.rs` | find_symbol, list_symbols, goto_definition, hover, find_references, replace_symbol, remove_symbol, insert_code, rename_symbol |
-| Semantic (2) | `src/tools/semantic.rs` | semantic_search, index_project |
-| Library (1) | `src/tools/library.rs` | list_libraries |
-| Memory (1) | `src/tools/memory.rs` | memory (action: read/write/list/delete) |
-| Config (2) | `src/tools/config.rs` | activate_project, project_status |
-
-**Not registered as MCP tools** (internal use):
-- `src/tools/git.rs` — git_blame, file_log (used by dashboard)
-- `src/tools/ast.rs` — list_functions, list_docs (tree-sitter, used internally by symbol tools)
-- `src/tools/usage.rs` — get_usage_stats (surfaced via dashboard only)
 
 ## Key Abstractions
 
-- `Tool` trait (`src/tools/mod.rs:167`) — name, description, input_schema, async call
-- `OutputGuard` (`src/tools/output.rs:35`) — Exploring (compact, ≤200 items) vs Focused (full, paginated)
-- `RecoverableError` (`src/tools/mod.rs:54`) — isError:false + hint; sibling calls not aborted
-- `LspClientOps` / `LspProvider` (`src/lsp/ops.rs`) — testable LSP abstraction
-- `Embedder` trait (`src/embed/mod.rs:33`) — embedding backend abstraction
-- `ProjectStatus` tool — combines old `get_config` + `index_status` + usage summary
+**`Tool` trait** (`src/tools/mod.rs:209`) — Every capability is a struct implementing:
+- `name()`, `description()`, `input_schema()` — MCP registration
+- `async call(Value, &ToolContext) -> Result<Value>` — execution
+- `format_compact()` / `format_for_user_channel()` — output shaping
 
-## Agent Locking
+**`ToolContext`** (`src/tools/mod.rs:47`) — Injected into every tool call:
+- `agent: Arc<Agent>` — project root, config, LSP access
+- `lsp: Arc<LspManager>` — multi-language LSP client pool
+- `output_buffer: Arc<OutputBufferStore>` — @ref handle system
+- `progress: Arc<ProgressReporter>` — streaming progress
 
-`Arc<RwLock<AgentInner>>` — multiple readers OK, exclusive write lock for project switches.
+**`Agent`** (`src/agent.rs:33`) — Central orchestrator, `Arc<RwLock<AgentInner>>` pattern for shared mutable state. Holds `ActiveProject` (path, config, memory store, library registry).
 
-## Error Routing (`src/server.rs`)
+**`CodeScoutServer`** (`src/server.rs:38`) — `rmcp::ServerHandler` impl. Registered `Vec<Arc<dyn Tool>>` dispatched dynamically in `call_tool`. Strips project root from paths in responses (privacy).
 
-- `RecoverableError` → `isError: false` + `{"error":"…","hint":"…"}`
-- `anyhow::bail!` → `isError: true` (fatal)
+**`RecoverableError`** (`src/tools/mod.rs:67`) — Expected, input-driven failures. Routed to `isError: false` with `{"error":"…","hint":"…"}` so sibling parallel tool calls in Claude Code aren't aborted. Use `anyhow::bail!` only for genuine crashes.
 
-## Test Count
+**`OutputGuard`** (`src/tools/output.rs`) — Enforces two-mode output: Exploring (compact, ≤200 items) vs Focused (full, paginated). Not per-tool logic — a shared pattern.
 
-932 tests passing (900 unit + 10 integration + 22 other).
+## Data Flow (typical tool call)
+```
+Claude → MCP request → CodeScoutServer::call_tool
+  → route to Tool impl → Tool::call(params, &ToolContext)
+    → Agent::active_project() → get root/config
+    → LspManager::get_or_start(lang) → JSON-RPC to LSP process
+    → format result via OutputGuard → maybe store in OutputBuffer
+  → strip_project_root_from_result → MCP response → Claude
+```
+
+## Design Patterns
+- **Progressive disclosure**: OutputGuard, compact default, `detail_level: "full"` on demand
+- **No echo in writes**: mutation tools return `json!("ok")` — never reflect back the input
+- **RecoverableError vs bail**: input errors → recoverable; tool crashes → fatal
+- **Three-query sandwich**: cache-invalidation tests need baseline → stale assert → fresh assert
+- **Incremental embedding index**: git diff → mtime → SHA-256 fallback chain
+
+## Entry Points
+- `src/main.rs` — CLI (start, index, dashboard subcommands)
+- `src/server.rs:run()` — starts MCP server, registers all 28 tools
+- `src/tools/mod.rs` — Tool trait + ToolContext + tool registration list

@@ -180,17 +180,16 @@ impl Tool for ProjectStatus {
                             let items: Vec<Value> = rows
                                 .iter()
                                 .map(|r| {
-                                    let mut obj = json!({
-                                        "file_path": r.file_path,
-                                        "avg_drift": r.avg_drift,
-                                        "max_drift": r.max_drift,
-                                    });
+                                    let mut obj = serde_json::Map::new();
+                                    obj.insert("file_path".into(), json!(r.file_path));
+                                    obj.insert("avg_drift".into(), json!(r.avg_drift));
+                                    obj.insert("max_drift".into(), json!(r.max_drift));
                                     if guard.should_include_body() {
                                         if let Some(chunk) = &r.max_drift_chunk {
-                                            obj["max_drift_chunk"] = json!(chunk);
+                                            obj.insert("max_drift_chunk".into(), json!(chunk));
                                         }
                                     }
-                                    obj
+                                    Value::Object(obj)
                                 })
                                 .collect();
                             let (items, overflow) = guard.cap_items(

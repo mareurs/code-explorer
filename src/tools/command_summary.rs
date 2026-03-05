@@ -765,4 +765,11 @@ test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
         let pos = detect_terminal_filter("ls | /usr/bin/grep foo");
         assert!(pos.is_some());
     }
+
+    #[test]
+    fn bash_stderr_pipe_not_treated_as_filter() {
+        // |& is bash's stderr pipe — the & becomes part of the filter name
+        // ("&grep"), which doesn't match any known filter, so correctly returns None
+        assert!(detect_terminal_filter("cmd |& grep foo").is_none());
+    }
 }
