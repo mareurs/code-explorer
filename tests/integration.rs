@@ -620,8 +620,10 @@ async fn integration_read_file_large_then_query_via_buffer() {
     use codescout::tools::file::ReadFile;
     use codescout::tools::workflow::RunCommand;
 
-    // Build a file with 250 lines (above the 200-line FILE_BUFFER_THRESHOLD)
-    let content: String = (1..=250).map(|i| format!("entry {}\n", i)).collect();
+    // Build a file exceeding MAX_INLINE_TOKENS (~10KB)
+    let content: String = (1..=250)
+        .map(|i| format!("entry {:04} {}\n", i, "x".repeat(35)))
+        .collect();
     let (dir, ctx) = project_with_files(&[("big.txt", &content)]).await;
     let path = dir.path().join("big.txt").display().to_string();
 
@@ -639,7 +641,7 @@ async fn integration_read_file_large_then_query_via_buffer() {
     let r2 = RunCommand
         .call(
             json!({
-                "command": format!("grep 'entry 200' {}", file_id),
+                "command": format!("grep 'entry 0200' {}", file_id),
                 "timeout_secs": 10
             }),
             &ctx,
@@ -648,8 +650,8 @@ async fn integration_read_file_large_then_query_via_buffer() {
         .unwrap();
     assert_eq!(r2["exit_code"], 0, "grep should succeed: {r2:?}");
     assert!(
-        r2["stdout"].as_str().unwrap().contains("entry 200"),
-        "grep result should contain 'entry 200': {r2:?}"
+        r2["stdout"].as_str().unwrap().contains("entry 0200"),
+        "grep result should contain 'entry 0200': {r2:?}"
     );
 
     drop(dir);

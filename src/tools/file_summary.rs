@@ -2,8 +2,6 @@ use serde_json::Value;
 
 use crate::tools::RecoverableError;
 
-pub const FILE_BUFFER_THRESHOLD: usize = 200;
-
 pub struct SectionResult {
     pub content: String,
     pub line_range: (usize, usize), // 1-indexed, inclusive

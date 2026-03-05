@@ -266,7 +266,7 @@ impl Tool for ReadFile {
             let result =
                 crate::tools::file_summary::extract_markdown_section(&text, heading_query)?;
             // If extracted section is itself large, buffer it
-            if result.content.lines().count() > crate::tools::file_summary::FILE_BUFFER_THRESHOLD {
+            if crate::tools::exceeds_inline_limit(&result.content) {
                 let file_id = ctx.output_buffer.store_file(
                     resolved.to_string_lossy().to_string(),
                     result.content.clone(),
@@ -371,8 +371,7 @@ impl Tool for ReadFile {
         // No explicit range: buffer large files instead of truncating or erroring
         // If only one bound supplied (degenerate input), skip buffering.
         let has_partial_range = start_line.is_some() || end_line.is_some();
-        let line_count = text.lines().count();
-        if !has_partial_range && line_count > crate::tools::file_summary::FILE_BUFFER_THRESHOLD {
+        if !has_partial_range && crate::tools::exceeds_inline_limit(&text) {
             let file_id = ctx
                 .output_buffer
                 .store_file(resolved.to_string_lossy().to_string(), text.clone());
@@ -433,27 +432,11 @@ impl Tool for ReadFile {
             result["overflow"] = OutputGuard::overflow_json(&overflow);
             Ok(result)
         } else {
-            // Proactive file buffering: if the content would exceed the tool output
-            // buffer threshold, store as @file_* now so start_line/end_line navigation
-            // works correctly. Without this, call_content would store the JSON envelope
-            // as @tool_*, making line-range navigation useless.
-            let json_estimate = text.len() + 30; // overhead for {"content":"...","total_lines":N}
-            if json_estimate > super::TOOL_OUTPUT_BUFFER_THRESHOLD {
-                let file_id = ctx
-                    .output_buffer
-                    .store_file(resolved.to_string_lossy().to_string(), text);
-                let mut result = json!({ "file_id": file_id, "total_lines": total_lines });
-                if source_tag != "project" {
-                    result["source"] = json!(source_tag);
-                }
-                Ok(result)
-            } else {
-                let mut result = json!({ "content": text, "total_lines": total_lines });
-                if source_tag != "project" {
-                    result["source"] = json!(source_tag);
-                }
-                Ok(result)
+            let mut result = json!({ "content": text, "total_lines": total_lines });
+            if source_tag != "project" {
+                result["source"] = json!(source_tag);
             }
+            Ok(result)
         }
     }
 
@@ -1696,12 +1679,14 @@ mod tests {
 
     #[tokio::test]
     async fn read_file_caps_large_file_in_exploring_mode() {
-        // Files > FILE_BUFFER_THRESHOLD (200) lines are now buffered, not capped+overflowed.
+        // Files exceeding MAX_INLINE_TOKENS are buffered, not capped+overflowed.
         // This test verifies the buffer path for a large plain-text file.
         let ctx = test_ctx().await;
         let dir = tempdir().unwrap();
         let file = dir.path().join("big.txt");
-        let content: String = (1..=300).map(|i| format!("line {}\n", i)).collect();
+        let content: String = (1..=300)
+            .map(|i| format!("line {:04} {}\n", i, "x".repeat(30)))
+            .collect();
         std::fs::write(&file, &content).unwrap();
 
         let result = ReadFile
@@ -1719,7 +1704,7 @@ mod tests {
         assert!(file_id.starts_with("@file_"));
         // Full content is stored in the buffer
         let entry = ctx.output_buffer.get(file_id).unwrap();
-        assert!(entry.stdout.contains("line 150"));
+        assert!(entry.stdout.contains("line 0150"));
     }
 
     #[tokio::test]
@@ -2637,7 +2622,9 @@ mod tests {
     async fn read_file_large_file_returns_buffer_ref() {
         let (dir, ctx) = project_ctx().await;
         let path = dir.path().join("big.md");
-        let content: String = (1..=210).map(|i| format!("line {}\n", i)).collect();
+        let content: String = (1..=210)
+            .map(|i| format!("line {:04} {}\n", i, "x".repeat(45)))
+            .collect();
         std::fs::write(&path, &content).unwrap();
         let result = ReadFile
             .call(json!({"file_path": path.to_str().unwrap()}), &ctx)
@@ -2652,7 +2639,7 @@ mod tests {
         );
         assert!(result["hint"].is_null(), "hint field should be absent");
         let entry = ctx.output_buffer.get(file_id).unwrap();
-        assert!(entry.stdout.contains("line 100"));
+        assert!(entry.stdout.contains("line 0100"));
     }
 
     #[tokio::test]
@@ -4311,7 +4298,7 @@ line4"
 
     #[tokio::test]
     async fn read_file_large_content_returns_file_id_not_inline() {
-        // Bug B regression: files > TOOL_OUTPUT_BUFFER_THRESHOLD (5 KB) must return
+        // Bug B regression: files exceeding MAX_INLINE_TOKENS must return
         // a @file_* ref so start_line/end_line navigation works on the plain text,
         // not on a @tool_* JSON envelope.
         let dir = tempdir().unwrap();
@@ -4326,9 +4313,9 @@ line4"
             progress: None,
         };
         let file = dir.path().join("big.md");
-        // Create a file > 5 KB but < 200 lines (the gap where Bug B manifested)
+        // Create a file > 10 KB (exceeds MAX_INLINE_TOKENS)
         let line = "x".repeat(100);
-        let lines: Vec<&str> = std::iter::repeat(line.as_str()).take(60).collect();
+        let lines: Vec<&str> = std::iter::repeat(line.as_str()).take(120).collect();
         std::fs::write(
             &file,
             lines.join(
@@ -4352,6 +4339,73 @@ line4"
         assert!(
             result["content"].is_null(),
             "should NOT have inline content"
+        );
+    }
+
+    #[tokio::test]
+    async fn read_file_small_fat_file_returns_content_inline() {
+        // Regression: a 10-line JSONL file with ~600 bytes/line (~6KB total,
+        // ~1500 tokens) must return content inline, not just a file_id.
+        let ctx = test_ctx().await;
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("data.jsonl");
+        let line = format!(
+            "{{\"id\":1,\"data\":\"{}\"}}\n",
+            "x".repeat(550) // ~570 bytes per line
+        );
+        let content: String = std::iter::repeat(line.as_str()).take(10).collect();
+        assert!(
+            content.len() > 5_000,
+            "test file must exceed old 5KB threshold"
+        );
+        assert!(
+            content.len() / 4 <= crate::tools::MAX_INLINE_TOKENS,
+            "test file must be under new token threshold"
+        );
+        std::fs::write(&file, &content).unwrap();
+
+        let result = ReadFile
+            .call(json!({ "path": file.to_str().unwrap() }), &ctx)
+            .await
+            .unwrap();
+
+        assert!(
+            result.get("content").is_some(),
+            "small file should have inline content; got: {}",
+            serde_json::to_string_pretty(&result).unwrap()
+        );
+        assert!(
+            result.get("file_id").is_none(),
+            "small file should NOT be buffered; got: {}",
+            serde_json::to_string_pretty(&result).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn read_file_large_token_count_is_buffered() {
+        // A file exceeding MAX_INLINE_TOKENS (~2500 tokens, ~10KB) must still
+        // be buffered with a structural summary.
+        let ctx = test_ctx().await;
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("big.py");
+        // 150 lines × 100 bytes = 15KB ≈ 3750 tokens → exceeds limit
+        let line = format!("# {}\n", "x".repeat(95));
+        let content: String = std::iter::repeat(line.as_str()).take(150).collect();
+        assert!(
+            content.len() / 4 > crate::tools::MAX_INLINE_TOKENS,
+            "test file must exceed token threshold"
+        );
+        std::fs::write(&file, &content).unwrap();
+
+        let result = ReadFile
+            .call(json!({ "path": file.to_str().unwrap() }), &ctx)
+            .await
+            .unwrap();
+
+        assert!(
+            result.get("file_id").is_some(),
+            "large file should be buffered; got: {}",
+            serde_json::to_string_pretty(&result).unwrap()
         );
     }
 }
