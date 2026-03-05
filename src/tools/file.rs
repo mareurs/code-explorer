@@ -102,12 +102,33 @@ impl Tool for ReadFile {
                 if let Some(jp) = input["json_path"].as_str() {
                     let (content, type_name, count) =
                         crate::tools::file_summary::extract_json_path(&text, jp)?;
-                    let mut result = json!({
-                        "content": content,
-                        "path": jp,
-                        "type": type_name,
-                        "format": "json",
-                    });
+                    // Large extracted content (e.g. a function body) is stored as a
+                    // plain-text @file_* ref so the agent can grep/browse it without
+                    // triggering another @tool_* re-buffering cycle.
+                    let mut result =
+                        if content.len() > crate::tools::TOOL_OUTPUT_BUFFER_THRESHOLD {
+                            let file_id = ctx
+                                .output_buffer
+                                .store_file(format!("{path}:{jp}"), content);
+                            json!({
+                                "file_id": file_id,
+                                "path": jp,
+                                "type": type_name,
+                                "format": "json",
+                                "hint": format!(
+                                    "Content stored as plain-text @file_* ref. \
+                                     run_command(\"grep pattern {file_id}\") to search, \
+                                     or read_file(\"{file_id}\", start_line=N, end_line=M) to browse."
+                                ),
+                            })
+                        } else {
+                            json!({
+                                "content": content,
+                                "path": jp,
+                                "type": type_name,
+                                "format": "json",
+                            })
+                        };
                     if let Some(c) = count {
                         result["count"] = json!(c);
                     }
@@ -130,7 +151,19 @@ impl Tool for ReadFile {
                     .into());
                 }
                 let content = extract_lines(&text, s as usize, e as usize);
+                // Large extracted sections → @file_* (plain text) so the agent can
+                // grep/browse without a cascading @tool_* chain.
+                if content.len() > crate::tools::TOOL_OUTPUT_BUFFER_THRESHOLD {
+                    let file_id = ctx.output_buffer.store_file(path.to_string(), content);
+                    return Ok(json!({ "file_id": file_id, "total_lines": total_lines }));
+                }
                 return Ok(json!({ "content": content, "total_lines": total_lines }));
+            }
+            // Full content — store as @file_* if large so the agent can navigate it
+            // as plain text rather than triggering another @tool_* re-buffering cycle.
+            if text.len() > crate::tools::TOOL_OUTPUT_BUFFER_THRESHOLD {
+                let file_id = ctx.output_buffer.store_file(path.to_string(), text);
+                return Ok(json!({ "file_id": file_id, "total_lines": total_lines }));
             }
             return Ok(json!({ "content": text, "total_lines": total_lines }));
         }

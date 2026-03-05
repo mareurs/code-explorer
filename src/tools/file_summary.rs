@@ -330,7 +330,15 @@ pub fn extract_json_path(
         })?;
     }
 
-    let pretty = serde_json::to_string_pretty(current).unwrap_or_else(|_| current.to_string());
+    // For string values return the raw content, not the JSON-encoded form.
+    // serde_json::to_string_pretty on Value::String("fn foo(){\n}") produces
+    // "\"fn foo(){\\n}\"" — quoted and with \n escapes — which is unreadable as code.
+    // Returning the raw string means json_path="$.symbols[0].body" gives actual
+    // source lines that can be browsed, grepped, and displayed directly.
+    let pretty = match current {
+        Value::String(s) => s.clone(),
+        _ => serde_json::to_string_pretty(current).unwrap_or_else(|_| current.to_string()),
+    };
     let type_name = json_type_name(current);
     let count = match current {
         Value::Object(m) => Some(m.len()),
