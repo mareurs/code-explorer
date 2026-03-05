@@ -89,7 +89,7 @@ use the right tool. Small shortcuts compound into large context waste.
 ### File I/O
 
 - `read_file(path)` — read a file. Short files return content directly; large files
-  (>200 lines) return a structural summary + `@file_*` ref with line ranges.
+  (~2500+ tokens) return a structural summary + `@file_*` ref with line ranges.
   Navigate into large files by format instead of querying buffers:
   - **Markdown:** summary shows heading tree → `read_file(path, heading="## Section")`
   - **JSON:** summary shows key schema → `read_file(path, json_path="$.key")`

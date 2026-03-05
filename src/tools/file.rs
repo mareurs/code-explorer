@@ -25,7 +25,7 @@ impl Tool for ReadFile {
     }
 
     fn description(&self) -> &str {
-        "Read the contents of a file. Optionally restrict to a line range. Large files (>200 lines) are automatically buffered and returned as a summary + @file_* handle. Use start_line + end_line to read a specific range directly. For symbol-level navigation of source code, prefer symbol tools. Format-aware navigation: use heading for Markdown sections, json_path for JSON subtrees, toml_key for TOML tables or YAML sections."
+        "Read the contents of a file. Optionally restrict to a line range. Large files (~2500+ tokens) are automatically buffered and returned as a summary + @file_* handle. Use start_line + end_line to read a specific range directly. For symbol-level navigation of source code, prefer symbol tools. Format-aware navigation: use heading for Markdown sections, json_path for JSON subtrees, toml_key for TOML tables or YAML sections."
     }
 
     fn input_schema(&self) -> Value {
