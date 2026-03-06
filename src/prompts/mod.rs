@@ -76,6 +76,9 @@ pub fn build_onboarding_prompt(
     ci_files: &[String],
     entry_points: &[String],
     test_dirs: &[String],
+    index_ready: bool,
+    index_files: usize,
+    index_chunks: usize,
 ) -> String {
     let mut prompt = ONBOARDING_PROMPT.to_string();
 
@@ -122,6 +125,15 @@ pub fn build_onboarding_prompt(
                 .collect::<Vec<_>>()
                 .join("\n")
         ));
+    }
+
+    if index_ready {
+        prompt.push_str(&format!(
+            "**Semantic index:** ready ({} files, {} chunks)\n\n",
+            index_files, index_chunks
+        ));
+    } else {
+        prompt.push_str("**Semantic index:** not built\n\n");
     }
 
     prompt
@@ -190,6 +202,7 @@ mod tests {
         assert!(ONBOARDING_PROMPT.contains("gotchas"));
         assert!(ONBOARDING_PROMPT.contains("## Gathered Project Data"));
         // Verify enforcement sections exist
+        assert!(ONBOARDING_PROMPT.contains("## Phase 0: Semantic Index Check"));
         assert!(ONBOARDING_PROMPT.contains("## THE IRON LAW"));
         assert!(ONBOARDING_PROMPT.contains("<HARD-GATE>"));
         assert!(ONBOARDING_PROMPT.contains("## Red Flags"));
@@ -205,6 +218,9 @@ mod tests {
             &[],
             &[],
             &[],
+            false,
+            0,
+            0,
         );
         assert!(result.contains("rust, python"));
         assert!(result.contains("src/"));
@@ -212,7 +228,7 @@ mod tests {
 
     #[test]
     fn build_onboarding_handles_empty() {
-        let result = build_onboarding_prompt(&[], &[], &[], &[], &[], &[]);
+        let result = build_onboarding_prompt(&[], &[], &[], &[], &[], &[], false, 0, 0);
         assert!(result.contains("## Rules"));
         assert!(!result.contains("Detected languages"));
     }
@@ -226,6 +242,9 @@ mod tests {
             &[".github/workflows/ci.yml".into()],
             &["src/main.rs".into()],
             &["tests".into()],
+            false,
+            0,
+            0,
         );
         assert!(result.contains("Cargo.toml"));
         assert!(result.contains("ci.yml"));
@@ -264,5 +283,19 @@ mod tests {
         };
         let result = build_server_instructions(Some(&status));
         assert!(!result.contains("## Custom Instructions"));
+    }
+
+    #[test]
+    fn build_onboarding_shows_index_ready() {
+        let result =
+            build_onboarding_prompt(&["rust".into()], &[], &[], &[], &[], &[], true, 42, 350);
+        assert!(result.contains("Semantic index:** ready (42 files, 350 chunks)"));
+    }
+
+    #[test]
+    fn build_onboarding_shows_index_not_built() {
+        let result =
+            build_onboarding_prompt(&["rust".into()], &[], &[], &[], &[], &[], false, 0, 0);
+        assert!(result.contains("Semantic index:** not built"));
     }
 }

@@ -28,55 +28,6 @@ These gates are non-negotiable. There are no exceptions.
 
 ---
 
-## Phase 0.5: Embedding Model Selection
-
-The `onboarding` tool has already written a recommended model to `.codescout/project.toml`
-based on your system hardware. Present the options to the user now, before indexing starts.
-
-Use the `model_options` array from the Gathered Project Data below to build the menu.
-Use the `hardware` field for the one-line system summary.
-
-Present this to the user:
-
-> **Choose an embedding model for semantic search.**
->
-> Based on your system ({hardware.cpu_cores} CPU cores
-> {if hardware.gpu: ", {hardware.gpu.name}"}
-> {if hardware.ollama_available: ", Ollama running" else: ", no Ollama detected"}):
->
-> 1. ★ `{model_options[0].id}` — {model_options[0].dims}d, {model_options[0].context_tokens}-token context
->    {model_options[0].reason} ← **Recommended**
-> 2. `{model_options[1].id}` — {model_options[1].dims}d, {model_options[1].context_tokens}-token context
->    {model_options[1].reason}
-> 3. `{model_options[2].id}` — {model_options[2].dims}d, {model_options[2].context_tokens}-token context
->    {model_options[2].reason}{if not model_options[2].available: " *(not currently available)*"}
->
-> Press Enter to accept [1], or type 2 or 3 to choose a different model.
-
-Wait for the user's response, then:
-
-- **User presses Enter or types 1:** The config is already correct — proceed to Phase 0.
-- **User types 2:** Call `edit_file` on `.codescout/project.toml`.
-  Change the line `model = "{model_options[0].id}"` to `model = "{model_options[1].id}"`.
-  Confirm the edit, then proceed to Phase 0.
-- **User types 3:** Same as above but use `model_options[2].id`.
-  If `model_options[2].available` is false, remind the user how to enable it
-  (e.g., "install Ollama and run `ollama serve`") before making the edit.
-- **User types a custom model string:** Use that string directly in the `edit_file` call.
-
-**If the user picked a model different from option 1 (i.e. you called `edit_file`):**
-Check whether an existing index is present (see Gathered Project Data → Semantic index).
-If it is, warn the user:
-> "You changed the embedding model. The existing index was built with a different model
-> and must be rebuilt — `semantic_search` will return an error until you do.
-> I'll run `index_project(force: true)` during Phase 0 to rebuild it."
-Then in Phase 0 (index check), always call `index_project(force: true)` instead of
-`index_project({})` when the model was just changed.
-
-Then proceed to Phase 0 (Semantic Index Check).
-
----
-
 ## Phase 0: Semantic Index Check
 
 Check the **Semantic index** line in the Gathered Project Data below.
@@ -534,11 +485,6 @@ After confirming all 6 memories and the system prompt with the user, deliver thi
   4. `find_symbol("Name", include_body=true)` — read the implementation
 
 ---
-
-Finally, inform the user:
-
-> **Onboarding complete.** To activate the new project configuration in this session,
-> restart Claude Code or run `/mcp` to reconnect the MCP server.
 
 ## Gathered Project Data
 
