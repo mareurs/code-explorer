@@ -56,7 +56,7 @@ Preferred behaviors that can be overridden with deliberate reason.
 
 | Default | When it's okay to break it |
 |---|---|
-| Exploring mode (compact output) by default | Only after identifying specific targets via overflow hints |
+| Exploring mode (compact output) by default | Switch to `detail_level: "full"` once you know the specific symbol/file you need |
 | Lazy LSP startup — servers start on first use | Only when diagnostics are needed before the first file edit |
-| `RecoverableError` always includes a `hint` | Only when no corrective action exists for the user |
+| `RecoverableError` prefers a `hint` when a corrective action exists | Omit hint only when there is genuinely no corrective action |
 | Tools live in their category file (`file.rs`, `symbol.rs`, etc.) | Only when a tool genuinely spans multiple categories |
