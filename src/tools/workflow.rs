@@ -401,6 +401,25 @@ impl Tool for Onboarding {
         // Gather rich context from well-known project files
         let gathered = gather_project_context(&root);
 
+        // Probe embedding index status (only opens existing DB, no network)
+        let index_status = {
+            let db_path = root.join(".codescout").join("embeddings.db");
+            if db_path.exists() {
+                match crate::embed::index::open_db(&root)
+                    .and_then(|conn| crate::embed::index::index_stats(&conn))
+                {
+                    Ok(stats) => json!({
+                        "ready": stats.chunk_count > 0,
+                        "files": stats.file_count,
+                        "chunks": stats.chunk_count,
+                    }),
+                    Err(_) => json!({ "ready": false, "files": 0, "chunks": 0 }),
+                }
+            } else {
+                json!({ "ready": false, "files": 0, "chunks": 0 })
+            }
+        };
+
         // Store onboarding result in memory
         let lang_list: Vec<String> = languages.iter().cloned().collect();
         ctx.agent
@@ -439,6 +458,9 @@ impl Tool for Onboarding {
             &gathered.ci_files,
             &gathered.entry_points,
             &gathered.test_dirs,
+            index_status["ready"].as_bool().unwrap_or(false),
+            index_status["files"].as_u64().unwrap_or(0) as usize,
+            index_status["chunks"].as_u64().unwrap_or(0) as usize,
         );
 
         // Build the system prompt draft scaffold
@@ -463,6 +485,7 @@ impl Tool for Onboarding {
             "ci_files": gathered.ci_files,
             "features_md": gathered.features_md,
             "features_suggestion": features_suggestion,
+            "index_status": index_status,
             "instructions": prompt,
             "system_prompt_draft": system_prompt_draft,
         }))

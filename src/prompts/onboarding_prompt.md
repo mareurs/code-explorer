@@ -24,6 +24,53 @@ These gates are non-negotiable. There are no exceptions.
 
 ---
 
+## Phase 0: Semantic Index Check
+
+Check the **Semantic index** line in the Gathered Project Data below.
+
+### If the index is READY:
+
+Announce to the user:
+
+> "Semantic index is ready ({files} files, {chunks} chunks). I'll use
+> `semantic_search` for concept-level exploration in Phase 1."
+
+Proceed to Phase 1.
+
+### If the index is NOT BUILT:
+
+Semantic search is **strongly recommended** for thorough onboarding. Present
+this to the user:
+
+> **Semantic search is not set up yet.**
+>
+> The embedding index powers concept-level code exploration (`semantic_search`),
+> which finds code by meaning — not just by name or text pattern. Without it,
+> onboarding relies on symbol tools and regex search, which work but may miss
+> non-obvious connections.
+>
+> **Options:**
+> 1. **Build now** — I'll call `index_project` and wait for it to finish.
+>    Requires an embedding backend (Ollama is the default — see
+>    `docs/manual/src/configuration/embedding-backends.md` for setup).
+>    Takes 1–5 minutes depending on codebase size.
+> 2. **Build from CLI** — Run `codescout index --project .` in another
+>    terminal, then restart onboarding with `onboarding(force: true)`.
+> 3. **Skip** — Proceed without semantic search. Exploration will use
+>    `search_pattern` (regex) instead of `semantic_search`. You can always
+>    build the index later.
+
+Wait for the user's choice before proceeding.
+
+- **Option 1:** Call `index_project({})`. Poll `index_status({})` every 15
+  seconds until the response shows completion or failure. If it fails, inform
+  the user of the error and fall back to option 3.
+- **Option 2:** Stop and wait for the user to return.
+- **Option 3:** Proceed to Phase 1. Step 6 will use `search_pattern` instead
+  of `semantic_search`.
+
+---
+
 ## Phase 1: Explore the Code
 
 The gathered data below (README, build config, CLAUDE.md) is a **starting point, not a
