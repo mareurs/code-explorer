@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde_json::{json, Value};
 
-use super::{Tool, ToolContext};
+use super::{parse_bool_param, Tool, ToolContext};
 
 pub struct ListLibraries;
 
@@ -89,7 +89,7 @@ impl Tool for IndexLibrary {
 
     async fn call(&self, input: Value, ctx: &ToolContext) -> Result<Value> {
         let name = super::require_str_param(&input, "name")?;
-        let force = input["force"].as_bool().unwrap_or(false);
+        let force = parse_bool_param(&input["force"]);
 
         let (root, lib_path) = {
             let inner = ctx.agent.inner.read().await;

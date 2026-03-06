@@ -8,7 +8,7 @@ use crate::tools::RecoverableError;
 
 use super::format::{format_line_range, format_overflow};
 use super::output::{OutputGuard, OutputMode, OverflowInfo};
-use super::{Tool, ToolContext};
+use super::{parse_bool_param, Tool, ToolContext};
 use crate::ast;
 use crate::lsp::SymbolInfo;
 
@@ -376,7 +376,7 @@ impl Tool for ListSymbols {
         let rel_path = get_path_param(&input, false)?.unwrap_or(".");
         let depth = input["depth"].as_u64().unwrap_or(1) as usize;
         let guard = OutputGuard::from_input(&input);
-        let include_docs = input["include_docs"].as_bool().unwrap_or(false);
+        let include_docs = parse_bool_param(&input["include_docs"]);
         let _scope = crate::library::scope::Scope::parse(input["scope"].as_str());
 
         // Helper: collect docstrings for a file path as a JSON array
@@ -710,6 +710,7 @@ impl Tool for FindSymbol {
 
         let include_body = input["include_body"]
             .as_bool()
+            .or_else(|| input["include_body"].as_str().and_then(|s| s.parse().ok()))
             .unwrap_or_else(|| guard.should_include_body());
         let depth = input["depth"].as_u64().unwrap_or(0) as usize;
         let _scope = crate::library::scope::Scope::parse(input["scope"].as_str());

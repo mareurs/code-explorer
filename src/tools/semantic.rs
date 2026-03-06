@@ -1,7 +1,7 @@
 //! Semantic search tools backed by the embedding index.
 
 use super::format::format_overflow;
-use super::{Tool, ToolContext};
+use super::{parse_bool_param, Tool, ToolContext};
 use serde_json::{json, Value};
 
 pub struct SemanticSearch;
@@ -52,7 +52,7 @@ impl Tool for SemanticSearch {
 
         let query = super::require_str_param(&input, "query")?;
         let limit = input["limit"].as_u64().unwrap_or(10) as usize;
-        let include_memories = input["include_memories"].as_bool().unwrap_or(false);
+        let include_memories = parse_bool_param(&input["include_memories"]);
         let guard = OutputGuard::from_input(&input);
 
         let (root, model) = {
@@ -215,7 +215,7 @@ impl Tool for IndexProject {
 
         // Library scope: delegate to library indexing logic (replaces index_library tool)
         if let Some(lib_name) = scope_str.strip_prefix("lib:") {
-            let force = input["force"].as_bool().unwrap_or(false);
+            let force = parse_bool_param(&input["force"]);
 
             let (root, lib_path) = {
                 let inner = ctx.agent.inner.read().await;
@@ -269,7 +269,7 @@ impl Tool for IndexProject {
             }));
         }
 
-        let force = input["force"].as_bool().unwrap_or(false);
+        let force = parse_bool_param(&input["force"]);
         let root = ctx.agent.require_project_root().await?;
 
         // Guard against concurrent runs.

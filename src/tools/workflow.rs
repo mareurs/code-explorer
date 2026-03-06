@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use super::{Tool, ToolContext};
+use super::{parse_bool_param, Tool, ToolContext};
 use serde_json::{json, Value};
 
 pub struct Onboarding;
@@ -291,7 +291,7 @@ impl Tool for Onboarding {
     }
     async fn call(&self, input: Value, ctx: &ToolContext) -> anyhow::Result<Value> {
         let root = ctx.agent.require_project_root().await?;
-        let force = input["force"].as_bool().unwrap_or(false);
+        let force = parse_bool_param(&input["force"]);
 
         // If already onboarded and not forced, return status instead of re-scanning
         if !force {
@@ -475,8 +475,11 @@ impl Tool for Onboarding {
     ) -> anyhow::Result<Vec<rmcp::model::Content>> {
         let val = self.call(input, ctx).await?;
 
-        // The "already onboarded" path returns a plain string message.
-        if let Some(msg) = val.as_str() {
+        // The "already onboarded" path returns a JSON object with "onboarded": true
+        // and a "message" field containing the memory listing and guidance.
+        // (The previous `val.as_str()` guard was stale — call() never returns a bare string.)
+        if val["onboarded"].as_bool().unwrap_or(false) {
+            let msg = val["message"].as_str().unwrap_or("Already onboarded.");
             return Ok(vec![rmcp::model::Content::text(msg.to_string())]);
         }
 
@@ -556,8 +559,8 @@ impl Tool for RunCommand {
             serde_json::Value::String(s) => s.parse::<u64>().unwrap_or(30),
             _ => 30,
         };
-        let acknowledge_risk = input["acknowledge_risk"].as_bool().unwrap_or(false);
-        let run_in_background = input["run_in_background"].as_bool().unwrap_or(false);
+        let acknowledge_risk = parse_bool_param(&input["acknowledge_risk"]);
+        let run_in_background = parse_bool_param(&input["run_in_background"]);
         let cwd_param = input["cwd"].as_str();
         let root = ctx.agent.require_project_root().await?;
         let security = ctx.agent.security_config().await;
@@ -1369,6 +1372,51 @@ mod tests {
         assert!(result["onboarded"].as_bool().unwrap_or(false));
         assert!(result["private_memories"].is_null());
         assert!(!result["message"].as_str().unwrap().contains("private"));
+    }
+
+    #[tokio::test]
+    async fn onboarding_call_content_delivers_message_when_already_done() {
+        let (_dir, ctx) = project_ctx().await;
+        // First call does full onboarding (creates config + writes memory)
+        Onboarding.call(json!({}), &ctx).await.unwrap();
+
+        // Second call (no force) — call_content must deliver the message, not "[?]"
+        let content = Onboarding.call_content(json!({}), &ctx).await.unwrap();
+        assert_eq!(content.len(), 1);
+        let text = content[0].as_text().map(|t| t.text.as_str()).unwrap_or("");
+        assert!(
+            text.contains("already performed"),
+            "expected already-onboarded message, got: {text:?}"
+        );
+        assert!(
+            text.contains("onboarding"),
+            "expected memory list in message, got: {text:?}"
+        );
+        assert!(
+            !text.contains("[?]"),
+            "call_content must not emit [?] placeholder, got: {text:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn onboarding_call_content_force_delivers_instructions() {
+        let (_dir, ctx) = project_ctx().await;
+
+        // force=true must always deliver the full instructions, never "[?]"
+        let content = Onboarding
+            .call_content(json!({ "force": true }), &ctx)
+            .await
+            .unwrap();
+        assert_eq!(content.len(), 1);
+        let text = content[0].as_text().map(|t| t.text.as_str()).unwrap_or("");
+        assert!(
+            text.contains("## Rules") || text.contains("## Memories to Create"),
+            "force=true must deliver full onboarding instructions, got: {text:?}"
+        );
+        assert!(
+            !text.contains("[?]"),
+            "call_content must not emit [?] placeholder, got: {text:?}"
+        );
     }
 
     #[cfg(unix)]

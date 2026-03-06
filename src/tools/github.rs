@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::process::Command;
 
-use crate::tools::{RecoverableError, Tool, ToolContext};
+use crate::tools::{parse_bool_param, RecoverableError, Tool, ToolContext};
 
 // ── Shared execution ──────────────────────────────────────────────────────────
 
@@ -579,7 +579,7 @@ impl Tool for GithubPr {
                 } else {
                     args.extend(["--body", ""]);
                 }
-                if params["draft"].as_bool().unwrap_or(false) {
+                if parse_bool_param(&params["draft"]) {
                     args.push("--draft");
                 }
                 let out = run_gh(&args).await?;
@@ -1061,7 +1061,7 @@ impl Tool for GithubRepo {
                     "--json",
                     "name,url,description,visibility",
                 ];
-                if params["private"].as_bool().unwrap_or(false) {
+                if parse_bool_param(&params["private"]) {
                     args.push("--private");
                 } else {
                     args.push("--public");

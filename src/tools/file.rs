@@ -4,7 +4,7 @@ use anyhow::Result;
 use serde_json::{json, Value};
 
 use super::format::format_overflow;
-use super::{RecoverableError, Tool, ToolContext};
+use super::{parse_bool_param, RecoverableError, Tool, ToolContext};
 use crate::util::text::extract_lines;
 
 /// Parse a JSON value as u64, accepting both numbers and numeric strings.
@@ -484,7 +484,7 @@ impl Tool for ListDir {
             project_root.as_deref(),
             &security,
         )?;
-        let recursive = input["recursive"].as_bool().unwrap_or(false);
+        let recursive = parse_bool_param(&input["recursive"]);
         let max_depth = if recursive { None } else { Some(1) };
         let guard = OutputGuard::from_input(&input);
 
@@ -1369,7 +1369,7 @@ impl Tool for EditFile {
         super::guard_worktree_write(ctx).await?;
         let path = super::require_str_param(&input, "path")?;
         let new_string = input["new_string"].as_str().unwrap_or("");
-        let acknowledge_risk = input["acknowledge_risk"].as_bool().unwrap_or(false);
+        let acknowledge_risk = parse_bool_param(&input["acknowledge_risk"]);
 
         // Dispatch @ack_* handle for a previously deferred multi-line source edit.
         if path.starts_with("@ack_") {
@@ -1412,7 +1412,7 @@ impl Tool for EditFile {
         }
 
         let old_string = super::require_str_param(&input, "old_string")?;
-        let replace_all = input["replace_all"].as_bool().unwrap_or(false);
+        let replace_all = parse_bool_param(&input["replace_all"]);
 
         if old_string.is_empty() {
             return Err(super::RecoverableError::with_hint(

@@ -1,6 +1,6 @@
 //! Memory tools: persistent per-project knowledge store.
 
-use super::{RecoverableError, Tool, ToolContext};
+use super::{parse_bool_param, RecoverableError, Tool, ToolContext};
 use serde_json::{json, Value};
 
 pub struct WriteMemory;
@@ -34,7 +34,7 @@ impl Tool for WriteMemory {
     async fn call(&self, input: Value, ctx: &ToolContext) -> anyhow::Result<Value> {
         let topic = super::require_str_param(&input, "topic")?;
         let content = super::require_str_param(&input, "content")?;
-        let private = input["private"].as_bool().unwrap_or(false);
+        let private = parse_bool_param(&input["private"]);
         ctx.agent
             .with_project(|p| {
                 if private {
@@ -71,7 +71,7 @@ impl Tool for ReadMemory {
     }
     async fn call(&self, input: Value, ctx: &ToolContext) -> anyhow::Result<Value> {
         let topic = super::require_str_param(&input, "topic")?;
-        let private = input["private"].as_bool().unwrap_or(false);
+        let private = parse_bool_param(&input["private"]);
         ctx.agent
             .with_project(|p| {
                 let store = if private {
@@ -117,7 +117,7 @@ impl Tool for ListMemories {
         })
     }
     async fn call(&self, input: Value, ctx: &ToolContext) -> anyhow::Result<Value> {
-        let include_private = input["include_private"].as_bool().unwrap_or(false);
+        let include_private = parse_bool_param(&input["include_private"]);
         ctx.agent
             .with_project(|p| {
                 if include_private {
@@ -199,7 +199,7 @@ impl Tool for DeleteMemory {
     }
     async fn call(&self, input: Value, ctx: &ToolContext) -> anyhow::Result<Value> {
         let topic = super::require_str_param(&input, "topic")?;
-        let private = input["private"].as_bool().unwrap_or(false);
+        let private = parse_bool_param(&input["private"]);
         ctx.agent
             .with_project(|p| {
                 if private {
@@ -339,7 +339,7 @@ impl Tool for Memory {
             "write" => {
                 let topic = super::require_str_param(&input, "topic")?;
                 let content = super::require_str_param(&input, "content")?;
-                let private = input["private"].as_bool().unwrap_or(false);
+                let private = parse_bool_param(&input["private"]);
 
                 // Write markdown file (existing behavior)
                 ctx.agent
@@ -364,7 +364,7 @@ impl Tool for Memory {
             }
             "read" => {
                 let topic = super::require_str_param(&input, "topic")?;
-                let private = input["private"].as_bool().unwrap_or(false);
+                let private = parse_bool_param(&input["private"]);
                 ctx.agent
                     .with_project(|p| {
                         let store = if private {
@@ -384,7 +384,7 @@ impl Tool for Memory {
                     .await
             }
             "list" => {
-                let include_private = input["include_private"].as_bool().unwrap_or(false);
+                let include_private = parse_bool_param(&input["include_private"]);
                 ctx.agent
                     .with_project(|p| {
                         if include_private {
@@ -397,7 +397,7 @@ impl Tool for Memory {
             }
             "delete" => {
                 let topic = super::require_str_param(&input, "topic")?;
-                let private = input["private"].as_bool().unwrap_or(false);
+                let private = parse_bool_param(&input["private"]);
 
                 // Delete markdown file (existing behavior)
                 ctx.agent

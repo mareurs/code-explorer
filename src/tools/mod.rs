@@ -151,6 +151,17 @@ pub fn require_u64_param(input: &serde_json::Value, name: &str) -> anyhow::Resul
     .into())
 }
 
+/// Parse a boolean parameter from a JSON `Value`.
+///
+/// MCP clients (including Claude Code) may serialize boolean parameters as
+/// JSON strings (`"true"` / `"false"`) rather than native JSON booleans.
+/// This helper accepts both representations, defaulting to `false`.
+pub fn parse_bool_param(val: &serde_json::Value) -> bool {
+    val.as_bool()
+        .or_else(|| val.as_str().and_then(|s| s.parse::<bool>().ok()))
+        .unwrap_or(false)
+}
+
 /// Block write operations when git worktrees exist but the agent hasn't
 /// explicitly called `activate_project` to confirm which project to write to.
 ///
@@ -328,6 +339,21 @@ mod tests {
         fn _check_progress_field_type(_ctx: &ToolContext) {
             let _p: &Option<std::sync::Arc<progress::ProgressReporter>> = &_ctx.progress;
         }
+    }
+
+    #[test]
+    fn parse_bool_param_handles_all_variants() {
+        use serde_json::json;
+        // Native JSON booleans
+        assert!(parse_bool_param(&json!(true)));
+        assert!(!parse_bool_param(&json!(false)));
+        // String booleans (sent by Claude Code MCP client)
+        assert!(parse_bool_param(&json!("true")));
+        assert!(!parse_bool_param(&json!("false")));
+        // Missing / null / wrong type → false
+        assert!(!parse_bool_param(&json!(null)));
+        assert!(!parse_bool_param(&json!(42)));
+        assert!(!parse_bool_param(&json!("yes")));
     }
 
     #[test]
