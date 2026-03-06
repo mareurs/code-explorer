@@ -80,11 +80,6 @@ impl Tool for ProjectStatus {
                     "type": "string",
                     "enum": ["exploring", "full"],
                     "description": "Drift output detail. 'full' includes most-drifted chunk content."
-                },
-                "window": {
-                    "type": "string",
-                    "enum": ["1h", "24h", "7d", "30d"],
-                    "description": "Time window for usage stats. Default: 30d."
                 }
             }
         })
@@ -141,10 +136,15 @@ impl Tool for ProjectStatus {
                         "model": stats.model,
                     });
                     if let Some(s) = staleness {
-                        if s.stale {
-                            index_section["stale"] = json!(true);
-                            index_section["behind_commits"] = json!(s.behind_commits);
-                        }
+                        index_section["git_sync"] = if s.stale {
+                            json!({
+                                "status": "behind",
+                                "behind_commits": s.behind_commits,
+                                "note": "Recent commits are not yet indexed. All previously indexed code is still queryable."
+                            })
+                        } else {
+                            json!({ "status": "up_to_date" })
+                        };
                     }
 
                     // Drift — only if threshold or path param provided
@@ -210,19 +210,6 @@ impl Tool for ProjectStatus {
                 _ => {
                     result["index"] = json!({ "indexed": false, "error": "failed to read index" });
                 }
-            }
-        }
-
-        // --- Usage section ---
-        let window = input["window"].as_str().unwrap_or("30d");
-        match crate::usage::db::open_db(&root)
-            .and_then(|conn| crate::usage::db::query_stats(&conn, window))
-        {
-            Ok(stats) => {
-                result["usage"] = serde_json::to_value(stats).unwrap_or(json!(null));
-            }
-            Err(_) => {
-                result["usage"] = json!({ "window": window, "by_tool": [] });
             }
         }
 
@@ -371,7 +358,6 @@ mod tests {
         assert!(result["project_root"].is_string(), "missing project_root");
         assert!(result["config"].is_object(), "missing config section");
         assert!(result.get("index").is_some(), "missing index section");
-        assert!(result.get("usage").is_some(), "missing usage section");
         assert!(
             result.get("libraries").is_some(),
             "missing libraries section"

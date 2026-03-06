@@ -167,12 +167,14 @@ impl Tool for SemanticSearch {
         if let Some(ov) = overflow {
             result["overflow"] = OutputGuard::overflow_json(&ov);
         }
-        // Check index freshness
+        // Check index freshness — framed as informational, not a quality signal
         if let Some(staleness) = staleness {
             if staleness.stale {
-                result["stale"] = json!(true);
-                result["behind_commits"] = json!(staleness.behind_commits);
-                result["hint"] = json!("Index is behind HEAD. Run index_project to update.");
+                result["git_sync"] = json!({
+                    "status": "behind",
+                    "behind_commits": staleness.behind_commits,
+                    "note": "Recent commits not yet indexed — run index_project to include new code. Existing results are unaffected."
+                });
             }
         }
         Ok(result)
@@ -421,6 +423,7 @@ impl Tool for IndexStatus {
         // Build base response
         let mut result = json!({
             "indexed": true,
+            "queryable": true,
             "configured_model": model,
             "indexed_with_model": stats.model,
             "indexed_at": stats.indexed_at,
@@ -431,12 +434,17 @@ impl Tool for IndexStatus {
             "by_source": by_source_json,
         });
 
-        // Add staleness info
+        // Git-sync info — framed as informational, not a quality signal
         if let Some(staleness) = staleness {
-            result["stale"] = json!(staleness.stale);
-            if staleness.stale {
-                result["behind_commits"] = json!(staleness.behind_commits);
-            }
+            result["git_sync"] = if staleness.stale {
+                json!({
+                    "status": "behind",
+                    "behind_commits": staleness.behind_commits,
+                    "note": "Recent commits are not yet indexed. All previously indexed code is still queryable — run index_project to include new code."
+                })
+            } else {
+                json!({ "status": "up_to_date" })
+            };
             if let Some(commit) = last_commit {
                 result["last_indexed_commit"] = json!(commit);
             }
@@ -491,7 +499,11 @@ impl Tool for IndexStatus {
                 let (items, overflow) =
                     guard.cap_items(items, "Use detail_level='full' with offset for pagination");
                 let total = overflow.as_ref().map_or(items.len(), |o| o.total);
-                let mut drift_result = json!({ "results": items, "total": total });
+                let mut drift_result = json!({
+                    "note": "Drift scores are informational — they do not affect query results. High drift means code has changed since indexing; run index_project to update.",
+                    "results": items,
+                    "total": total,
+                });
                 if let Some(ov) = overflow {
                     drift_result["overflow"] = OutputGuard::overflow_json(&ov);
                 }
@@ -633,16 +645,13 @@ fn format_semantic_search(val: &Value) -> String {
         }
     }
 
-    // Staleness warning
-    if val["stale"].as_bool() == Some(true) {
+    // Git sync info (informational only — does not affect result quality)
+    if val["git_sync"]["status"].as_str() == Some("behind") {
         out.push('\n');
-        let behind = val["behind_commits"].as_u64();
-        if let Some(n) = behind {
+        if let Some(n) = val["git_sync"]["behind_commits"].as_u64() {
             out.push_str(&format!(
-                "\n  Index is {n} commits behind HEAD — run index_project to refresh"
+                "\n  {n} commits not yet indexed (results still valid — run index_project to include new code)"
             ));
-        } else if let Some(hint) = val["hint"].as_str() {
-            out.push_str(&format!("\n  {hint}"));
         }
     }
 
@@ -668,7 +677,7 @@ fn format_index_status(result: &Value) -> String {
     let files = result["file_count"].as_u64().unwrap_or(0);
     let chunks = result["chunk_count"].as_u64().unwrap_or(0);
 
-    let mut out = format!("{files} files · {chunks} chunks");
+    let mut out = format!("good · queryable · {files} files · {chunks} chunks");
 
     if let Some(model) = result["indexed_with_model"].as_str() {
         out.push_str(&format!(" · {model}"));
@@ -676,11 +685,14 @@ fn format_index_status(result: &Value) -> String {
     if let Some(ts) = result["indexed_at"].as_str() {
         out.push_str(&format!(" · {ts}"));
     }
-    if result["stale"].as_bool().unwrap_or(false) {
-        if let Some(behind) = result["behind_commits"].as_u64().filter(|&n| n > 0) {
-            out.push_str(&format!(" · {behind} commits behind"));
-        } else {
-            out.push_str(" · stale");
+    if result["git_sync"]["status"].as_str() == Some("behind") {
+        if let Some(behind) = result["git_sync"]["behind_commits"]
+            .as_u64()
+            .filter(|&n| n > 0)
+        {
+            out.push_str(&format!(
+                " · {behind} commits not yet indexed (queryable, run index_project to catch up)"
+            ));
         }
     }
     out
@@ -925,7 +937,7 @@ mod tests {
 
         let result = IndexStatus.call(json!({}), &ctx).await.unwrap();
         assert_eq!(result["indexed"], true);
-        assert_eq!(result["stale"], true);
+        assert_eq!(result["git_sync"]["status"], "behind");
     }
 
     #[tokio::test]
@@ -1141,12 +1153,10 @@ mod tests {
                 }
             ],
             "total": 1,
-            "stale": true,
-            "behind_commits": 5,
-            "hint": "Index is behind HEAD. Run index_project to update."
+            "git_sync": { "status": "behind", "behind_commits": 5 }
         });
         let result = format_semantic_search(&val);
-        assert!(result.contains("5 commits behind HEAD"));
+        assert!(result.contains("5 commits not yet indexed"));
         assert!(result.contains("index_project"));
     }
 
@@ -1227,7 +1237,7 @@ mod tests {
             "indexed": true,
             "file_count": 42,
             "chunk_count": 1234,
-            "stale": false,
+            "git_sync": { "status": "up_to_date" },
             "indexed_with_model": "text-embedding-3-small",
             "indexed_at": "2026-03-01 14:22"
         });
@@ -1256,13 +1266,12 @@ mod tests {
             "indexed": true,
             "file_count": 10,
             "chunk_count": 100,
-            "stale": true,
-            "behind_commits": 5
+            "git_sync": { "status": "behind", "behind_commits": 5 }
         });
         let out = format_index_status(&result);
         assert!(
-            out.contains("5 commits behind") || out.contains("stale"),
-            "should note staleness, got: {out}"
+            out.contains("5 commits not yet indexed"),
+            "should note git sync lag, got: {out}"
         );
     }
 
