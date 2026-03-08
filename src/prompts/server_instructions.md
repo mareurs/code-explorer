@@ -276,3 +276,4 @@ Instructions" — project-specific guidance. Edit the file to customize AI behav
 7. **Buffer queries: run targeted, don't pipe.** `grep pattern @cmd_id` — never `grep @ref | head`.
 8. **Check `features_md` from `onboarding` before suggesting features.** Don't propose work that's already done.
 9. **Semantic search for "how does X work?"** Then drill into results with symbol tools.
+10. **Read `language-patterns` memory before writing or editing code.** `memory(action="read", topic="language-patterns")` contains per-language anti-patterns and correct patterns. Consult it before code changes or code review.
