@@ -15,15 +15,15 @@ hash = "f8bd350865ad227ddd3920bd7a9ff4814ab2775dad2956f985cc9b842b715a0a"
 
 [[anchors]]
 path = "src/tools/mod.rs"
-hash = "f1e2f174fed3ae0d6f1625396a850afa9b0dbc270f4633b547dec3cab384ef6b"
+hash = "377c1872a3b56180c6c7b8ba7c7f618ffeaeaf20a398fafc93ad3d5463d931a6"
 
 [[anchors]]
 path = "CLAUDE.md"
-hash = "c9db2adf73f0c1c0bbe795552dca47d06811890cb209e391ab605fa7eec9ca60"
+hash = "1721105bda131b1c79fd2d1bc8e16fc3c3feb420363e5e3a003a33ec226a44f1"
 
 [[anchors]]
 path = "src/tools/output_buffer.rs"
-hash = "9a91d9b4ba6de8e4037fecc75bd2e5f693875763ed68aabe56a3e0688bf14abf"
+hash = "ac0e06b62cf6a373e013c0a6cbb9446dc4bd020c2eb675d98df91fa7c61d867a"
 
 [[anchors]]
 path = "src/lsp/ops.rs"
@@ -35,15 +35,15 @@ hash = "62dd7301d973ea92cc3952899f831ccbbf69684a097873ce174907054c162eca"
 
 [[anchors]]
 path = "src/tools/github.rs"
-hash = "252731db80a2295265b4e84fe245c1d2ba046a3924901839660849ce68a4194b"
+hash = "49f6b306ee00ed12831121494b378a06be0ea71e5d9a2584a3390341513724bf"
 
 [[anchors]]
 path = "src/tools/workflow.rs"
-hash = "d366e5dcbbc4ca1ac49367c0865bd0cd6da9592265b1040c60a810a0ceb13d5a"
+hash = "54279ef96a655e3353d635134aa66eb818fa44da56f8767b645ab2e6e69a0f8f"
 
 [[anchors]]
 path = "src/agent.rs"
-hash = "6f6e5583346b976f1220fb9ff72704704085b05bbe28275ee464923f98c4a470"
+hash = "026c6f369a00e828f684247f2e5ee12a1e2b222bb2ea77e30c07d134058d498e"
 
 [[anchors]]
 path = "src/library/scope.rs"
@@ -55,8 +55,8 @@ hash = "72cb96da5382cf70741ed8a61914e9eed3691497ffb101f2a9b85d91d5eefb86"
 
 [[anchors]]
 path = "src/server.rs"
-hash = "714c96597b563cc0230c96becd8d9d5d0ff4f851b8df74c4321e00192c1c23a3"
+hash = "87020732fd7e394c24f349ed16174d01402aae524f6dbd5be797bb580ba11c6f"
 
 [[anchors]]
 path = "src/memory/anchors.rs"
-hash = "66965ddc949b1fbc476b808b59ea45f2936526dce34b9acc157e67caa4ebc1fb"
+hash = "6a1cb7f0ce153ef8ec1b311a3ce16d56f2b09e4c4246118ff58856c6b6451eed"

@@ -7,7 +7,7 @@ hash = "2d3905cf6291850ad9558b28c370cb4f1d40a165c9ff7ff6c49a1a335831945c"
 
 [[anchors]]
 path = "src/server.rs"
-hash = "714c96597b563cc0230c96becd8d9d5d0ff4f851b8df74c4321e00192c1c23a3"
+hash = "87020732fd7e394c24f349ed16174d01402aae524f6dbd5be797bb580ba11c6f"
 
 [[anchors]]
 path = "src/util/path_security.rs"
@@ -15,7 +15,7 @@ hash = "609ed6259202e32a962b83366369941e67808813e91e7e77943e7cbd25112537"
 
 [[anchors]]
 path = "src/tools/mod.rs"
-hash = "f1e2f174fed3ae0d6f1625396a850afa9b0dbc270f4633b547dec3cab384ef6b"
+hash = "377c1872a3b56180c6c7b8ba7c7f618ffeaeaf20a398fafc93ad3d5463d931a6"
 
 [[anchors]]
 path = "src/tools/output.rs"
@@ -23,16 +23,16 @@ hash = "e2919dd4da190482be369fe972f3666cfc58aa1f329ce78451e85df9d6f4a2f8"
 
 [[anchors]]
 path = "src/lsp/manager.rs"
-hash = "e2f6d02eabc1899d0f40fd0427f0f78481082b6cabe7392e4d75278285e19ba8"
+hash = "1481d5551e40220427b1130c5df8c3803e14c85d2723dd73c639c50c9b5a0fbd"
 
 [[anchors]]
 path = "src/embed/index.rs"
-hash = "021b2d0a2fc0d5e35e6ffbd9108549269a85376aae9f69cedd197215b204c289"
+hash = "2103c1f6a0d32b55bc7dbaf817b029716de36373ae702e884b3a2ca7b431b298"
 
 [[anchors]]
 path = ".codescout/embeddings.db"
-hash = "8345b10d0e27a48379731074478436b1a0ad35476e35a29ce0328547fc56be28"
+hash = "76539d57fc465232f635a1e01e8b7a6a044291b1be7595f3d25d4ecc3c818d17"
 
 [[anchors]]
 path = "CLAUDE.md"
-hash = "c9db2adf73f0c1c0bbe795552dca47d06811890cb209e391ab605fa7eec9ca60"
+hash = "1721105bda131b1c79fd2d1bc8e16fc3c3feb420363e5e3a003a33ec226a44f1"

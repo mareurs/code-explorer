@@ -7,7 +7,7 @@ hash = "2103c1f6a0d32b55bc7dbaf817b029716de36373ae702e884b3a2ca7b431b298"
 
 [[anchors]]
 path = "src/tools/github.rs"
-hash = "252731db80a2295265b4e84fe245c1d2ba046a3924901839660849ce68a4194b"
+hash = "49f6b306ee00ed12831121494b378a06be0ea71e5d9a2584a3390341513724bf"
 
 [[anchors]]
 path = "src/memory/anchors.rs"
@@ -23,7 +23,7 @@ hash = "377c1872a3b56180c6c7b8ba7c7f618ffeaeaf20a398fafc93ad3d5463d931a6"
 
 [[anchors]]
 path = "Cargo.toml"
-hash = "d1f200e8932dc097713a9b9fc7e7442b44bf2fafbeebaa22fea17010d26a598a"
+hash = "45e3228ad91db585cb11d71ae2748b5711fe844d1da6d4af9e361609491b91c4"
 
 [[anchors]]
 path = "src/tools/symbol.rs"
