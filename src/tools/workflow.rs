@@ -5,6 +5,253 @@ use std::path::Path;
 use super::{parse_bool_param, Tool, ToolContext};
 use serde_json::{json, Value};
 
+// ── Hardware detection ────────────────────────────────────────────────────────
+
+/// System facts gathered at onboarding time for model selection.
+#[derive(Debug, serde::Serialize)]
+pub struct HardwareContext {
+    pub ollama_available: bool,
+    pub ollama_host: String,
+    pub gpu: Option<GpuInfo>,
+    pub ram_gb: u64,
+    pub cpu_cores: u32,
+}
+
+/// GPU vendor and VRAM info (best-effort; None means no GPU detected).
+#[derive(Debug, serde::Serialize)]
+#[serde(tag = "vendor", rename_all = "lowercase")]
+pub enum GpuInfo {
+    Nvidia { name: String, vram_mb: u64 },
+    Amd { name: String, vram_mb: Option<u64> },
+}
+
+/// One entry in the ranked model recommendation list.
+#[derive(Debug, serde::Serialize)]
+pub struct ModelOption {
+    pub id: String,
+    pub label: String,
+    pub dims: u32,
+    pub context_tokens: u32,
+    pub reason: String,
+    pub available: bool,
+    pub recommended: bool,
+}
+
+/// Pure function: derive a ranked 3-option model list from hardware facts.
+/// Always returns exactly 3 entries; the first is the recommended default.
+pub fn model_options_for_hardware(ctx: &HardwareContext) -> Vec<ModelOption> {
+    if ctx.ollama_available {
+        vec![
+            ModelOption {
+                id: "ollama:nomic-embed-text".into(),
+                label: "nomic-embed-text".into(),
+                dims: 768,
+                context_tokens: 8192,
+                reason: "fast, good general baseline via Ollama (137MB)".into(),
+                available: true,
+                recommended: true,
+            },
+            ModelOption {
+                id: "ollama:bge-m3".into(),
+                label: "bge-m3".into(),
+                dims: 1024,
+                context_tokens: 8192,
+                reason: "best quality, slower indexing (~1.2GB pull)".into(),
+                available: true,
+                recommended: false,
+            },
+            ModelOption {
+                id: "local:JinaEmbeddingsV2BaseCode".into(),
+                label: "JinaEmbeddingsV2BaseCode".into(),
+                dims: 768,
+                context_tokens: 8192,
+                reason: "code-specific, CPU-only, no Ollama needed (~300MB download)".into(),
+                available: true,
+                recommended: false,
+            },
+        ]
+    } else {
+        vec![
+            ModelOption {
+                id: "local:JinaEmbeddingsV2BaseCode".into(),
+                label: "JinaEmbeddingsV2BaseCode".into(),
+                dims: 768,
+                context_tokens: 8192,
+                reason: "code-specific, beats general models on CodeSearchNet (~300MB download)"
+                    .into(),
+                available: true,
+                recommended: true,
+            },
+            ModelOption {
+                id: "local:AllMiniLML6V2Q".into(),
+                label: "AllMiniLML6V2Q".into(),
+                dims: 384,
+                context_tokens: 256,
+                reason: "lightest option, good for constrained machines (~22MB)".into(),
+                available: true,
+                recommended: false,
+            },
+            ModelOption {
+                id: "ollama:nomic-embed-text".into(),
+                label: "nomic-embed-text".into(),
+                dims: 768,
+                context_tokens: 8192,
+                reason: "not available — run `ollama serve` to enable".into(),
+                available: false,
+                recommended: false,
+            },
+        ]
+    }
+}
+
+/// Extract a `host:port` string suitable for `TcpStream::connect` from an
+/// Ollama host URL like `http://localhost:11434`.
+pub(crate) fn ollama_tcp_addr(host: &str) -> String {
+    let stripped = host
+        .strip_prefix("https://")
+        .or_else(|| host.strip_prefix("http://"))
+        .unwrap_or(host);
+    if stripped.contains(':') {
+        stripped.to_string()
+    } else {
+        format!("{stripped}:11434")
+    }
+}
+
+/// Returns true if a TCP connection to Ollama's port succeeds within 2s.
+async fn probe_ollama(tcp_addr: &str) -> bool {
+    tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        tokio::net::TcpStream::connect(tcp_addr),
+    )
+    .await
+    .map(|r| r.is_ok())
+    .unwrap_or(false)
+}
+
+/// Probe NVIDIA GPU via nvidia-smi. Returns None if not available.
+async fn probe_nvidia() -> Option<GpuInfo> {
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        tokio::process::Command::new("nvidia-smi")
+            .args([
+                "--query-gpu=name,memory.total",
+                "--format=csv,noheader,nounits",
+            ])
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let line = stdout.lines().next()?;
+    let mut parts = line.splitn(2, ',');
+    let name = parts.next()?.trim().to_string();
+    let vram_mb: u64 = parts.next()?.trim().parse().ok()?;
+    Some(GpuInfo::Nvidia { name, vram_mb })
+}
+
+/// Probe AMD GPU via rocm-smi. Returns None if not available.
+async fn probe_amd() -> Option<GpuInfo> {
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        tokio::process::Command::new("rocm-smi")
+            .arg("--showproductname")
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // rocm-smi output contains lines like "Card series:  AMD Radeon RX 7900 XTX"
+    let name = stdout
+        .lines()
+        .find(|l| {
+            let l = l.to_lowercase();
+            l.contains("card series") || l.contains("card model") || l.contains("radeon")
+        })
+        .and_then(|l| l.split_once(':'))
+        .map(|(_, v)| v.trim().to_string())
+        .unwrap_or_else(|| "AMD GPU".into());
+    Some(GpuInfo::Amd {
+        name,
+        vram_mb: None,
+    })
+}
+
+/// Read total system RAM in GiB. Returns 0 on failure (non-fatal).
+async fn probe_ram() -> u64 {
+    // Linux: /proc/meminfo — use spawn_blocking to avoid blocking the async executor
+    let meminfo = tokio::task::spawn_blocking(|| std::fs::read_to_string("/proc/meminfo"))
+        .await
+        .ok()
+        .and_then(|r| r.ok());
+    if let Some(content) = meminfo {
+        for line in content.lines() {
+            if line.starts_with("MemTotal:") {
+                let kb: u64 = line
+                    .split_whitespace()
+                    .nth(1)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                return kb / 1024 / 1024;
+            }
+        }
+    }
+    // macOS
+    if let Ok(output) = tokio::process::Command::new("sysctl")
+        .args(["-n", "hw.memsize"])
+        .output()
+        .await
+    {
+        if let Ok(s) = String::from_utf8(output.stdout) {
+            if let Ok(bytes) = s.trim().parse::<u64>() {
+                return bytes / 1024 / 1024 / 1024;
+            }
+        }
+    }
+    0
+}
+
+/// Probe the local system for hardware capabilities relevant to embedding
+/// model selection. All probes run in parallel with a 2-second timeout;
+/// any failure produces a safe zero/None default — never panics.
+pub async fn detect_hardware_context() -> HardwareContext {
+    let ollama_host =
+        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".into());
+    let tcp_addr = ollama_tcp_addr(&ollama_host);
+
+    let cpu_cores = std::thread::available_parallelism()
+        .map(|n| n.get() as u32)
+        .unwrap_or(4);
+
+    let (ollama_available, nvidia, amd, ram_gb) = tokio::join!(
+        probe_ollama(&tcp_addr),
+        probe_nvidia(),
+        probe_amd(),
+        probe_ram(),
+    );
+
+    // NVIDIA wins if both somehow respond (shouldn't happen, but be defensive)
+    let gpu = nvidia.or(amd);
+
+    HardwareContext {
+        ollama_available,
+        ollama_host,
+        gpu,
+        ram_gb,
+        cpu_cores,
+    }
+}
+
 pub struct Onboarding;
 pub struct RunCommand;
 
@@ -510,6 +757,10 @@ impl Tool for Onboarding {
             }
         }
 
+        // Hardware detection runs after the file walk (Rust futures are lazy — this
+        // just creates the future; it starts executing only when .await'd below).
+        let hw_future = detect_hardware_context();
+
         // Detect languages by walking files
         let mut languages = std::collections::BTreeSet::new();
         let walker = ignore::WalkBuilder::new(&root)
@@ -539,6 +790,15 @@ impl Tool for Onboarding {
         }
         top_level.sort();
 
+        // Resolve hardware detection and derive model options
+        let hw = hw_future.await;
+        let model_options = model_options_for_hardware(&hw);
+        let recommended_model = model_options
+            .first()
+            .expect("model_options_for_hardware guarantees ≥1 entry")
+            .id
+            .clone();
+
         // Create .codescout/project.toml if it doesn't exist
         let config_dir = root.join(".codescout");
         let config_path = config_dir.join("project.toml");
@@ -558,7 +818,10 @@ impl Tool for Onboarding {
                     system_prompt: None,
                     tool_timeout_secs: 60,
                 },
-                embeddings: Default::default(),
+                embeddings: crate::config::project::EmbeddingsSection {
+                    model: recommended_model,
+                    ..Default::default()
+                },
                 ignored_paths: Default::default(),
                 security: Default::default(),
                 memory: Default::default(),
@@ -666,6 +929,8 @@ impl Tool for Onboarding {
             "index_status": index_status,
             "instructions": prompt,
             "system_prompt_draft": system_prompt_draft,
+            "hardware": serde_json::to_value(&hw).unwrap_or(serde_json::Value::Null),
+            "model_options": serde_json::to_value(&model_options).unwrap_or(serde_json::Value::Null),
         }))
     }
 
@@ -3240,5 +3505,113 @@ mod tests {
     fn build_language_patterns_memory_returns_none_for_empty() {
         let result = build_language_patterns_memory(&[]);
         assert!(result.is_none());
+    }
+
+    // ---------- hardware detection ----------
+
+    #[test]
+    fn model_options_ollama_available_recommends_nomic() {
+        let ctx = super::HardwareContext {
+            ollama_available: true,
+            ollama_host: "http://localhost:11434".into(),
+            gpu: None,
+            ram_gb: 16,
+            cpu_cores: 8,
+        };
+        let opts = super::model_options_for_hardware(&ctx);
+        assert_eq!(opts.len(), 3);
+        assert_eq!(opts[0].id, "ollama:nomic-embed-text");
+        assert!(opts[0].recommended);
+        assert!(!opts[1].recommended);
+        assert!(!opts[2].recommended);
+    }
+
+    #[test]
+    fn model_options_cpu_only_recommends_jina() {
+        let ctx = super::HardwareContext {
+            ollama_available: false,
+            ollama_host: "http://localhost:11434".into(),
+            gpu: None,
+            ram_gb: 8,
+            cpu_cores: 4,
+        };
+        let opts = super::model_options_for_hardware(&ctx);
+        assert_eq!(opts[0].id, "local:JinaEmbeddingsV2BaseCode");
+        assert!(opts[0].recommended);
+        // Third option is Ollama but marked unavailable
+        assert_eq!(opts[2].id, "ollama:nomic-embed-text");
+        assert!(!opts[2].available);
+    }
+
+    #[test]
+    fn model_options_exactly_one_recommended() {
+        let ctx = super::HardwareContext {
+            ollama_available: true,
+            ollama_host: "http://localhost:11434".into(),
+            gpu: Some(super::GpuInfo::Nvidia {
+                name: "RTX 3080".into(),
+                vram_mb: 10240,
+            }),
+            ram_gb: 32,
+            cpu_cores: 16,
+        };
+        let opts = super::model_options_for_hardware(&ctx);
+        let recommended_count = opts.iter().filter(|o| o.recommended).count();
+        assert_eq!(recommended_count, 1);
+    }
+
+    #[test]
+    fn ollama_tcp_addr_strips_http_prefix() {
+        assert_eq!(
+            super::ollama_tcp_addr("http://localhost:11434"),
+            "localhost:11434"
+        );
+        assert_eq!(
+            super::ollama_tcp_addr("https://remote:11434"),
+            "remote:11434"
+        );
+        assert_eq!(super::ollama_tcp_addr("localhost:11434"), "localhost:11434");
+        assert_eq!(super::ollama_tcp_addr("myhost"), "myhost:11434");
+    }
+
+    #[tokio::test]
+    async fn onboarding_includes_hardware_and_model_options() {
+        let (_dir, ctx) = project_ctx().await;
+        let result = Onboarding.call(json!({}), &ctx).await.unwrap();
+
+        // hardware field is present with positive cpu_cores
+        let cores = result["hardware"]["cpu_cores"].as_u64().unwrap();
+        assert!(cores > 0, "expected cpu_cores > 0, got {cores}");
+
+        // model_options is a 3-element array with exactly one recommended entry
+        let opts = result["model_options"].as_array().unwrap();
+        assert_eq!(opts.len(), 3);
+        let recommended = opts
+            .iter()
+            .filter(|o| o["recommended"].as_bool().unwrap_or(false))
+            .count();
+        assert_eq!(recommended, 1);
+    }
+
+    #[tokio::test]
+    async fn onboarding_writes_recommended_model_to_config() {
+        let (dir, ctx) = project_ctx().await;
+        // Remove any pre-existing config so onboarding creates a fresh one
+        let _ = std::fs::remove_file(dir.path().join(".codescout/project.toml"));
+
+        let result = Onboarding.call(json!({}), &ctx).await.unwrap();
+
+        let toml = std::fs::read_to_string(dir.path().join(".codescout/project.toml")).unwrap();
+        // In test env, Ollama is not running, so recommended is Jina
+        let recommended_id = result["model_options"][0]["id"].as_str().unwrap();
+        assert!(
+            toml.contains(recommended_id),
+            "project.toml should contain '{recommended_id}'\ntoml:\n{toml}"
+        );
+        // Should NOT contain the old hardcoded default
+        assert!(
+            !toml.contains("mxbai-embed-large"),
+            "project.toml should not contain mxbai-embed-large\ntoml:\n{toml}"
+        );
     }
 }

@@ -34,11 +34,30 @@ Requires an active project (set one with `activate_project` first).
     "tests/"
   ],
   "config_created": true,
+  "hardware": {
+    "ollama_available": true,
+    "ollama_host": "http://localhost:11434",
+    "gpu": { "vendor": "nvidia", "name": "RTX 3080", "vram_mb": 10240 },
+    "ram_gb": 32,
+    "cpu_cores": 16
+  },
+  "model_options": [
+    { "id": "ollama:nomic-embed-text", "dims": 768, "context_tokens": 8192,
+      "reason": "fast, good general baseline", "available": true, "recommended": true },
+    { "id": "ollama:bge-m3", "dims": 1024, "context_tokens": 8192,
+      "reason": "best quality, slower indexing (~1.2 GB)", "available": true, "recommended": false },
+    { "id": "local:JinaEmbeddingsV2BaseCode", "dims": 768, "context_tokens": 8192,
+      "reason": "code-specific, no Ollama needed (~300 MB)", "available": true, "recommended": false }
+  ],
   "instructions": "..."
 }
 ```
 
-`config_created` is `true` when `.codescout/project.toml` did not exist and was created by this call. The `instructions` field contains a prompt with guidance for working on this project — read it before starting work.
+`config_created` is `true` when `.codescout/project.toml` did not exist and was created by this call.
+The `hardware` field reports what was detected (Ollama, GPU, RAM, CPU cores). The `model_options`
+array contains exactly 3 ranked choices; `recommended: true` marks the one written to `project.toml`.
+The `instructions` field contains a prompt — including a **Phase 0.5** model selection menu — that
+guides the LLM through confirming or changing the embedding model before indexing begins.
 
 **Tips:** Call `onboarding` once per project, the first time you work on it. It writes a memory entry under the topic `"onboarding"` with a summary of what it found. On subsequent sessions, call `onboarding` with `force: false` (the default) — it detects previous onboarding and returns existing memories without re-running discovery.
 

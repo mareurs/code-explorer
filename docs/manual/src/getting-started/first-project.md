@@ -41,10 +41,14 @@ memory entries so future sessions start with context already in place.
 { "name": "onboarding", "arguments": {} }
 ```
 
-Onboarding takes 10–30 seconds depending on project size. It produces a summary of what it found
-and tells you how many memory entries it wrote. Subsequent sessions skip the heavy discovery work
-because the memories are already there — call `onboarding` again (with default arguments) to
-retrieve existing memories without re-running discovery:
+Onboarding takes 10–30 seconds depending on project size. During the run it probes your hardware
+(Ollama availability, GPU, RAM) and presents a ranked list of embedding model options. Accept the
+recommendation or pick an alternative — the chosen model is written into `.codescout/project.toml`
+before indexing begins.
+
+It produces a summary of what it found and tells you how many memory entries it wrote. Subsequent
+sessions skip the heavy discovery work because the memories are already there — call `onboarding`
+again (with default arguments) to retrieve existing memories without re-running discovery:
 
 ```json
 { "name": "onboarding", "arguments": {} }

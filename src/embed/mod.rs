@@ -67,7 +67,7 @@ pub fn chunk_size_for_model(model_spec: &str) -> usize {
     fn tokens_for_bare(name: &str) -> usize {
         let l = name.to_lowercase();
         // 8 192-token models
-        if l.contains("nomic-embed") || l.contains("jina") {
+        if l.contains("nomic-embed") || l.contains("jina") || l.contains("bge-m3") {
             return 8192;
         }
         // OpenAI text-embedding-3-* and text-embedding-ada-002
@@ -235,6 +235,13 @@ mod tests {
     fn chunk_size_nomic_embed_text() {
         // 8 192-token context. Formula: 8192 × 0.85 × 3 = 20 889.
         let sz = super::chunk_size_for_model("ollama:nomic-embed-text");
+        assert_eq!(sz, 20889);
+    }
+
+    #[test]
+    fn chunk_size_bge_m3() {
+        // bge-m3 has 8192-token context. Formula: 8192 × 0.85 × 3 = 20889.
+        let sz = super::chunk_size_for_model("ollama:bge-m3");
         assert_eq!(sz, 20889);
     }
 

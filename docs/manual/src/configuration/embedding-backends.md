@@ -6,8 +6,12 @@ four backends, selected at runtime by the `model` field in `[embeddings]` inside
 
 ```toml
 [embeddings]
-model = "ollama:mxbai-embed-large"   # default
+model = "ollama:nomic-embed-text"   # recommended when Ollama is available
 ```
+
+The `onboarding` tool detects your hardware at setup time and writes the best model for
+your machine into this field automatically. You rarely need to set it manually — see
+[Choosing a Backend](#choosing-a-backend) if you want to override it.
 
 ---
 
@@ -24,16 +28,18 @@ model = "ollama:mxbai-embed-large"   # default
 
 ## Recommended Models
 
-Start with the default. Switch only when you have a specific reason to.
+`onboarding` picks the best model for your machine automatically. This table is a reference
+for manual overrides or when comparing options.
 
-| Model string                    | Backend  | Dims | Speed          | Code quality | Notes                                     |
-|---------------------------------|----------|------|----------------|--------------|-------------------------------------------|
-| `ollama:mxbai-embed-large`      | Ollama   | 1024 | Medium         | Good         | **Default. Best starting point.**         |
-| `ollama:nomic-embed-text`       | Ollama   |  768 | Fast           | Good         | Lighter; slightly lower recall            |
-| `ollama:all-minilm`             | Ollama   |  384 | Very fast      | Fair         | Large repos where indexing speed matters  |
-| `openai:text-embedding-3-small` | OpenAI   | 1536 | Fast (network) | Excellent    | Best quality/cost if cloud is acceptable  |
-| `openai:text-embedding-3-large` | OpenAI   | 3072 | Fast (network) | Best         | Overkill for most codebases               |
-| `local:AllMiniLML6V2Q`          | fastembed|  384 | Medium (CPU)   | Good         | Air-gapped or no daemon; CPU-safe         |
+| Model string                    | Backend  | Dims | Context | Code quality | Notes                                        |
+|---------------------------------|----------|------|---------|--------------|----------------------------------------------|
+| `ollama:nomic-embed-text`       | Ollama   |  768 | 8192 tok | Good       | **Recommended (Ollama).** Fast, 137 MB.      |
+| `ollama:bge-m3`                 | Ollama   | 1024 | 8192 tok | Excellent  | Best Ollama quality; slower, ~1.2 GB.        |
+| `local:JinaEmbeddingsV2BaseCode`| fastembed|  768 | 8192 tok | Excellent  | **Recommended (CPU-only).** Code-specific.   |
+| `local:AllMiniLML6V2Q`          | fastembed|  384 |  256 tok | Good       | Lightest local option; constrained machines. |
+| `openai:text-embedding-3-small` | OpenAI   | 1536 | —       | Excellent    | Best quality/cost if cloud is acceptable.    |
+| `openai:text-embedding-3-large` | OpenAI   | 3072 | —       | Best         | Overkill for most codebases.                 |
+| `ollama:mxbai-embed-large`      | Ollama   | 1024 |  512 tok | Good       | Legacy default. Short context truncates code.|
 
 **Switching models requires a full reindex** — see
 [Rebuilding After a Model Change](#rebuilding-after-a-model-change) below.
@@ -104,10 +110,11 @@ model = "local:AllMiniLML6V2Q"
 
 ### Recommended Ollama Models
 
-| Model | Dimensions | Notes |
-|---|---|---|
-| `mxbai-embed-large` | 1024 | Strong general-purpose model, recommended default |
-| `nomic-embed-text` | 768 | Good quality, smaller download |
+| Model | Dimensions | Context | Notes |
+|---|---|---|---|
+| `nomic-embed-text` | 768 | 8192 tok | **Recommended default.** Fast indexing, 137 MB. |
+| `bge-m3` | 1024 | 8192 tok | Best retrieval quality; ~1.2 GB download. |
+| `mxbai-embed-large` | 1024 | 512 tok | Legacy; short context truncates most functions. |
 
 ---
 
@@ -274,18 +281,16 @@ recorded in the existing index.
 
 ## Choosing a Backend
 
-A practical decision tree:
+**In most cases you do not need to choose** — `onboarding` probes your hardware and writes
+the recommended model into `.codescout/project.toml` automatically. The decision tree below
+is for manual overrides.
 
-- **You want zero setup and are comfortable with a local daemon** → use the default
-  `ollama:mxbai-embed-large`. If Ollama is absent, it falls back to `local:AllMiniLML6V2Q`
-  automatically (requires the `local-embed` feature).
-- **You have no GPU or just want something that works everywhere** → build with
-  `--features remote-embed,local-embed` and leave the default model in place. The fallback
-  kicks in automatically whenever Ollama is unreachable.
-- **You want the best search quality and do not mind API costs** → use
-  `openai:text-embedding-3-small`.
-- **You are on an air-gapped machine or want complete data privacy** → use
+- **Ollama is running** → `ollama:nomic-embed-text` (fast, 8192-token context, 137 MB).
+  Upgrade to `ollama:bge-m3` for higher retrieval quality at the cost of a 1.2 GB download.
+- **No Ollama, CPU-only machine** → `local:JinaEmbeddingsV2BaseCode` (code-specific,
+  8192-token context, ~300 MB). Outperforms general GPU models on code benchmarks.
+- **Constrained machine (low RAM or disk)** → `local:AllMiniLML6V2Q` (22 MB, CPU-safe).
+- **Best search quality, cloud acceptable** → `openai:text-embedding-3-small`.
+- **Air-gapped or full data privacy required** → `local:JinaEmbeddingsV2BaseCode` or
   `local:AllMiniLML6V2Q` (build with `--features local-embed`).
-- **You already run a TEI, vLLM, or similar server** → use `custom:<model>@<base-url>`.
-- **You are indexing a code-heavy project and want best code retrieval** → use
-  `local:JinaEmbeddingsV2BaseCode`.
+- **Self-hosted TEI, vLLM, or similar** → `custom:<model>@<base-url>`.
