@@ -834,6 +834,28 @@ Instead got ANOTHER `@tool_*` ref containing the 4-line JSON envelope.
 
 ---
 
+### BUG-026 — `onboarding`: panics when a preference memory contains a multi-byte UTF-8 character near byte 200
+
+**Date:** 2026-03-10
+**Severity:** High — intermittent crash; only triggers when `onboarding` is called with a preferences memory whose content has a non-ASCII character at or spanning byte offset 200
+**Status:** ✅ FIXED — `floor_char_boundary(content, 200)` replaces `&content[..200]` in `build_system_prompt_draft`; same fix class as BUG-024. Also fixed latent bug in dead-code `truncate_output` and `truncate_path`.
+
+**What happened:**
+MCP server crashed intermittently when calling `onboarding`. Root cause: `build_system_prompt_draft` in `workflow.rs` sliced preference note content with `&content[..200]` guarded only by a byte-length check — identical to the BUG-024 class. If the 200th byte falls inside a multi-byte UTF-8 character (e.g. a Japanese note, emoji, or box-drawing char), Rust panics and `panic = "abort"` kills the process.
+
+**Root cause:**
+`build_system_prompt_draft` → loads preference memories from SQLite → truncates long notes:
+```rust
+// BEFORE (buggy):
+let summary = if content.len() > 200 {
+    format!("{}...", &content[..200])  // panics if byte 200 is mid-char
+```
+
+**Fix applied:**
+`floor_char_boundary(content, 200)` promoted to `pub(crate)`, used at all three unsafe byte-slice sites: `workflow.rs:674` (live), `format.rs:truncate_path` (dead code), `workflow.rs:truncate_output` (dead code). Regression test: `truncate_path_unicode_does_not_panic`.
+
+---
+
 ### BUG-024 — `read_file`: panics on files with Unicode box-drawing chars, crashing the MCP server
 
 **Date:** 2026-03-05

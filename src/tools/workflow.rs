@@ -671,7 +671,8 @@ fn build_system_prompt_draft(
                     draft.push_str("\n## User Preferences\n\n");
                     for (title, content) in &prefs {
                         let summary = if content.len() > 200 {
-                            format!("{}...", &content[..200])
+                            let end = crate::tools::floor_char_boundary(content, 200);
+                            format!("{}...", &content[..end])
                         } else {
                             content.clone()
                         };
@@ -1734,13 +1735,7 @@ async fn run_command_inner(
 #[allow(dead_code)] // Kept as safety net for byte-level shell_output_limit_bytes config.
 fn truncate_output(output: &str, limit: usize) -> (String, bool) {
     if output.len() > limit {
-        let truncated = &output[..limit];
-        // Find a safe UTF-8 boundary
-        let safe_end = truncated
-            .char_indices()
-            .last()
-            .map(|(i, c)| i + c.len_utf8())
-            .unwrap_or(0);
+        let safe_end = crate::tools::floor_char_boundary(output, limit);
         (
             format!(
                 "{}\n... (truncated, showing first {} of {} bytes)",

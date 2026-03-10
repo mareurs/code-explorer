@@ -18,11 +18,14 @@ pub(crate) fn truncate_path(path: &str, max_len: usize) -> String {
         return path.to_string();
     }
     if max_len < 5 {
-        return path[..max_len].to_string();
+        let end = crate::tools::floor_char_boundary(path, max_len);
+        return path[..end].to_string();
     }
     let keep_end = max_len / 2;
     let keep_start = max_len - keep_end - 1; // 1 for the ellipsis char
-    format!("{}…{}", &path[..keep_start], &path[path.len() - keep_end..])
+    let start = crate::tools::floor_char_boundary(path, keep_start);
+    let tail_offset = crate::tools::floor_char_boundary(path, path.len() - keep_end);
+    format!("{}…{}", &path[..start], &path[tail_offset..])
 }
 
 /// Format an overflow hint as a compact one-liner.
@@ -72,6 +75,20 @@ mod tests {
             result
         );
         assert!(result.contains('…'));
+    }
+
+    #[test]
+    fn truncate_path_unicode_does_not_panic() {
+        // Each '─' (BOX DRAWINGS LIGHT HORIZONTAL) is 3 bytes.
+        // Build a path whose byte length > max_len but where max_len falls
+        // inside a multi-byte char — without floor_char_boundary this panics.
+        let unicode_segment = "─".repeat(30); // 90 bytes
+        let path = format!("src/tools/{}/file.rs", unicode_segment);
+        // max_len=25: keep_start=12, keep_end=12 — both fall inside multi-byte chars.
+        let result = truncate_path(&path, 25);
+        assert!(result.contains('…'), "must contain ellipsis");
+        // Must be valid UTF-8 (no panic = passes, but also verify well-formed)
+        assert!(std::str::from_utf8(result.as_bytes()).is_ok());
     }
 
     #[test]

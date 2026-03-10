@@ -205,7 +205,7 @@ pub async fn guard_worktree_write(ctx: &ToolContext) -> anyhow::Result<()> {
 /// exists within `hard_max`, truncates at `hard_max` bytes directly.
 /// Returns the largest byte offset `<= n` that lands on a UTF-8 char boundary.
 /// Prevents `&str[..n]` panics when `n` points into a multi-byte character.
-fn floor_char_boundary(s: &str, n: usize) -> usize {
+pub(crate) fn floor_char_boundary(s: &str, n: usize) -> usize {
     let n = n.min(s.len());
     (0..=n).rev().find(|&i| s.is_char_boundary(i)).unwrap_or(0)
 }
