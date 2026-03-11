@@ -32,9 +32,7 @@ pub fn rotate_logs(dir: &Path) {
 pub fn init(debug: bool) -> Option<WorkerGuard> {
     let stderr_layer = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
-        .with_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        );
+        .with_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")));
 
     if debug {
         let log_dir = std::env::current_dir()
@@ -74,7 +72,10 @@ pub fn init(debug: bool) -> Option<WorkerGuard> {
         }
     }
 
-    tracing_subscriber::registry().with(stderr_layer).try_init().ok();
+    tracing_subscriber::registry()
+        .with(stderr_layer)
+        .try_init()
+        .ok();
     None
 }
 
@@ -97,11 +98,20 @@ mod tests {
         // Original debug.log.3 is deleted — no debug.log.4 should exist
         assert!(!p.join("debug.log.4").exists());
         // debug.log.3 now contains original debug.log.2 content
-        assert_eq!(std::fs::read_to_string(p.join("debug.log.3")).unwrap(), "debug.log.2");
+        assert_eq!(
+            std::fs::read_to_string(p.join("debug.log.3")).unwrap(),
+            "debug.log.2"
+        );
         // debug.log.2 now contains original debug.log.1 content
-        assert_eq!(std::fs::read_to_string(p.join("debug.log.2")).unwrap(), "debug.log.1");
+        assert_eq!(
+            std::fs::read_to_string(p.join("debug.log.2")).unwrap(),
+            "debug.log.1"
+        );
         // debug.log.1 now contains original debug.log content
-        assert_eq!(std::fs::read_to_string(p.join("debug.log.1")).unwrap(), "debug.log");
+        assert_eq!(
+            std::fs::read_to_string(p.join("debug.log.1")).unwrap(),
+            "debug.log"
+        );
         // debug.log itself is gone (renamed to .1)
         assert!(!p.join("debug.log").exists());
     }
@@ -119,6 +129,9 @@ mod tests {
         std::fs::write(p.join("debug.log"), b"hello").unwrap();
         rotate_logs(p);
         assert!(!p.join("debug.log").exists());
-        assert_eq!(std::fs::read_to_string(p.join("debug.log.1")).unwrap(), "hello");
+        assert_eq!(
+            std::fs::read_to_string(p.join("debug.log.1")).unwrap(),
+            "hello"
+        );
     }
 }
