@@ -112,11 +112,14 @@ impl CodeScoutServer {
 
     /// Core tool dispatch, separated from the MCP trait method so tests can
     /// call it without constructing a `RequestContext`.
+    #[tracing::instrument(skip_all, fields(tool = %req.name))]
     async fn call_tool_inner(
         &self,
         req: CallToolRequestParam,
         progress: Option<Arc<progress::ProgressReporter>>,
     ) -> std::result::Result<CallToolResult, McpError> {
+        tracing::debug!(args = ?req.arguments, "tool call");
+
         let tool = self.find_tool(&req.name).ok_or_else(|| {
             McpError::invalid_params(format!("unknown tool: '{}'", req.name), None)
         })?;
@@ -176,6 +179,11 @@ impl CodeScoutServer {
             Ok(blocks) => CallToolResult::success(blocks),
             Err(e) => route_tool_error(e),
         };
+
+        tracing::debug!(
+            ok = call_result.is_error.map_or(true, |e| !e),
+            "tool result"
+        );
 
         // Strip the absolute project root from all output to reduce token usage.
         // Agents work exclusively within the project directory; relative paths
@@ -332,11 +340,34 @@ pub async fn run(
     host: &str,
     port: u16,
     auth_token: Option<String>,
+    debug: bool,
 ) -> Result<()> {
     // If no --project given, auto-detect from CWD (Claude Code launches servers from the project dir)
     let project = project.or_else(|| std::env::current_dir().ok());
     let agent = Agent::new(project).await?;
     let lsp = LspManager::new_arc();
+
+    // Heartbeat: only in debug mode — distinguishes idle from hung.
+    if debug {
+        let agent_hb = agent.clone();
+        let lsp_hb = lsp.clone();
+        let start = tokio::time::Instant::now();
+        let _heartbeat = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+            interval.tick().await; // Skip the immediate first tick
+            loop {
+                interval.tick().await;
+                let uptime_secs = start.elapsed().as_secs();
+                let lsp_servers = lsp_hb.active_languages().await;
+                let active_projects: usize = if agent_hb.project_root().await.is_some() {
+                    1
+                } else {
+                    0
+                };
+                tracing::debug!(uptime_secs, active_projects, ?lsp_servers, "heartbeat");
+            }
+        });
+    }
 
     match transport {
         "stdio" => {

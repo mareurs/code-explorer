@@ -1,6 +1,5 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[derive(Parser)]
 #[command(name = "codescout", about = "High-performance coding agent MCP server")]
@@ -33,6 +32,10 @@ enum Commands {
         /// If not provided when using HTTP transport, a token is auto-generated.
         #[arg(long)]
         auth_token: Option<String>,
+
+        /// Enable debug logging to .codescout/debug.log
+        #[arg(long)]
+        debug: bool,
     },
 
     /// Index the current project for semantic search
@@ -69,10 +72,13 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::registry()
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
-        .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
-        .init();
+    // Logging init happens before CLI parsing so startup errors are captured.
+    // We peek at raw args to detect --debug before clap processes them.
+    // Caveat: this fires for any subcommand that receives "--debug" as an argument.
+    // Currently only `start` has --debug, so this is safe — revisit if other
+    // subcommands add conflicting flags.
+    let debug_mode = std::env::args().any(|a| a == "--debug");
+    let _log_guard = codescout::logging::init(debug_mode);
 
     let cli = Cli::parse();
 
@@ -83,9 +89,10 @@ async fn main() -> Result<()> {
             host,
             port,
             auth_token,
+            debug,
         } => {
             tracing::info!("Starting codescout MCP server (transport={})", transport);
-            codescout::server::run(project, &transport, &host, port, auth_token).await?;
+            codescout::server::run(project, &transport, &host, port, auth_token, debug).await?;
         }
         Commands::Index { project, force } => {
             let root = project

@@ -141,6 +141,11 @@ impl LspClient {
         let stdout = child.stdout.take().expect("stdout must be piped");
         let stderr = child.stderr.take().expect("stderr must be piped");
         let child_pid = child.id();
+        tracing::debug!(
+            pid = ?child_pid,
+            binary = %config.command,
+            "LSP server spawned"
+        );
 
         let pending: Arc<StdMutex<HashMap<i64, oneshot::Sender<Result<Value>>>>> =
             Arc::new(StdMutex::new(HashMap::new()));
@@ -216,10 +221,22 @@ impl LspClient {
                             tracing::debug!("LSP notification: {}", method);
                         }
                     }
-                    Err(e) => {
+                    Err(read_err) => {
                         // EOF or read error — server crashed or exited
                         if alive_clone.load(Ordering::SeqCst) {
-                            tracing::warn!("LSP reader error: {}", e);
+                            tracing::warn!("LSP reader error: {}", read_err);
+                        }
+                        // Try to get the exit status for diagnostics.
+                        // try_wait() returns Ok(None) if the child is still running (rare at EOF),
+                        // Ok(Some(status)) if it has exited, or Err if the call itself failed.
+                        match child.try_wait() {
+                            Ok(Some(status)) => {
+                                tracing::debug!(exit_status = ?status, "LSP server exited")
+                            }
+                            Ok(None) => tracing::debug!("LSP reader EOF but child still running"),
+                            Err(wait_err) => {
+                                tracing::debug!("could not get LSP exit status: {wait_err}")
+                            }
                         }
                         alive_clone.store(false, Ordering::SeqCst);
                         // Drain pending requests with errors
@@ -291,6 +308,7 @@ impl LspClient {
         Err(last_err.unwrap())
     }
 
+    #[tracing::instrument(skip(self, params, timeout), fields(lsp_method = %method))]
     pub async fn request_with_timeout(
         &self,
         method: &str,
@@ -329,7 +347,17 @@ impl LspClient {
 
         // Await response with timeout
         match tokio::time::timeout(timeout, rx).await {
-            Ok(Ok(result)) => result,
+            Ok(Ok(result)) => {
+                match &result {
+                    Ok(v) => {
+                        tracing::debug!(response_bytes = v.to_string().len(), "lsp response");
+                    }
+                    Err(e) => {
+                        tracing::debug!(error = %e, "lsp response error");
+                    }
+                }
+                result
+            }
             Ok(Err(_)) => bail!("LSP response channel closed"),
             Err(_) => {
                 self.pending

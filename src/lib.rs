@@ -10,6 +10,7 @@ pub mod dashboard;
 pub mod embed;
 pub mod git;
 pub mod library;
+pub mod logging;
 pub mod lsp;
 pub mod memory;
 pub mod prompts;

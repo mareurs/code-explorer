@@ -219,8 +219,9 @@ impl LspManager {
         let mut clients = self.clients.lock().await;
         for (lang, client) in clients.drain() {
             tracing::info!("Shutting down LSP for: {}", lang);
-            if let Err(e) = client.shutdown().await {
-                tracing::warn!("Error shutting down LSP for {}: {}", lang, e);
+            match client.shutdown().await {
+                Ok(()) => tracing::debug!("LSP server shut down cleanly: {}", lang),
+                Err(e) => tracing::warn!("Error shutting down LSP for {}: {}", lang, e),
             }
         }
     }
