@@ -195,20 +195,43 @@ the current HEAD commit, results include:
 
 ---
 
-## Index Status and Drift
+## `index_status`
 
-Index health (file count, model, staleness, drift scores) is now part of **`project_status`** — see [Workflow & Config](workflow-and-config.md#project_status) for the full reference.
+**Purpose:** Show the health of the semantic index — file count, chunk count,
+embedding model, last update time, and optional per-file drift scores.
 
-**Quick reference:**
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `threshold` | float | no | — | When set, include drift scores for files whose `avg_drift` exceeds this value (0.0–1.0). Higher = more changed. |
+| `path` | string | no | — | Limit drift reporting to a specific file or directory. |
+
+**Example (basic stats):**
 
 ```json
-{ "tool": "project_status", "arguments": {} }
+{}
 ```
 
-Pass `threshold: 0.1` to include drift data for files that changed semantically since the last index:
+**Example (drift scores for significantly changed files):**
 
 ```json
-{ "tool": "project_status", "arguments": { "threshold": 0.1 } }
+{ "threshold": 0.3 }
+```
+
+**Output:**
+
+```json
+{
+  "indexed_files": 47,
+  "total_chunks": 312,
+  "model": "ollama:nomic-embed-text",
+  "last_updated": "2026-03-12T10:14:00Z",
+  "stale": false,
+  "drift": [
+    { "file": "src/auth/service.rs", "avg_drift": "0.72", "max_drift": "0.91" }
+  ]
+}
 ```
 
 Opt out of drift detection with `drift_detection_enabled = false` in `.codescout/project.toml`.

@@ -99,7 +99,7 @@ After registering, confirm Claude Code sees the server and all its tools:
 claude mcp list
 ```
 
-You should see `codescout` listed with 28 tools. If it does not appear, make sure the
+You should see `codescout` listed with 29 tools. If it does not appear, make sure the
 `codescout` binary is on your PATH:
 
 ```bash

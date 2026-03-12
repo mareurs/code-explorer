@@ -1,6 +1,6 @@
 # Tools Overview
 
-codescout exposes 28 tools organized into seven categories. This page is a
+codescout exposes 29 tools organized into seven categories. This page is a
 quick map. Each category has a dedicated reference page linked from the headings
 below.
 
@@ -53,6 +53,7 @@ within a specific library (see [Library Navigation](#library-navigation)).
 |------|-------------|
 | `semantic_search` | Search code by natural language description or code snippet |
 | `index_project` | Build or incrementally update the embedding index |
+| `index_status` | Show index stats: file count, chunk count, model, last update, and optional drift scores |
 
 ---
 
@@ -138,7 +139,8 @@ for.
 | Find code that does something (concept, not name) | `semantic_search` |
 | Find code by concept inside a library | `semantic_search` with `scope: "lib:<name>"` (after `index_project` on the library) |
 | See what third-party libraries are registered | `list_libraries` |
-| Check index status and project config | `project_status` |
+| Check index health, file count, drift scores | `index_status` |
+| Check project config and usage stats | `project_status` |
 | Search for a string or regex across files | `search_pattern` |
 | Find files matching a name pattern | `find_file` |
 | Read a specific part of a file | `read_file` (with `start_line`/`end_line`) |

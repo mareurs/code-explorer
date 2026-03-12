@@ -106,7 +106,7 @@ across all tool calls and, in HTTP mode, across all connections. Calling
 
 **Source:** `src/server.rs`
 
-All 28 tools are registered at startup in `CodeScoutServer::from_parts()` as
+All 29 tools are registered at startup in `CodeScoutServer::from_parts()` as
 a `Vec<Arc<dyn Tool>>`. Dispatch is by name: `call_tool()` iterates the vector
 and matches on `tool.name()`.
 
@@ -195,13 +195,16 @@ rather than by name. It has four stages:
      external service needed.
 
 3. **Storage** (`src/embed/index.rs`) -- Vectors and chunk metadata are stored
-   in a SQLite database at `.codescout/embeddings.db`. Each chunk records
-   its file path, line range, content hash, and embedding vector as a blob.
+   in a SQLite database at `.codescout/embeddings.db`. On first use the table
+   is transparently migrated to a `vec0` virtual table (sqlite-vec), enabling
+   ANN-indexed KNN search. Existing databases are migrated automatically.
 
 4. **Search** (`src/embed/index.rs`) -- Query text is embedded using the same
-   model, then compared against all stored vectors using cosine similarity.
-   Results are ranked by similarity score and returned with file paths, line
-   ranges, and content previews.
+   model. When the `vec0` table is active, search uses sqlite-vec's KNN index
+   (`ORDER BY + LIMIT` inside the subquery, as required by vec0). Pre-migration
+   databases fall back to a pure-Rust cosine scan. Results are ranked by
+   similarity score and returned with file paths, line ranges, and content
+   previews.
 
 The index tracks file content hashes. On incremental re-indexing, only files
 that changed since the last index build are re-chunked and re-embedded.
@@ -214,10 +217,14 @@ A lightweight key-value store backed by markdown files in
 `.codescout/memories/`. Topics are path-like strings (e.g.,
 `debugging/async-patterns`) that map to files on disk.
 
-The store supports four operations: write, read, list, and delete. There is no
-search -- topics are listed by name and read individually. Use this for
-recording decisions, conventions, and project-specific knowledge that should
-persist across agent sessions.
+The file store supports four operations: write, read, list, and delete.
+
+A second tier — **semantic memory** — stores entries as vector embeddings in
+the same `.codescout/embeddings.db`. This enables natural-language recall
+(`action: "remember"` / `"recall"` / `"forget"`) in addition to the
+key-based file store. Each write also cross-embeds into the semantic store
+(best-effort, non-fatal). Memories auto-classify into buckets: `code`,
+`system`, `preferences`, `unstructured`.
 
 ---
 

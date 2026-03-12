@@ -74,7 +74,7 @@ and exposes their answers as agent-friendly tools.
 Supported languages: Rust, Python, TypeScript/JavaScript, Go, Java, Kotlin,
 C/C++, C#, Ruby.
 
-### Semantic Search (2 tools)
+### Semantic Search (3 tools)
 
 Sometimes you know the concept but not the name. Semantic search finds code by
 meaning using embeddings, not keywords.
@@ -85,6 +85,8 @@ meaning using embeddings, not keywords.
   library, or all sources.
 - `index_project` — build or incrementally update the embedding index (smart
   change detection via git diff → mtime → SHA-256 fallback)
+- `index_status` — show index stats: file count, chunk count, embedding model,
+  last update time, and optional per-file drift scores
 
 The embedding backend is configurable: OpenAI, Ollama, or any compatible
 endpoint.
@@ -97,7 +99,7 @@ For git history and diffs, use `run_command` with shell git commands (e.g. `run_
 Agents are stateless across sessions by default. codescout provides a
 lightweight key-value store backed by markdown files in `.codescout/memories/`.
 
-- `memory` — unified dispatch tool: `action: "read"` / `"write"` / `"list"` / `"delete"`
+- `memory` — unified dispatch tool: `action: "read"` / `"write"` / `"list"` / `"delete"` for the file store; `"remember"` / `"recall"` / `"forget"` for natural-language semantic memory
 
 Use this to record decisions, gotchas, and conventions so the agent picks them
 up on the next session without re-discovery.
@@ -114,7 +116,7 @@ project root.
 
 Beyond these pillars: 6 file operation tools (directory listing, file
 reading, pattern search, file search, file creation, find-and-replace editing), 2 workflow tools
-(project onboarding, shell commands), and 2 config tools — **28 tools total**.
+(project onboarding, shell commands), 2 config tools, and 5 GitHub tools — **29 tools total**.
 
 ### Token Efficiency by Design
 

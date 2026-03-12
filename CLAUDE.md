@@ -61,9 +61,11 @@ This applies to ALL unexpected tool behavior: `edit_file`, `rename_symbol`, `rep
 
 ```
 src/
-├── main.rs          # CLI: start (MCP server) and index subcommands
+├── main.rs          # CLI: start (MCP server), index, and dashboard subcommands
+├── lib.rs           # Crate root for library/integration use
 ├── server.rs        # rmcp ServerHandler — bridges Tool trait to MCP, signal handling + graceful LSP shutdown
 ├── agent.rs         # Orchestrator: active project, config, memory
+├── logging.rs       # --debug mode: file logging with rotation (tracing-appender)
 ├── config/          # ProjectConfig (.codescout/project.toml), modes
 ├── lsp/             # LSP types, server configs (9 langs), JSON-RPC client
 ├── ast/             # Language detection (20+ exts), tree-sitter parser
@@ -71,21 +73,27 @@ src/
 ├── embed/           # Chunker, SQLite index, RemoteEmbedder, schema, drift detection
 ├── library/         # LibraryRegistry, Scope enum, manifest discovery
 ├── memory/          # Markdown-based MemoryStore (.codescout/memories/)
+├── usage/           # UsageRecorder: append-only SQLite call stats (usage.db)
 ├── prompts/         # LLM guidance: server_instructions.md, onboarding_prompt.md
 ├── tools/           # Tool implementations by category
-│   ├── output.rs    #   OutputGuard: progressive disclosure (exploring/focused)
-│   ├── format.rs    #   Shared format helpers (format_line_range, format_overflow, truncate_path)
-│   ├── file.rs      #   read_file, list_dir, search_pattern, create_file, find_file, edit_file
-│   ├── workflow.rs  #   onboarding, run_command
-│   ├── symbol.rs    #   9 LSP-backed tools (find_symbol, list_symbols, goto_definition, hover, remove_symbol, etc.)
-│   ├── git.rs       #   git_blame, file_log (not registered; used by dashboard)
-│   ├── semantic.rs  #   semantic_search, index_project
-│   ├── library.rs   #   list_libraries
-│   ├── memory.rs    #   memory (action: read/write/list/delete)
-│   ├── ast.rs       #   list_functions, list_docs (not registered; tree-sitter offline tools)
-│   ├── command_summary.rs  #   Smart output summarization, terminal filter detection
-│   └── config.rs    #   activate_project, project_status
-└── util/            # fs helpers, text processing
+│   ├── output.rs          #   OutputGuard: progressive disclosure (exploring/focused)
+│   ├── output_buffer.rs   #   OutputBuffer: session-scoped LRU (@cmd_*/@file_* handles)
+│   ├── progress.rs        #   ProgressReporter: MCP progress notifications
+│   ├── format.rs          #   Shared format helpers (format_line_range, format_overflow, truncate_path)
+│   ├── file.rs            #   read_file, list_dir, search_pattern, create_file, find_file, edit_file
+│   ├── file_summary.rs    #   Smart per-type summarizers (source, markdown, JSON, TOML, YAML)
+│   ├── workflow.rs        #   onboarding, run_command
+│   ├── symbol.rs          #   9 LSP-backed tools (find_symbol, list_symbols, goto_definition, hover, remove_symbol, etc.)
+│   ├── git.rs             #   git_blame, file_log (not registered; used by dashboard)
+│   ├── semantic.rs        #   semantic_search, index_project, index_status
+│   ├── github.rs          #   github_identity, github_issue, github_pr, github_file, github_repo
+│   ├── library.rs         #   list_libraries
+│   ├── memory.rs          #   memory (action: read/write/list/delete/remember/recall/forget/refresh_anchors)
+│   ├── usage.rs           #   GetUsageStats (dashboard API; not an MCP tool)
+│   ├── ast.rs             #   list_functions, list_docs (not registered; tree-sitter offline tools)
+│   ├── command_summary.rs #   Smart output summarization, terminal filter detection
+│   └── config.rs          #   activate_project, project_status
+└── util/            # fs helpers, text processing, path security
 ```
 
 ## Design Principles
@@ -133,13 +141,15 @@ See `did_change_refreshes_stale_symbol_positions` in `src/lsp/client.rs` for the
 
 ## Key Patterns
 
-**Tool trait** (`src/tools/mod.rs`): Each tool is a struct implementing `name()`, `description()`, `input_schema()`, `async call(Value, &ToolContext) -> Result<Value>`. 23 tools registered. All use `#[async_trait]`.
+**Tool trait** (`src/tools/mod.rs`): Each tool is a struct implementing `name()`, `description()`, `input_schema()`, `async call(Value, &ToolContext) -> Result<Value>`. 29 tools registered. All use `#[async_trait]`.
 
 **Tool↔MCP bridge** (`src/server.rs`): Tools registered as `Vec<Arc<dyn Tool>>`, dispatched dynamically in `call_tool`. Errors are routed through `route_tool_error`:
 - `RecoverableError` (`src/tools/mod.rs`) → `isError: false` with JSON `{"error":"…","hint":"…"}` — LLM sees the problem and a corrective hint, **sibling parallel calls are not aborted by Claude Code**.
 - Any other `anyhow::Error` → `isError: true` (fatal; something truly broke).
 
 Use `RecoverableError` for expected, input-driven failures (path not found, unsupported file type, empty glob). Use plain `anyhow::bail!` for genuine tool failures (LSP crash, security violation, programming error).
+
+**`ToolContext`** fields: `agent` (project state + config access), `lsp` (LSP client pool), `output_buffer` (session-scoped `@cmd_*`/`@file_*` handle store), `progress` (MCP progress reporter).
 
 **Config** (`.codescout/project.toml`): Per-project settings including embedding model, chunk size, ignored paths. `ProjectConfig::load_or_default()` handles missing config gracefully.
 

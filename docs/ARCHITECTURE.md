@@ -11,7 +11,7 @@ codescout is an MCP server that gives LLMs IDE-grade code intelligence. It expos
 ```
 ┌────────────────────────────────────────────────────────┐
 │              MCP Layer (rmcp)                           │
-│   CodeScoutServer → registered tools (28)              │
+│   CodeScoutServer → registered tools (29)              │
 └────────────────────────────────────────────────────────┘
                           ↓
 ┌────────────────────────────────────────────────────────┐
@@ -82,7 +82,7 @@ Embedded semantic search with zero external services.
 - `remote.rs` — `RemoteEmbedder` supporting OpenAI, Ollama, and custom API endpoints
 - `mod.rs` — `Embedder` trait, `create_embedder()` factory, `embed_one()` helper
 
-**sqlite-vec**: Extension loading is commented out (TODO). Pure-Rust cosine fallback works but loads all embeddings into memory.
+**sqlite-vec**: Fully active — `init_sqlite_vec()` registers the extension at startup. `maybe_migrate_to_vec0()` transparently upgrades existing plain-BLOB `chunk_embeddings` tables to `vec0` virtual tables on first use. `search_scoped` dispatches to `search_scoped_vec0` once migrated, falling back to pure-Rust cosine only for un-migrated DBs. Both the code index and `vec_memories` (semantic memory recall) use vec0.
 
 ### Library Registry (`src/library/`)
 
@@ -117,7 +117,7 @@ Each tool implements the `Tool` trait (`name`, `description`, `input_schema`, `a
 | File | `file.rs` | `read_file`, `list_dir`, `search_pattern`, `find_file`, `create_file`, `edit_file` |
 | Workflow | `workflow.rs` | `onboarding`, `run_command` |
 | Symbol | `symbol.rs` | `find_symbol`, `list_symbols`, `goto_definition`, `hover`, `find_references`, `replace_symbol`, `remove_symbol`, `insert_code`, `rename_symbol` (all navigation tools support `scope` param) |
-| Semantic | `semantic.rs` | `semantic_search`, `index_project` |
+| Semantic | `semantic.rs` | `semantic_search`, `index_project`, `index_status` |
 | Library | `library.rs` | `list_libraries` |
 | Memory | `memory.rs` | `memory` (dispatches `read` / `write` / `list` / `delete` / `remember` / `recall` / `forget` / `refresh_anchors` via `action` param) |
 | Config | `config.rs` | `activate_project`, `project_status` |
@@ -136,13 +136,13 @@ Each tool implements the `Tool` trait (`name`, `description`, `input_schema`, `a
 | Async runtime | `tokio` |
 | MCP protocol | `rmcp` (with `transport-io`, `server`, `macros`) |
 | LSP types | `lsp-types` |
-| AST parsing | `tree-sitter` (grammar integration pending) |
+| AST parsing | `tree-sitter` (Rust, Python, TypeScript, Go, Java, Kotlin) |
 | Git | `git2` |
 | Serialization | `serde`, `serde_json`, `toml` |
 | Regex | `regex` |
 | File walking | `walkdir`, `ignore`, `globset` |
 | Error handling | `anyhow` |
-| Logging | `tracing`, `tracing-subscriber` |
+| Logging | `tracing`, `tracing-subscriber`, `tracing-appender` (file rotation) |
 | CLI | `clap` |
 | Embeddings (cloud) | `reqwest` (feature-gated: `remote-embed`) |
 | Vector store | `rusqlite` (bundled SQLite) |
