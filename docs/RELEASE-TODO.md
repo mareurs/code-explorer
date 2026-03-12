@@ -43,7 +43,6 @@ All security settings live in `.codescout/project.toml` under `[security]`:
 # Tool category toggles
 shell_enabled = false              # Shell command execution (default: false)
 file_write_enabled = true          # File creation and modification (default: true)
-git_enabled = true                 # Git blame/log/diff (default: true)
 indexing_enabled = true            # Semantic search indexing (default: true)
 
 # Shell command settings (only relevant if shell_enabled = true)

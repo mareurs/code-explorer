@@ -157,7 +157,6 @@ Individual feature categories can be toggled independently:
 [security]
 file_write_enabled = true    # create_file, edit_file, symbol writes
 shell_enabled      = false   # run_command
-git_enabled        = true    # git operations via run_command
 indexing_enabled   = true    # index_project, project_status
 ```
 

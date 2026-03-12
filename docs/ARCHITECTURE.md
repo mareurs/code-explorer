@@ -68,8 +68,7 @@ Central orchestrator holding active project state behind `RwLock`. Manages:
 
 ### Git Engine (`src/git/`)
 
-- `mod.rs` — `open_repo()`, `head_short_sha()`, `file_log()` returning `Vec<CommitSummary>` via git2
-- `blame.rs` — `blame_file()` returning `Vec<BlameLine>` with author, date, SHA, line content
+- `mod.rs` — `open_repo()`, `diff_tree_to_tree()` returning `Vec<DiffEntry>` (used by embedding drift detection) via git2
 
 ### Embedding Engine (`src/embed/`)
 

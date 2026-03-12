@@ -219,65 +219,6 @@ async fn workflow_project_memory_config() {
 }
 
 // ---------------------------------------------------------------------------
-// Workflow: Create file → Git init + add + commit → Blame + Log
-// ---------------------------------------------------------------------------
-
-#[tokio::test]
-async fn workflow_git_blame() {
-    use codescout::tools::file::CreateFile;
-    use codescout::tools::git::GitBlame;
-
-    let dir = tempdir().unwrap();
-
-    // Initialize a git repo
-    let repo = git2::Repository::init(dir.path()).unwrap();
-    std::fs::create_dir_all(dir.path().join(".codescout")).unwrap();
-
-    let agent = Agent::new(Some(dir.path().to_path_buf())).await.unwrap();
-    let ctx = ToolContext {
-        agent,
-        lsp: LspManager::new_arc(),
-        output_buffer: std::sync::Arc::new(codescout::tools::output_buffer::OutputBuffer::new(20)),
-        progress: None,
-    };
-
-    // Step 1: Create a file via tool
-    CreateFile
-        .call(
-            json!({
-                "path": dir.path().join("hello.rs").display().to_string(),
-                "content": "fn hello() {\n    println!(\"hi\");\n}\n"
-            }),
-            &ctx,
-        )
-        .await
-        .unwrap();
-
-    // Step 2: Commit it
-    {
-        let mut index = repo.index().unwrap();
-        index.add_path(std::path::Path::new("hello.rs")).unwrap();
-        index.write().unwrap();
-        let tree_id = index.write_tree().unwrap();
-        let tree = repo.find_tree(tree_id).unwrap();
-        let sig = git2::Signature::now("Test", "test@test.com").unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[])
-            .unwrap();
-    }
-
-    // Step 3: Blame
-    let blame_result = GitBlame
-        .call(json!({ "path": "hello.rs" }), &ctx)
-        .await
-        .unwrap();
-    let lines = blame_result["lines"].as_array().unwrap();
-    assert!(!lines.is_empty(), "blame should return lines");
-    assert_eq!(lines[0]["author"], "Test");
-
-    drop(dir);
-}
-
-// ---------------------------------------------------------------------------
 // Workflow: Ollama index → semantic search (requires live Ollama)
 // ---------------------------------------------------------------------------
 

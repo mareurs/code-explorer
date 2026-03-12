@@ -131,7 +131,6 @@ shell_command_mode = "warn"
 shell_output_limit_bytes = 102400
 shell_enabled = false
 file_write_enabled = true
-git_enabled = true
 indexing_enabled = true
 ```
 
@@ -143,7 +142,6 @@ indexing_enabled = true
 | `shell_output_limit_bytes` | integer | `102400` | Maximum bytes captured from shell command stdout or stderr. Output beyond this limit is truncated and flagged in the response. |
 | `shell_enabled` | bool | `false` | Master switch for shell execution. Must be `true` for `run_command` to run any command regardless of `shell_command_mode`. |
 | `file_write_enabled` | bool | `true` | Enables file write tools: `create_file` and the symbol write tools. Set to `false` for a read-only session. |
-| `git_enabled` | bool | `true` | Enables git operations via `run_command`. |
 | `indexing_enabled` | bool | `true` | Enables `index_project` and `project_status`. Set to `false` to prevent the agent from kicking off potentially long-running indexing. |
 
 ### Built-in Read Deny-List
@@ -239,7 +237,6 @@ shell_command_mode = "warn"
 shell_output_limit_bytes = 204800
 shell_enabled = true
 file_write_enabled = true
-git_enabled = true
 indexing_enabled = true
 ```
 

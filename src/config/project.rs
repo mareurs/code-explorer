@@ -110,9 +110,6 @@ pub struct SecuritySection {
     /// Enable file write tools: create_file, edit_file, symbol write tools (default: true)
     #[serde(default = "default_true")]
     pub file_write_enabled: bool,
-    /// Enable git tools: blame, log, diff (default: true)
-    #[serde(default = "default_true")]
-    pub git_enabled: bool,
     /// Enable semantic search and indexing tools (default: true)
     #[serde(default = "default_true")]
     pub indexing_enabled: bool,
@@ -133,7 +130,6 @@ impl Default for SecuritySection {
             shell_output_limit_bytes: default_shell_output_limit(),
             shell_enabled: true,
             file_write_enabled: true,
-            git_enabled: true,
             indexing_enabled: true,
             shell_allow_always: Vec::new(),
             shell_dangerous_patterns: Vec::new(),
@@ -166,7 +162,6 @@ impl SecuritySection {
             shell_output_limit_bytes: self.shell_output_limit_bytes,
             shell_enabled: self.shell_enabled,
             file_write_enabled: self.file_write_enabled,
-            git_enabled: self.git_enabled,
             indexing_enabled: self.indexing_enabled,
             library_paths: Vec::new(),
             shell_allow_always: self.shell_allow_always.clone(),
@@ -320,7 +315,6 @@ mod tests {
             sec.file_write_enabled,
             "file_write_enabled should default to true"
         );
-        assert!(sec.git_enabled, "git_enabled should default to true");
         assert!(
             sec.indexing_enabled,
             "indexing_enabled should default to true"
@@ -333,7 +327,6 @@ mod tests {
         // default_for() is used when no .codescout/project.toml exists.
         let cfg = ProjectConfig::default_for("test-project".into());
         assert!(cfg.security.file_write_enabled);
-        assert!(cfg.security.git_enabled);
         assert!(cfg.security.indexing_enabled);
         assert!(cfg.security.shell_enabled);
     }
@@ -345,7 +338,6 @@ mod tests {
         let toml = "[project]\nname = \"test\"";
         let cfg: ProjectConfig = toml::from_str(toml).unwrap();
         assert!(cfg.security.file_write_enabled);
-        assert!(cfg.security.git_enabled);
         assert!(cfg.security.indexing_enabled);
         assert!(cfg.security.shell_enabled);
     }

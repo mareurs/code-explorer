@@ -1,7 +1,5 @@
 //! Git integration using `git2`.
 
-pub mod blame;
-
 use anyhow::Result;
 use std::path::Path;
 

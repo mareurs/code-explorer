@@ -795,13 +795,7 @@ mod tests {
 
     #[test]
     fn other_tools_do_not_skip_server_timeout() {
-        for name in &[
-            "read_file",
-            "edit_file",
-            "find_symbol",
-            "git_blame",
-            "semantic_search",
-        ] {
+        for name in &["read_file", "edit_file", "find_symbol", "semantic_search"] {
             assert!(
                 !tool_skips_server_timeout(name),
                 "tool '{}' should be subject to the server-level timeout",

@@ -66,8 +66,7 @@ When the LLM calls a tool, here is what happens:
 
 3. **Security check.** Before the tool runs, `check_tool_access()` verifies
    that the tool is not disabled by the project's security configuration. For
-   example, if `shell_enabled` is false, `run_command` is blocked
-   here. If `git_enabled` is false, git tools are blocked.
+   example, if `shell_enabled` is false, `run_command` is blocked here.
 
 4. **ToolContext creation.** A `ToolContext` is assembled with clones of the
    `Agent` and `Arc<LspManager>`. This is the only state a tool receives.

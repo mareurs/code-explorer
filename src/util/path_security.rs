@@ -77,8 +77,6 @@ pub struct PathSecurityConfig {
     pub shell_enabled: bool,
     /// Enable file write tools (default: true)
     pub file_write_enabled: bool,
-    /// Enable git tools (default: true)
-    pub git_enabled: bool,
     /// Enable semantic search and indexing tools (default: true)
     pub indexing_enabled: bool,
     /// Read-only library paths (registered via LibraryRegistry).
@@ -98,7 +96,6 @@ impl Default for PathSecurityConfig {
             shell_output_limit_bytes: 100 * 1024,
             shell_enabled: true,
             file_write_enabled: true,
-            git_enabled: true,
             indexing_enabled: true,
             library_paths: Vec::new(),
             shell_allow_always: Vec::new(),
@@ -936,7 +933,6 @@ mod tests {
         let mut config = PathSecurityConfig::default();
         config.shell_enabled = false;
         config.file_write_enabled = false;
-        config.git_enabled = false;
         config.indexing_enabled = false;
         // Read tools should always work
         for tool in &[

@@ -522,7 +522,7 @@ blocked waiting for an LSP notification or response that never came.
 
 **Date:** 2026-03-02
 **Severity:** Medium — tool unusable when active project ≠ git root
-**Status:** ✅ FIXED — `blame_file` now computes the repo-relative path by prepending `strip_prefix(workdir, repo_path)` before calling `repo.blame_file()` and `committed_content()`. Regression test: `blame_works_when_project_root_is_git_subdirectory`.
+**Status:** ✅ RESOLVED (removed) — git_blame tool and src/git/blame.rs deleted in git suite cleanup (2026-03-12). The tool was never registered as an MCP tool; all git operations go through run_command.
 
 **What happened:**
 Activated `tests/fixtures/kotlin-library` as the project root (a subdirectory inside the

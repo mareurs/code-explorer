@@ -363,16 +363,6 @@ Two common causes:
    **Fix:** Verify with `ls -la /path/to/project/.git`. If the project is not
    a git repo, git tools will not work.
 
-2. **Git is disabled.** The `git_enabled` setting is `false` in the security
-   configuration.
-
-   **Fix:** Check `project.toml`:
-
-   ```toml
-   [security]
-   git_enabled = true   # default is true
-   ```
-
 ---
 
 ## Performance
