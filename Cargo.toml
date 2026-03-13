@@ -1,6 +1,6 @@
 [package]
 name = "codescout"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2021"
 description = "High-performance coding agent toolkit MCP server"
 repository = "https://github.com/mareurs/codescout"
