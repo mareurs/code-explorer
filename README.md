@@ -44,9 +44,17 @@ Config file locations:
 - **Cursor:** `.cursor/mcp.json` (uses `"mcpServers"` key)
 - **VS Code/Copilot:** `~/.config/Code/User/mcp.json` (uses `"servers"` key instead of `"mcpServers"`)
 
-After registering, **run onboarding once per project** — ask your agent: `"Run codescout onboarding"`. This activates the project, detects languages and entry points, and generates the system prompt that guides every future session. Without it, codescout's tool guidance won't load.
-
 → [Full installation guide](docs/manual/src/getting-started/installation.md)
+
+## First run: onboarding
+
+After registering, **run onboarding once per project** — ask your agent:
+
+```
+Run codescout onboarding
+```
+
+This starts LSP servers, detects your languages and entry points, and generates the system prompt injected into every future session. **Without this step, codescout's tool guidance won't load and LSP tools will error.**
 
 ## Agent integrations
 
