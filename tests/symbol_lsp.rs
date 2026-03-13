@@ -480,6 +480,312 @@ async fn replace_symbol_round_trip_preserves_java_annotation() {
     );
 }
 
+/// Clean round-trip with no attributes — no regression from the full-range change.
+#[tokio::test]
+async fn replace_symbol_round_trip_no_attributes() {
+    let src = "fn target() {\n    old_body();\n}\n";
+
+    let (dir, ctx) = ctx_with_mock(&[("src/lib.rs", src)], |root| {
+        let file = root.join("src/lib.rs");
+        MockLspClient::new().with_symbols(
+            file.clone(),
+            // range_start == start — no attributes
+            vec![sym_with_range("target", 0, 2, 0, file)],
+        )
+    })
+    .await;
+
+    let find_result = FindSymbol
+        .call(
+            json!({
+                "name_path": "target",
+                "path": "src/lib.rs",
+                "include_body": true
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let body = find_result["symbols"][0]["body"].as_str().unwrap();
+    let new_body = body.replace("old_body()", "new_body()");
+
+    ReplaceSymbol
+        .call(
+            json!({
+                "path": "src/lib.rs",
+                "name_path": "target",
+                "new_body": new_body
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let result = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
+    assert!(
+        result.contains("new_body()"),
+        "new body must be applied; got:\n{result}"
+    );
+    assert!(
+        !result.contains("old_body()"),
+        "old body must be gone; got:\n{result}"
+    );
+    // File should have exactly the same number of lines
+    assert_eq!(result.lines().count(), src.lines().count());
+}
+
+/// Agent changes the attribute: #[test] → #[tokio::test]
+#[tokio::test]
+async fn replace_symbol_round_trip_agent_changes_attribute() {
+    let src = "#[test]\nfn target() {\n    old_body();\n}\n";
+
+    let (dir, ctx) = ctx_with_mock(&[("src/lib.rs", src)], |root| {
+        let file = root.join("src/lib.rs");
+        MockLspClient::new()
+            .with_symbols(file.clone(), vec![sym_with_range("target", 1, 3, 0, file)])
+    })
+    .await;
+
+    let find_result = FindSymbol
+        .call(
+            json!({
+                "name_path": "target",
+                "path": "src/lib.rs",
+                "include_body": true
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let body = find_result["symbols"][0]["body"].as_str().unwrap();
+    assert!(body.contains("#[test]"), "body should include attribute");
+
+    // Agent changes the attribute AND the body
+    let new_body = body
+        .replace("#[test]", "#[tokio::test]")
+        .replace("old_body()", "new_body()");
+
+    ReplaceSymbol
+        .call(
+            json!({
+                "path": "src/lib.rs",
+                "name_path": "target",
+                "new_body": new_body
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let result = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
+    assert!(
+        result.contains("#[tokio::test]"),
+        "new attribute must be present; got:\n{result}"
+    );
+    assert!(
+        !result.contains("\n#[test]\n"),
+        "old attribute must be gone; got:\n{result}"
+    );
+    assert!(
+        result.contains("new_body()"),
+        "new body must be applied; got:\n{result}"
+    );
+}
+
+/// Agent modifies the doc comment during a refactor.
+#[tokio::test]
+async fn replace_symbol_round_trip_agent_changes_doc_comment() {
+    let src = "/// Old documentation\nfn target() {\n    old_body();\n}\n";
+
+    let (dir, ctx) = ctx_with_mock(&[("src/lib.rs", src)], |root| {
+        let file = root.join("src/lib.rs");
+        MockLspClient::new()
+            .with_symbols(file.clone(), vec![sym_with_range("target", 1, 3, 0, file)])
+    })
+    .await;
+
+    let find_result = FindSymbol
+        .call(
+            json!({
+                "name_path": "target",
+                "path": "src/lib.rs",
+                "include_body": true
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let body = find_result["symbols"][0]["body"].as_str().unwrap();
+    let new_body = body
+        .replace(
+            "/// Old documentation",
+            "/// Updated documentation\n/// With extra detail",
+        )
+        .replace("old_body()", "new_body()");
+
+    ReplaceSymbol
+        .call(
+            json!({
+                "path": "src/lib.rs",
+                "name_path": "target",
+                "new_body": new_body
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let result = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
+    assert!(
+        result.contains("/// Updated documentation"),
+        "new doc must be present; got:\n{result}"
+    );
+    assert!(
+        result.contains("/// With extra detail"),
+        "extra doc line must be present; got:\n{result}"
+    );
+    assert!(
+        !result.contains("/// Old documentation"),
+        "old doc must be gone; got:\n{result}"
+    );
+    assert!(
+        result.contains("new_body()"),
+        "new body must be applied; got:\n{result}"
+    );
+}
+
+/// insert_code(before) with range_start_line set — must insert ABOVE the attribute,
+/// not between attribute and fn.
+#[tokio::test]
+async fn insert_code_before_with_range_start_line_inserts_above_attribute() {
+    // File layout (0-indexed):
+    //  0: "#[test]"                     <- range_start = 0
+    //  1: "fn target() {}"              <- selectionRange.start = 1
+    let src = "#[test]\nfn target() {}\n";
+
+    let (dir, ctx) = ctx_with_mock(&[("src/lib.rs", src)], |root| {
+        let file = root.join("src/lib.rs");
+        MockLspClient::new()
+            .with_symbols(file.clone(), vec![sym_with_range("target", 1, 1, 0, file)])
+    })
+    .await;
+
+    InsertCode
+        .call(
+            json!({
+                "path": "src/lib.rs",
+                "name_path": "target",
+                "position": "before",
+                "code": "// inserted above"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let result = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
+    let lines: Vec<&str> = result.lines().collect();
+    assert_eq!(
+        lines[0], "// inserted above",
+        "inserted code must be above #[test]; got:\n{result}"
+    );
+    // insert_code(before) adds a blank separator line after the inserted code
+    assert_eq!(
+        lines[1], "",
+        "blank separator line after inserted code; got:\n{result}"
+    );
+    assert_eq!(
+        lines[2], "#[test]",
+        "#[test] must follow separator; got:\n{result}"
+    );
+    assert!(
+        lines[3].contains("fn target()"),
+        "fn must follow #[test]; got:\n{result}"
+    );
+}
+
+/// find_symbol body_start_line field present and correct in integration context.
+#[tokio::test]
+async fn find_symbol_body_start_line_field_with_attributes() {
+    let src = "#[test]\n/// doc\nfn target() {\n    body();\n}\n";
+
+    let (_dir, ctx) = ctx_with_mock(&[("src/lib.rs", src)], |root| {
+        let file = root.join("src/lib.rs");
+        MockLspClient::new()
+            .with_symbols(file.clone(), vec![sym_with_range("target", 2, 4, 0, file)])
+    })
+    .await;
+
+    let result = FindSymbol
+        .call(
+            json!({
+                "name_path": "target",
+                "path": "src/lib.rs",
+                "include_body": true
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let sym = &result["symbols"][0];
+    // body_start_line = 1 (1-indexed, the #[test] line)
+    assert_eq!(
+        sym["body_start_line"].as_u64(),
+        Some(1),
+        "body_start_line should point to attribute line"
+    );
+    // start_line = 3 (1-indexed, the fn keyword line)
+    assert_eq!(
+        sym["start_line"].as_u64(),
+        Some(3),
+        "start_line should point to fn keyword"
+    );
+    // body should contain both attribute and fn
+    let body = sym["body"].as_str().unwrap();
+    assert!(
+        body.starts_with("#[test]"),
+        "body should start with attribute"
+    );
+}
+
+/// find_symbol without include_body should NOT have body_start_line.
+#[tokio::test]
+async fn find_symbol_no_body_start_line_without_include_body() {
+    let src = "#[test]\nfn target() {}\n";
+
+    let (_dir, ctx) = ctx_with_mock(&[("src/lib.rs", src)], |root| {
+        let file = root.join("src/lib.rs");
+        MockLspClient::new()
+            .with_symbols(file.clone(), vec![sym_with_range("target", 1, 1, 0, file)])
+    })
+    .await;
+
+    let result = FindSymbol
+        .call(
+            json!({
+                "name_path": "target",
+                "path": "src/lib.rs"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let sym = &result["symbols"][0];
+    assert!(
+        sym.get("body").is_none(),
+        "body should not be present without include_body"
+    );
+    assert!(
+        sym.get("body_start_line").is_none(),
+        "body_start_line should not be present without include_body"
+    );
+}
+
 // ── BUG-010: insert_code "before" must walk past #[attr] and /// doc lines ────
 
 /// `insert_code(position="before")` targeting a struct with a leading doc comment

@@ -5055,6 +5055,167 @@ fn main() {
     }
 
     #[test]
+    fn symbol_to_json_body_start_line_equals_start_line_when_no_attributes() {
+        let source = "fn foo() {\n    body();\n}\n";
+        let sym = crate::lsp::SymbolInfo {
+            name: "foo".into(),
+            name_path: "foo".into(),
+            kind: crate::lsp::SymbolKind::Function,
+            file: std::path::PathBuf::from("src/lib.rs"),
+            start_line: 0,
+            end_line: 2,
+            start_col: 0,
+            children: vec![],
+            range_start_line: Some(0), // same as start_line — no attributes
+            detail: None,
+        };
+        let json = symbol_to_json(&sym, true, Some(source), 0, false);
+        assert_eq!(
+            json["body_start_line"].as_u64(),
+            Some(1),
+            "body_start_line should equal start_line when no attributes"
+        );
+        assert_eq!(
+            json["start_line"].as_u64(),
+            Some(1),
+            "start_line should be 1 (1-indexed)"
+        );
+    }
+
+    #[test]
+    fn symbol_to_json_no_body_start_line_when_include_body_false() {
+        let source = "#[test]\nfn foo() {}\n";
+        let sym = crate::lsp::SymbolInfo {
+            name: "foo".into(),
+            name_path: "foo".into(),
+            kind: crate::lsp::SymbolKind::Function,
+            file: std::path::PathBuf::from("src/lib.rs"),
+            start_line: 1,
+            end_line: 1,
+            start_col: 0,
+            children: vec![],
+            range_start_line: Some(0),
+            detail: None,
+        };
+        let json = symbol_to_json(&sym, false, Some(source), 0, false);
+        assert!(
+            json.get("body").is_none(),
+            "body should not be present when include_body=false"
+        );
+        assert!(
+            json.get("body_start_line").is_none(),
+            "body_start_line should not be present when include_body=false"
+        );
+    }
+
+    #[test]
+    fn symbol_to_json_body_includes_only_doc_comments() {
+        // Symbol with only doc comments (no attributes)
+        let source = "/// Doc line 1\n/// Doc line 2\nfn foo() {}\n";
+        let sym = crate::lsp::SymbolInfo {
+            name: "foo".into(),
+            name_path: "foo".into(),
+            kind: crate::lsp::SymbolKind::Function,
+            file: std::path::PathBuf::from("src/lib.rs"),
+            start_line: 2, // fn keyword
+            end_line: 2,
+            start_col: 0,
+            children: vec![],
+            range_start_line: Some(0), // includes doc comments
+            detail: None,
+        };
+        let json = symbol_to_json(&sym, true, Some(source), 0, false);
+        let body = json["body"].as_str().unwrap();
+        assert!(
+            body.contains("/// Doc line 1"),
+            "body should include first doc line; got:\n{body}"
+        );
+        assert!(
+            body.contains("/// Doc line 2"),
+            "body should include second doc line; got:\n{body}"
+        );
+        assert!(
+            body.contains("fn foo()"),
+            "body should include fn declaration; got:\n{body}"
+        );
+        assert_eq!(json["body_start_line"].as_u64(), Some(1));
+        assert_eq!(json["start_line"].as_u64(), Some(3)); // fn keyword is line 3 (1-indexed)
+    }
+
+    #[test]
+    fn symbol_to_json_body_includes_multiline_attribute() {
+        let source = "#[cfg(\n    target_os = \"linux\"\n)]\nfn foo() {}\n";
+        let sym = crate::lsp::SymbolInfo {
+            name: "foo".into(),
+            name_path: "foo".into(),
+            kind: crate::lsp::SymbolKind::Function,
+            file: std::path::PathBuf::from("src/lib.rs"),
+            start_line: 3, // fn keyword
+            end_line: 3,
+            start_col: 0,
+            children: vec![],
+            range_start_line: Some(0), // includes #[cfg(
+            detail: None,
+        };
+        let json = symbol_to_json(&sym, true, Some(source), 0, false);
+        let body = json["body"].as_str().unwrap();
+        assert!(
+            body.contains("#[cfg("),
+            "body should include multiline attribute opener; got:\n{body}"
+        );
+        assert!(
+            body.contains("target_os"),
+            "body should include attribute content; got:\n{body}"
+        );
+        assert!(
+            body.contains(")]"),
+            "body should include attribute closer; got:\n{body}"
+        );
+        assert_eq!(json["body_start_line"].as_u64(), Some(1));
+    }
+
+    #[test]
+    fn symbol_to_json_child_body_also_uses_full_range() {
+        // Parent with a child that has its own attributes
+        let source = "impl Foo {\n    #[test]\n    fn bar() {}\n}\n";
+        let child = crate::lsp::SymbolInfo {
+            name: "bar".into(),
+            name_path: "Foo/bar".into(),
+            kind: crate::lsp::SymbolKind::Function,
+            file: std::path::PathBuf::from("src/lib.rs"),
+            start_line: 2, // fn bar
+            end_line: 2,
+            start_col: 0,
+            children: vec![],
+            range_start_line: Some(1), // #[test]
+            detail: None,
+        };
+        let parent = crate::lsp::SymbolInfo {
+            name: "Foo".into(),
+            name_path: "Foo".into(),
+            kind: crate::lsp::SymbolKind::Struct,
+            file: std::path::PathBuf::from("src/lib.rs"),
+            start_line: 0,
+            end_line: 3,
+            start_col: 0,
+            children: vec![child],
+            range_start_line: Some(0),
+            detail: None,
+        };
+        // depth=1 to include children
+        let json = symbol_to_json(&parent, true, Some(source), 1, false);
+        let child_body = json["children"][0]["body"].as_str().unwrap();
+        assert!(
+            child_body.contains("#[test]"),
+            "child body should include its attribute; got:\n{child_body}"
+        );
+        assert!(
+            child_body.contains("fn bar()"),
+            "child body should include fn declaration; got:\n{child_body}"
+        );
+    }
+
+    #[test]
     fn find_insert_before_line_walks_past_multiline_attribute() {
         // #[cfg(
         //     target_os = "linux"
