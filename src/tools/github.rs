@@ -1089,7 +1089,8 @@ impl Tool for GithubRepo {
          Releases: list_releases | get_latest_release | get_release_by_tag\n\
          Tags: list_tags | get_tag\n\
          Code: search_code\n\n\
-         search_code returns a @buffer handle. get_commit returns a @buffer handle."
+         search_code returns a @buffer handle. get_commit returns a @buffer handle.\n\
+         NOTE: owner/repo params do NOT scope search_code — use repo:owner/repo in the query string (e.g. query=\"fn main repo:rust-lang/rust-analyzer\")."
     }
 
     fn input_schema(&self) -> Value {

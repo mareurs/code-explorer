@@ -181,7 +181,7 @@ diff), prefer `run_command("git ...")` — it's faster and has full history.
   - Commits: `list_commits` | `get_commit` (returns `@buffer` handle)
   - Releases: `list_releases` | `get_latest_release` | `get_release_by_tag`
   - Tags: `list_tags` | `get_tag`
-  - Code: `search_code` (returns `@buffer` handle)
+  - Code: `search_code` (returns `@buffer` handle) — **scope with `repo:owner/repo` in the query**, not the `owner`/`repo` params (e.g. `query="fn main repo:rust-lang/rust-analyzer"`)
 
 Additional GitHub tools (`github_identity`, `github_issue`, `github_pr`, `github_file`)
 are available when `security.github_enabled = true` in `.codescout/project.toml`.
@@ -266,3 +266,4 @@ Instructions" — project-specific guidance. Edit the file to customize AI behav
 8. **Check `features_md` from `onboarding` before suggesting features.** Don't propose work that's already done.
 9. **Semantic search for "how does X work?"** Then drill into results with symbol tools.
 10. **Read `language-patterns` memory before writing or editing code.** `memory(action="read", topic="language-patterns")` contains per-language anti-patterns and correct patterns. Consult it before code changes or code review.
+11. **Prefer local git over GitHub API for local history.** `run_command("git blame/log/diff ...")` is faster and has full history. Use `github_repo` only for remote-only operations: releases, remote branches, cross-repo code search, forking.
