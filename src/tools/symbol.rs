@@ -1536,6 +1536,26 @@ fn editing_start_line(sym: &crate::lsp::SymbolInfo, lines: &[&str]) -> usize {
         .map(|r| r as usize)
         .unwrap_or_else(|| find_insert_before_line(lines, sym.start_line as usize))
 }
+/// Get the true end line for write operations (insert_code after, replace_symbol).
+///
+/// Uses AST to cap `sym.end_line` when the LSP over-extends the symbol range
+/// into the next symbol's opening line — a common rust-analyzer pattern where
+/// `range.end.line` points to `fn following() {` instead of the current `}`.
+///
+/// When AST finds the symbol and reports `ast_end < sym.end_line`, we trust the
+/// AST (it always terminates at the real `}`). Otherwise we trust the LSP.
+/// This is the symmetric counterpart to `editing_start_line`.
+fn editing_end_line(sym: &crate::lsp::SymbolInfo) -> u32 {
+    let Ok(ast_syms) = crate::ast::extract_symbols(&sym.file) else {
+        return sym.end_line;
+    };
+    if let Some(ast_end) = find_ast_end_line_in(&ast_syms, &sym.name, sym.start_line) {
+        if ast_end < sym.end_line {
+            return ast_end; // LSP over-extends; trust AST
+        }
+    }
+    sym.end_line
+}
 
 /// Walk backwards from `symbol_start` past attributes, decorators, and doc comments.
 ///
@@ -1656,7 +1676,7 @@ impl Tool for ReplaceSymbol {
         let lines: Vec<&str> = content.lines().collect();
 
         let start = editing_start_line(sym, &lines);
-        let end = (sym.end_line as usize + 1).min(lines.len());
+        let end = (editing_end_line(sym) as usize + 1).min(lines.len());
 
         if start >= lines.len() {
             return Err(RecoverableError::with_hint(
@@ -1729,7 +1749,7 @@ impl Tool for RemoveSymbol {
         let lines: Vec<&str> = content.lines().collect();
 
         let start = editing_start_line(sym, &lines);
-        let end = (sym.end_line as usize + 1).min(lines.len());
+        let end = (editing_end_line(sym) as usize + 1).min(lines.len());
 
         if start >= lines.len() {
             return Err(RecoverableError::with_hint(
@@ -1811,7 +1831,7 @@ impl Tool for InsertCode {
         let code_lines: Vec<&str> = code.lines().collect();
         let insert_at = match position {
             "before" => editing_start_line(sym, &lines),
-            _ => (sym.end_line as usize + 1).min(lines.len()),
+            _ => (editing_end_line(sym) as usize + 1).min(lines.len()),
         };
 
         let mut new_lines = Vec::new();

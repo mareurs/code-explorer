@@ -532,6 +532,55 @@ Changed `symbol_to_json` to use `editing_start_line(sym, &lines)` instead of `sy
 
 ---
 
+### BUG-023 — `insert_code(position="after")`: insertion lands inside next function when LSP over-extends end range
+
+**Date:** 2026-03-14
+**Severity:** High — silently nests new code inside the following symbol's body
+**Status:** ✅ FIXED — `editing_end_line()` caps LSP end to AST-reported end when LSP over-extends.
+
+**What happened:**
+Called `insert_code(name_path="onboarding_status_omits_private_memories_field_when_empty", position="after")`.
+The new code ended up *inside* `onboarding_call_content_delivers_message_when_already_done`'s body,
+producing a "cannot test inner items" warning from rustc (nested `#[test]` inside a function body).
+
+**Root cause:**
+rust-analyzer sometimes reports `range.end.line` as the opening `fn foo() {` line of the *next*
+function — one line past the actual closing `}`. `insert_code` used `sym.end_line + 1` directly,
+landing inside the following function body.
+
+`validate_symbol_range` only checked `ast_end > sym.end_line` (LSP under-reports) and returned
+a `RecoverableError`. The symmetric over-extension case (`sym.end_line > ast_end`) was silently
+accepted, resulting in a corrupt insertion.
+
+**Fix:**
+Added `editing_end_line(sym)` (symmetric to `editing_start_line`): queries AST for the true
+closing line; when `ast_end < sym.end_line` (over-extension), caps to `ast_end`. Used in
+`insert_code(after)` and `replace_symbol` instead of raw `sym.end_line`.
+Regression test: `insert_code_after_caps_overextended_lsp_end`.
+
+---
+
+### BUG-024 — `replace_symbol`: "after" range includes next function's first line when LSP over-extends
+
+**Date:** 2026-03-14
+**Severity:** High — replace range is one line too wide, consuming the next function's opening line
+**Status:** ✅ FIXED — same `editing_end_line()` fix as BUG-023.
+
+**What happened:**
+`replace_symbol` called on a function where rust-analyzer's `range.end.line` pointed to the
+next function's opening `fn ... {` line. The replacement range extended one line too far,
+and the next function's opening line was deleted, leaving a stub body (`{` orphaned without `fn`).
+
+**Root cause:**
+Same as BUG-023: raw `sym.end_line + 1` used as the exclusive end of the splice range in
+`replace_symbol`. No AST cross-check on the end side.
+
+**Fix:**
+`editing_end_line(sym)` applied to `replace_symbol`'s `end` computation (same as BUG-023 fix).
+Regression test: `replace_symbol_caps_overextended_lsp_end`.
+
+---
+
 ## Template for new entries
 
 ```

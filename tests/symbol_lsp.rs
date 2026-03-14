@@ -929,23 +929,23 @@ async fn insert_code_after_lands_past_symbol() {
     );
 }
 
-/// With "trust LSP", end_line=3 means insert_code(after) inserts at line 4.
-/// If LSP over-extends, the insertion lands after the overextended range.
+/// BUG-023 regression: when LSP over-extends end_line to the next function's opening
+/// line, editing_end_line() caps it to the AST-reported end, so insertion lands
+/// between the closing `}` and the next function — NOT inside the next function body.
 #[tokio::test]
-async fn insert_code_after_trusts_lsp_end() {
+async fn insert_code_after_caps_overextended_lsp_end() {
     // File layout (0-indexed):
-    //  0: "    fn target() {"
-    //  1: "        body();"
-    //  2: "    }"
-    //  3: "    fn following() {"  ← LSP over-extends target's end_line here
-    //  4: "        inside();"
-    //  5: "    }"
-    let src =
-        "    fn target() {\n        body();\n    }\n    fn following() {\n        inside();\n    }\n";
+    //  0: "fn target() {"
+    //  1: "    body();"
+    //  2: "}"
+    //  3: "fn following() {"   ← LSP over-extends target's end_line to here
+    //  4: "    inside();"
+    //  5: "}"
+    let src = "fn target() {\n    body();\n}\nfn following() {\n    inside();\n}\n";
 
     let (dir, ctx) = ctx_with_mock(&[("src/lib.rs", src)], |root| {
         let file = root.join("src/lib.rs");
-        // LSP reports end_line=3 (the `fn following() {` line) — trust LSP, insert after line 3
+        // LSP reports end_line=3 (over-extended into fn following() { line)
         MockLspClient::new().with_symbols(file.clone(), vec![sym("target", 0, 3, file)])
     })
     .await;
@@ -956,7 +956,7 @@ async fn insert_code_after_trusts_lsp_end() {
                 "path": "src/lib.rs",
                 "name_path": "target",
                 "position": "after",
-                "code": "    // inserted\n"
+                "code": "// inserted\n"
             }),
             &ctx,
         )
@@ -968,13 +968,13 @@ async fn insert_code_after_trusts_lsp_end() {
         result.contains("// inserted"),
         "insertion must be present; got:\n{result}"
     );
-    // With "trust LSP", insert after line 3 (end_line+1=4)
-    // Insertion lands after `fn following() {` — past the overextended end
+    // editing_end_line caps to AST end (line 2 = closing `}`),
+    // so insertion goes after line 2 — between `}` and `fn following()`.
     let insert_pos = result.find("// inserted").unwrap();
     let following_fn = result.find("fn following()").unwrap();
     assert!(
-        insert_pos > following_fn,
-        "with trust LSP, insertion after overextended end lands past fn following; got:\n{result}"
+        insert_pos < following_fn,
+        "insertion should land before fn following(), not inside it; got:\n{result}"
     );
 }
 
@@ -1051,12 +1051,10 @@ async fn insert_code_after_rejects_truncated_end_in_nested_fn() {
 
 // ── remove_symbol: trust LSP ranges ──────────────────────────────────────────
 
-/// With "trust LSP" design, when LSP over-extends `end_line` to include a
-/// sibling `const`, we trust it — the const is removed along with the function.
-/// This is an LSP inaccuracy, not a bug in remove_symbol. The agent can verify
-/// via find_symbol(include_body=true) to see the same overextended range.
+/// BUG-024 regression (remove_symbol): when LSP over-extends `end_line` to include a
+/// sibling `const`, editing_end_line() caps to the AST-reported end so the const survives.
 #[tokio::test]
-async fn remove_symbol_trusts_lsp_range_even_when_overextended() {
+async fn remove_symbol_caps_overextended_lsp_end() {
     // File layout (0-indexed):
     //  0: "fn target() {"
     //  1: "    // body"
@@ -1066,7 +1064,7 @@ async fn remove_symbol_trusts_lsp_range_even_when_overextended() {
 
     let (dir, ctx) = ctx_with_mock(&[("src/lib.rs", src)], |root| {
         let file = root.join("src/lib.rs");
-        // LSP reports end_line=3 (the const line) — trust LSP, remove lines 0-3
+        // LSP reports end_line=3 (over-extended to const line — true end is line 2)
         MockLspClient::new().with_symbols(file.clone(), vec![sym("target", 0, 3, file)])
     })
     .await;
@@ -1083,14 +1081,14 @@ async fn remove_symbol_trusts_lsp_range_even_when_overextended() {
         .unwrap();
 
     let result = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
-    // With "trust LSP", the const is within the LSP range and is removed too
     assert!(
         !result.contains("fn target"),
         "function must be removed; got:\n{result}"
     );
+    // editing_end_line caps to AST end (line 2) — SENTINEL is outside the range and survives
     assert!(
-        !result.contains("SENTINEL"),
-        "const is within LSP range — removed too (trust LSP); got:\n{result}"
+        result.contains("SENTINEL"),
+        "SENTINEL must survive — it is outside the true symbol range; got:\n{result}"
     );
 }
 
@@ -1650,5 +1648,59 @@ async fn replace_symbol_works_for_ruby() {
     assert!(
         !result.contains("'old'"),
         "old body must be gone; got:\n{result}"
+    );
+}
+
+/// BUG-024 regression: replace_symbol with over-extended LSP end range must not
+/// consume the next function's opening line.
+#[tokio::test]
+async fn replace_symbol_caps_overextended_lsp_end() {
+    // File layout (0-indexed):
+    //  0: "fn target() {"
+    //  1: "    old_body();"
+    //  2: "}"
+    //  3: "fn following() {"   <- LSP over-extends target's end_line to here
+    //  4: "    inside();"
+    //  5: "}"
+    let src = "fn target() {\n    old_body();\n}\nfn following() {\n    inside();\n}\n";
+
+    let (dir, ctx) = ctx_with_mock(&[("src/lib.rs", src)], |root| {
+        let file = root.join("src/lib.rs");
+        // LSP reports end_line=3 (over-extended — true end is line 2)
+        MockLspClient::new().with_symbols(file.clone(), vec![sym("target", 0, 3, file)])
+    })
+    .await;
+
+    ReplaceSymbol
+        .call(
+            json!({
+                "path": "src/lib.rs",
+                "name_path": "target",
+                "new_body": "fn target() {\n    new_body();\n}"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let result = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
+    assert!(
+        result.contains("fn following()"),
+        "fn following() must still be present; got:\n{result}"
+    );
+    assert!(
+        result.contains("new_body()"),
+        "replacement body must be present; got:\n{result}"
+    );
+    assert!(
+        !result.contains("old_body()"),
+        "old body must be gone; got:\n{result}"
+    );
+    // fn following() must appear after the replacement, not be eaten by it
+    let replaced_pos = result.find("new_body()").unwrap();
+    let following_pos = result.find("fn following()").unwrap();
+    assert!(
+        following_pos > replaced_pos,
+        "fn following() must come after replacement; got:\n{result}"
     );
 }
