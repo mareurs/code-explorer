@@ -5,6 +5,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
+use std::sync::Weak;
+use std::time::Duration;
 use std::time::Instant;
 
 use anyhow::Result;
@@ -33,6 +35,8 @@ impl LspKey {
 ///
 /// Clients are lazily started on first use and cached. When the pool
 /// reaches `max_clients`, the least-recently-used client is evicted.
+/// Clients idle for longer than `idle_ttl` are also reaped by a background
+/// task spawned in `new_arc_with_ttl`.
 pub struct LspManager {
     clients: Mutex<HashMap<LspKey, Arc<LspClient>>>,
     /// Tracks last access time for LRU eviction.
@@ -47,6 +51,8 @@ pub struct LspManager {
     starting: StdMutex<HashMap<LspKey, tokio::sync::watch::Receiver<Option<bool>>>>,
     /// Maximum number of concurrent LSP clients before LRU eviction kicks in.
     max_clients: usize,
+    /// How long a client may sit idle before the background task evicts it.
+    idle_ttl: Duration,
 }
 
 impl Default for LspManager {
@@ -93,6 +99,7 @@ impl LspManager {
             last_used: Mutex::new(HashMap::new()),
             starting: StdMutex::new(HashMap::new()),
             max_clients: 5,
+            idle_ttl: Duration::from_secs(20 * 60),
         }
     }
 
@@ -421,8 +428,63 @@ impl crate::lsp::ops::LspProvider for LspManager {
 }
 
 impl LspManager {
+    /// Create a new `Arc<LspManager>` using the default idle TTL (20 minutes)
+    /// and spawn a background eviction task.
     pub fn new_arc() -> Arc<Self> {
-        Arc::new(Self::new())
+        Self::new_arc_with_ttl(Duration::from_secs(20 * 60))
+    }
+
+    /// Create a new `Arc<LspManager>` with a custom idle TTL and spawn the
+    /// background eviction task.  The task holds a `Weak` reference so it
+    /// exits automatically when the last `Arc` is dropped.
+    pub fn new_arc_with_ttl(ttl: Duration) -> Arc<Self> {
+        let mut mgr = Self::new();
+        mgr.idle_ttl = ttl;
+        let arc = Arc::new(mgr);
+        let weak = Arc::downgrade(&arc);
+        tokio::spawn(async move {
+            Self::idle_eviction_loop(weak, ttl).await;
+        });
+        arc
+    }
+
+    /// Evict all clients that have not been accessed for longer than `ttl`.
+    /// Called periodically by the background task; also `pub(crate)` for
+    /// direct testing without the background task.
+    pub(crate) async fn evict_idle(&self, ttl: Duration) {
+        let now = Instant::now();
+        let idle_keys: Vec<LspKey> = {
+            let last_used = self.last_used.lock().await;
+            last_used
+                .iter()
+                .filter(|(_, t)| now.duration_since(**t) > ttl)
+                .map(|(k, _)| k.clone())
+                .collect()
+        };
+        for key in idle_keys {
+            let client = {
+                let mut clients = self.clients.lock().await;
+                clients.remove(&key)
+            };
+            self.last_used.lock().await.remove(&key);
+            if let Some(c) = client {
+                tracing::info!("Idle TTL evicting LSP client: {}", key);
+                let _ = c.shutdown().await;
+            }
+        }
+    }
+
+    /// Background loop: wakes every `ttl / 4` and calls `evict_idle`.
+    /// Exits when the `Weak` can no longer be upgraded (manager dropped).
+    async fn idle_eviction_loop(weak: Weak<Self>, ttl: Duration) {
+        let interval = ttl / 4;
+        loop {
+            tokio::time::sleep(interval).await;
+            match weak.upgrade() {
+                Some(mgr) => mgr.evict_idle(ttl).await,
+                None => break,
+            }
+        }
     }
 }
 
@@ -575,5 +637,97 @@ mod tests {
     fn lsp_key_display() {
         let key = LspKey::new("rust", Path::new("/my/project"));
         assert_eq!(format!("{}", key), "rust@/my/project");
+    }
+
+    // --- Idle TTL eviction tests ---
+
+    /// evict_idle must remove last_used entries whose age exceeds the TTL,
+    /// even when no corresponding client exists in the pool (e.g. already
+    /// LRU-evicted but last_used not yet cleaned up).
+    ///
+    /// Three-query sandwich:
+    ///   1. Insert stale entry → baseline count = 1
+    ///   2. evict_idle with 1 ms TTL → should remove it
+    ///   3. Count = 0 → entry cleaned up
+    #[tokio::test]
+    async fn evict_idle_clears_stale_last_used_entries() {
+        let mgr = LspManager::new();
+        let key = LspKey::new("rust", Path::new("/stale-project"));
+
+        // Step 1 — baseline: insert a stale entry (1 hour in the past)
+        mgr.last_used.lock().await.insert(
+            key.clone(),
+            Instant::now() - std::time::Duration::from_secs(3600),
+        );
+        assert_eq!(mgr.last_used.lock().await.len(), 1);
+
+        // Step 2 — evict with a 1 ms TTL; the 1-hour-old entry qualifies
+        mgr.evict_idle(std::time::Duration::from_millis(1)).await;
+
+        // Step 3 — stale entry removed
+        assert_eq!(mgr.last_used.lock().await.len(), 0);
+    }
+
+    /// evict_idle must leave entries whose age is below the TTL untouched.
+    #[tokio::test]
+    async fn evict_idle_preserves_recent_entries() {
+        let mgr = LspManager::new();
+        let key = LspKey::new("typescript", Path::new("/fresh-project"));
+
+        // Insert a just-accessed entry
+        mgr.last_used
+            .lock()
+            .await
+            .insert(key.clone(), Instant::now());
+
+        // Evict with a 1-hour TTL — the fresh entry should survive
+        mgr.evict_idle(std::time::Duration::from_secs(3600)).await;
+
+        assert_eq!(mgr.last_used.lock().await.len(), 1);
+    }
+
+    /// The background task spawned by new_arc_with_ttl must automatically
+    /// evict a client that has not been accessed since longer than the TTL.
+    ///
+    /// Uses rust-analyzer as the real LSP; skipped if not installed.
+    #[tokio::test]
+    async fn idle_background_task_evicts_after_ttl() {
+        use std::process::Command as StdCommand;
+        if StdCommand::new("rust-analyzer")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            eprintln!("Skipping: rust-analyzer not installed");
+            return;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"t\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/lib.rs"), "pub fn f() {}").unwrap();
+
+        let ttl = std::time::Duration::from_millis(300);
+        let mgr = LspManager::new_arc_with_ttl(ttl);
+
+        // Start a real LSP client
+        mgr.get_or_start("rust", dir.path()).await.unwrap();
+        assert!(
+            !mgr.active_languages().await.is_empty(),
+            "client should be alive"
+        );
+
+        // Wait 4× the TTL so the background check interval fires at least once
+        tokio::time::sleep(ttl * 4).await;
+
+        // Client must have been evicted
+        assert!(
+            mgr.active_languages().await.is_empty(),
+            "idle client should have been evicted after TTL"
+        );
     }
 }
