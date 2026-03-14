@@ -1,6 +1,7 @@
 //! Central orchestrator: manages projects, tool registry, and shared state.
 
 use anyhow::Result;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -34,6 +35,16 @@ pub enum IndexingState {
     Failed(String),
 }
 
+/// Tracks the indexing lifecycle of a single external library.
+#[derive(Debug)]
+pub enum LibraryIndexState {
+    Idle,
+    FetchingSources { command: String },
+    Indexing { done: usize, total: usize },
+    Done { chunks: usize, version: String },
+    Failed(String),
+}
+
 #[derive(Clone)]
 pub struct Agent {
     pub inner: Arc<RwLock<AgentInner>>,
@@ -43,6 +54,13 @@ pub struct Agent {
     /// Tracks the background index-build task. Stored outside AgentInner
     /// so callers only need a brief std::sync lock, not an async RwLock.
     pub indexing: Arc<std::sync::Mutex<IndexingState>>,
+    /// Per-session dedup for library nudge hints (e.g. "index this library").
+    /// Wrapped in Arc so Agent remains Clone.
+    pub nudged_libraries: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    /// Limits concurrent embedding API calls to avoid overwhelming the embedding server.
+    pub embedding_semaphore: Arc<tokio::sync::Semaphore>,
+    /// Per-library indexing state (Idle / FetchingSources / Indexing / Done / Failed).
+    pub library_index_states: Arc<std::sync::Mutex<HashMap<String, LibraryIndexState>>>,
 }
 
 pub struct AgentInner {
@@ -99,6 +117,9 @@ impl Agent {
             })),
             cached_embedder: Arc::new(tokio::sync::Mutex::new(None)),
             indexing: Arc::new(std::sync::Mutex::new(IndexingState::Idle)),
+            nudged_libraries: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
+            embedding_semaphore: Arc::new(tokio::sync::Semaphore::new(2)),
+            library_index_states: Arc::new(std::sync::Mutex::new(HashMap::new())),
         })
     }
 
@@ -203,7 +224,7 @@ impl Agent {
         let inner = self.inner.read().await;
         let project = inner.active_project.as_ref()?;
         let memories = project.memory.list().unwrap_or_default();
-        let has_index = crate::embed::index::db_path(&project.root).exists();
+        let has_index = crate::embed::index::project_db_path(&project.root).exists();
         let github_enabled = project.config.security.github_enabled;
 
         // Read system prompt: file takes precedence over TOML field
@@ -251,10 +272,20 @@ impl Agent {
     }
 
     /// Get the security config, or defaults if no project is active.
+    /// Populates `library_paths` from the active project's library registry.
     pub async fn security_config(&self) -> crate::util::path_security::PathSecurityConfig {
         let inner = self.inner.read().await;
         match &inner.active_project {
-            Some(p) => p.config.security.to_path_security_config(),
+            Some(p) => {
+                let mut config = p.config.security.to_path_security_config();
+                config.library_paths = p
+                    .library_registry
+                    .all()
+                    .iter()
+                    .map(|e| e.path.clone())
+                    .collect();
+                config
+            }
             None => crate::util::path_security::PathSecurityConfig::default(),
         }
     }
@@ -294,6 +325,28 @@ impl Agent {
         project.library_registry.save(&path)
     }
 
+    /// Check if we should nudge about a library. Returns true at most once per
+    /// session per library, and respects the persistent `nudge_dismissed` flag.
+    pub async fn should_nudge(&self, lib_name: &str) -> bool {
+        // Check persistent dismissal and indexed status
+        let inner = self.inner.read().await;
+        if let Some(p) = &inner.active_project {
+            if let Some(entry) = p.library_registry.lookup(lib_name) {
+                if entry.nudge_dismissed || entry.indexed {
+                    return false;
+                }
+            }
+        }
+        drop(inner);
+
+        // Check session dedup — insert returns true if the value was NEW
+        let mut nudged = self
+            .nudged_libraries
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        nudged.insert(lib_name.to_string())
+    }
+
     /// If `path` is the active project's `.codescout/project.toml`, reload the
     /// in-memory config from disk. Called by `edit_file` after every successful
     /// write so that tools like `semantic_search` see the updated model immediately
@@ -308,6 +361,99 @@ impl Agent {
                 }
             }
         }
+    }
+
+    /// Update the indexing state for a named library.
+    pub fn set_library_state(&self, name: &str, state: LibraryIndexState) {
+        let mut states = self
+            .library_index_states
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        states.insert(name.to_string(), state);
+    }
+
+    /// Spawn a background library indexing task if auto_index is enabled and library is not yet indexed.
+    pub async fn maybe_auto_index_library(&self, lib_name: &str) {
+        let (should_index, root, entry_path) = {
+            let inner = self.inner.read().await;
+            let Some(p) = &inner.active_project else {
+                return;
+            };
+            if !p.config.libraries.auto_index {
+                return;
+            }
+            let Some(entry) = p.library_registry.lookup(lib_name) else {
+                return;
+            };
+            if entry.indexed {
+                return;
+            }
+            (true, p.root.clone(), entry.path.clone())
+        };
+        if !should_index {
+            return;
+        }
+
+        let name = lib_name.to_string();
+        let source = format!("lib:{}", name);
+        self.set_library_state(&name, LibraryIndexState::Indexing { done: 0, total: 0 });
+
+        let self_clone = self.clone();
+        tokio::spawn(async move {
+            tracing::info!("Auto-indexing library '{}' in background...", name);
+            let result =
+                crate::embed::index::build_library_index(&root, &entry_path, &source, false).await;
+            match result {
+                Ok(()) => {
+                    let mut inner = self_clone.inner.write().await;
+                    if let Some(p) = inner.active_project.as_mut() {
+                        if let Some(entry) = p.library_registry.lookup_mut(&name) {
+                            entry.indexed = true;
+                        }
+                        let reg_path = p.root.join(".codescout/libraries.json");
+                        let _ = p.library_registry.save(&reg_path);
+                    }
+                    drop(inner);
+                    self_clone.set_library_state(
+                        &name,
+                        LibraryIndexState::Done {
+                            chunks: 0,
+                            version: String::new(),
+                        },
+                    );
+                }
+                Err(e) => {
+                    self_clone.set_library_state(&name, LibraryIndexState::Failed(e.to_string()));
+                }
+            }
+        });
+    }
+
+    /// Return a human-readable summary string for each tracked library.
+    pub fn library_states_summary(&self) -> HashMap<String, String> {
+        let states = self
+            .library_index_states
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        states
+            .iter()
+            .map(|(k, v)| {
+                let status = match v {
+                    LibraryIndexState::Idle => "idle".to_string(),
+                    LibraryIndexState::FetchingSources { command } => {
+                        format!("fetching_sources: {}", command)
+                    }
+                    LibraryIndexState::Indexing { done, total } => {
+                        format!("indexing: {}/{}", done, total)
+                    }
+                    LibraryIndexState::Done { chunks, version } => {
+                        format!("done: {} chunks (v{})", chunks, version)
+                    }
+                    LibraryIndexState::Failed(msg) => format!("failed: {}", msg),
+                };
+                (k.clone(), status)
+            })
+            .collect()
     }
 }
 

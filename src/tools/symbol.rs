@@ -1358,6 +1358,17 @@ impl Tool for GotoDefinition {
             if source_tag != "project" {
                 def["source"] = json!(source_tag);
             }
+            // Nudge if library was discovered but not indexed
+            if let Some(lib_name) = source_tag.strip_prefix("lib:") {
+                if ctx.agent.should_nudge(lib_name).await {
+                    def["library_hint"] = json!({
+                        "name": lib_name,
+                        "status": "not_indexed",
+                        "hint": format!("Library '{}' discovered but not indexed. Run index_project(scope='lib:{}') to enable semantic search.", lib_name, lib_name)
+                    });
+                }
+                ctx.agent.maybe_auto_index_library(lib_name).await;
+            }
             results.push(def);
         }
 
@@ -1470,10 +1481,29 @@ impl Tool for Hover {
         let hover_text = client.hover(&full_path, line_0, col, &lang).await?;
 
         match hover_text {
-            Some(text) => Ok(json!({
-                "content": text,
-                "location": format!("{}:{}", full_path.file_name().unwrap_or_default().to_string_lossy(), line_1),
-            })),
+            Some(text) => {
+                let root = ctx.agent.require_project_root().await?;
+                let source_tag = tag_external_path(&full_path, &root, &ctx.agent).await;
+                let mut result = json!({
+                    "content": text,
+                    "location": format!("{}:{}", full_path.file_name().unwrap_or_default().to_string_lossy(), line_1),
+                });
+                if source_tag != "project" {
+                    result["source"] = json!(source_tag);
+                }
+                // Nudge if library was discovered but not indexed
+                if let Some(lib_name) = source_tag.strip_prefix("lib:") {
+                    if ctx.agent.should_nudge(lib_name).await {
+                        result["library_hint"] = json!({
+                            "name": lib_name,
+                            "status": "not_indexed",
+                            "hint": format!("Library '{}' discovered but not indexed. Run index_project(scope='lib:{}') to enable semantic search.", lib_name, lib_name)
+                        });
+                    }
+                    ctx.agent.maybe_auto_index_library(lib_name).await;
+                }
+                Ok(result)
+            }
             None => Err(RecoverableError::with_hint(
                 format!("no hover info at {}:{}", full_path.display(), line_1),
                 "The LSP has no type/doc info at this position. \
@@ -2769,8 +2799,6 @@ fn apply_text_edits(content: &str, edits: &[lsp_types::TextEdit]) -> String {
 }
 
 /// Check if a path is outside the project root. If so, attempt to discover
-/// and register the library. Returns the source tag.
-#[allow(dead_code)]
 /// and register the library. Returns the source tag.
 async fn tag_external_path(
     path: &std::path::Path,

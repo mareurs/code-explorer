@@ -561,6 +561,12 @@ After confirming all 6 memories and the system prompt with the user, deliver thi
   2. `list_symbols("src/")` — see the module structure
   3. `semantic_search("your concept")` — find relevant code
   4. `find_symbol("Name", include_body=true)` — read the implementation
+- **Library support:**
+  - Libraries are **auto-discovered** when `goto_definition` resolves outside the project root.
+  - `list_libraries` — view all registered libraries and their index/version status.
+  - `index_project(scope="lib:<name>")` — index a specific library for semantic search.
+  - Once registered, use `scope="lib:<name>"` with `find_symbol`, `list_symbols`,
+    `search_pattern`, and `semantic_search` to navigate library code.
 
 ---
 

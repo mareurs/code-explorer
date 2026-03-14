@@ -15,6 +15,8 @@ pub struct ProjectConfig {
     pub security: SecuritySection,
     #[serde(default)]
     pub memory: MemorySection,
+    #[serde(default)]
+    pub libraries: LibrariesSection,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -197,6 +199,33 @@ pub struct MemorySection {
     pub protected: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LibrariesSection {
+    #[serde(default)]
+    pub auto_index: bool,
+    #[serde(default)]
+    pub auto_fetch_sources: bool,
+    #[serde(default = "default_fetch_timeout")]
+    pub fetch_timeout_secs: u64,
+    #[serde(default)]
+    pub version_overrides: std::collections::HashMap<String, String>,
+}
+
+fn default_fetch_timeout() -> u64 {
+    300
+}
+
+impl Default for LibrariesSection {
+    fn default() -> Self {
+        Self {
+            auto_index: false,
+            auto_fetch_sources: false,
+            fetch_timeout_secs: default_fetch_timeout(),
+            version_overrides: std::collections::HashMap::new(),
+        }
+    }
+}
+
 fn default_staleness_drift_threshold() -> f32 {
     0.3
 }
@@ -288,6 +317,7 @@ impl ProjectConfig {
             ignored_paths: IgnoredPathsSection::default(),
             security: SecuritySection::default(),
             memory: MemorySection::default(),
+            libraries: LibrariesSection::default(),
         }
     }
 
@@ -418,5 +448,31 @@ staleness_drift_threshold = 0.3
 "#;
         let section: MemorySection = toml::from_str(toml_str).unwrap();
         assert_eq!(section.protected, vec!["gotchas".to_string()]);
+    }
+
+    #[test]
+    fn project_config_deserializes_libraries_section() {
+        let toml = r#"
+[project]
+name = "test"
+
+[libraries]
+auto_index = true
+auto_fetch_sources = true
+fetch_timeout_secs = 120
+"#;
+        let config: ProjectConfig = toml::from_str(toml).unwrap();
+        assert!(config.libraries.auto_index);
+        assert!(config.libraries.auto_fetch_sources);
+        assert_eq!(config.libraries.fetch_timeout_secs, 120);
+    }
+
+    #[test]
+    fn project_config_libraries_defaults() {
+        let toml = "[project]\nname = \"test\"\n";
+        let config: ProjectConfig = toml::from_str(toml).unwrap();
+        assert!(!config.libraries.auto_index);
+        assert!(!config.libraries.auto_fetch_sources);
+        assert_eq!(config.libraries.fetch_timeout_secs, 300);
     }
 }

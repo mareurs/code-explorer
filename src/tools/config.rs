@@ -146,7 +146,7 @@ impl Tool for ProjectStatus {
                 "hint": "Call index_status() for detailed breakdown.",
             });
         } else {
-            let db_path = crate::embed::index::db_path(&root);
+            let db_path = crate::embed::index::project_db_path(&root);
             if !db_path.exists() {
                 result["index"] = json!({
                     "status": "not_indexed",
@@ -202,6 +202,32 @@ impl Tool for ProjectStatus {
                 tracing::debug!("memory staleness check failed: {e}");
             }
         }
+
+        // --- Workspace section ---
+        let workspace_toml_path = root.join(".codescout").join("workspace.toml");
+        let workspace_info = if workspace_toml_path.exists() {
+            std::fs::read_to_string(&workspace_toml_path)
+                .ok()
+                .and_then(|s| toml::from_str::<crate::config::workspace::WorkspaceConfig>(&s).ok())
+                .map(|ws| {
+                    json!({
+                        "name": ws.workspace.name,
+                        "projects": ws.projects.iter().map(|p| json!({
+                            "id": p.id,
+                            "root": p.root,
+                            "languages": p.languages,
+                            "depends_on": p.depends_on,
+                        })).collect::<Vec<_>>(),
+                        "resources": {
+                            "max_lsp_clients": ws.resources.max_lsp_clients,
+                            "idle_timeout_secs": ws.resources.idle_timeout_secs,
+                        },
+                    })
+                })
+        } else {
+            None
+        };
+        result["workspace"] = json!(workspace_info);
 
         Ok(result)
     }
@@ -536,5 +562,65 @@ mod tests {
             "hint: {hint}"
         );
         assert!(hint.contains(dir1.path().to_str().unwrap()));
+    }
+
+    #[tokio::test]
+    async fn project_status_shows_workspace_projects() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        // Create multi-project structure
+        std::fs::write(root.join("build.gradle.kts"), "").unwrap();
+        let mcp = root.join("mcp-server");
+        std::fs::create_dir_all(&mcp).unwrap();
+        std::fs::write(mcp.join("package.json"), r#"{"scripts":{"build":"tsc"}}"#).unwrap();
+
+        // Create workspace.toml
+        let codescout = root.join(".codescout");
+        std::fs::create_dir_all(&codescout).unwrap();
+        std::fs::write(
+            codescout.join("workspace.toml"),
+            r#"
+[workspace]
+name = "test"
+
+[[project]]
+id = "test"
+root = "."
+languages = ["kotlin"]
+
+[[project]]
+id = "mcp-server"
+root = "mcp-server"
+languages = ["typescript"]
+depends_on = ["test"]
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            codescout.join("project.toml"),
+            "[project]\nname = \"test\"\nlanguages = [\"kotlin\"]\n",
+        )
+        .unwrap();
+
+        let agent = Agent::new(Some(root.to_path_buf())).await.unwrap();
+        let ctx = ToolContext {
+            agent,
+            lsp: lsp(),
+            output_buffer: Arc::new(crate::tools::output_buffer::OutputBuffer::new(20)),
+            progress: None,
+        };
+
+        let result = ProjectStatus
+            .call(serde_json::json!({}), &ctx)
+            .await
+            .unwrap();
+        let ws = result.get("workspace");
+        assert!(
+            ws.is_some(),
+            "project_status should include workspace section"
+        );
+        let projects = ws.unwrap().get("projects").unwrap().as_array().unwrap();
+        assert_eq!(projects.len(), 2);
     }
 }

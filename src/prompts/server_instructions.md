@@ -173,12 +173,25 @@ use the right tool. Small shortcuts compound into large context waste.
   - `fresh` — memories with all anchors matching current files
   - `untracked` — memories without anchor sidecars
   When memories are stale, review them and either update the memory content (re-writes anchors) or use `memory(action="refresh_anchors", topic="...")` to acknowledge "still accurate."
-- `list_libraries` — registered libraries and index status. Use `scope="lib:<name>"` in
-  `semantic_search`, `find_symbol`, or `index_project` to target a library.
+- `list_libraries` — registered libraries and index status. Shows version, indexed state,
+  and whether the indexed version differs from the current lockfile version (staleness).
+  Use `scope="lib:<name>"` in `semantic_search`, `find_symbol`, or `index_project` to target a library.
 - `register_library(path, name?, language?)` — manually register an external library.
   Auto-detects name and language from manifest files (Cargo.toml, package.json, pyproject.toml, go.mod).
   After registering, use `scope="lib:<name>"` in symbol/search tools, and `index_project(scope="lib:<name>")`
   for semantic search.
+
+**Library navigation rules:**
+- Once registered, library source code is navigable with all **read-only** tools:
+  `list_symbols`, `find_symbol`, `read_file`, `search_pattern`, `hover`, `goto_definition`.
+- Libraries are **auto-discovered** when `goto_definition` or `hover` resolves to a path
+  outside the project root — the library is registered automatically.
+- Use `scope="lib:<name>"` in `semantic_search` to search library code (requires indexing).
+- Staleness hints appear in `semantic_search` responses when a library's lockfile version
+  differs from the version that was indexed — re-run `index_project(scope="lib:<name>")` to refresh.
+- Use `index_status()` to check indexing progress for all registered libraries.
+- **Write tools** (`edit_file`, `replace_symbol`, `insert_code`, etc.) are **project-only**
+  and will be rejected for library paths.
 
 ### GitHub
 

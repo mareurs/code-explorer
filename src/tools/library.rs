@@ -37,9 +37,15 @@ impl Tool for ListLibraries {
             .all()
             .iter()
             .map(|entry| {
+                let stale = entry.indexed
+                    && entry.version.is_some()
+                    && entry.version_indexed.is_some()
+                    && entry.version != entry.version_indexed;
                 json!({
                     "name": entry.name,
                     "version": entry.version,
+                    "version_indexed": entry.version_indexed,
+                    "stale": stale,
                     "path": entry.path.display().to_string(),
                     "language": entry.language,
                     "discovered_via": entry.discovered_via,
@@ -191,7 +197,12 @@ fn format_list_libraries(result: &Value) -> String {
         } else {
             "not indexed"
         };
-        out.push_str(&format!("\n  {name:<name_width$}  {status}"));
+        let stale_marker = if lib["stale"].as_bool().unwrap_or(false) {
+            " [stale]"
+        } else {
+            ""
+        };
+        out.push_str(&format!("\n  {name:<name_width$}  {status}{stale_marker}"));
     }
     out
 }

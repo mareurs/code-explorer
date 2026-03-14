@@ -3239,6 +3239,67 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn search_pattern_accepts_library_path() {
+        use crate::library::registry::{DiscoveryMethod, LibraryRegistry};
+
+        // Create a project dir and a separate library dir.
+        let proj_dir = tempdir().unwrap();
+        let lib_dir = tempdir().unwrap();
+
+        // Write a file inside the library that contains a recognisable symbol.
+        std::fs::write(lib_dir.path().join("lib.rs"), "pub fn hello_world() {}").unwrap();
+
+        // Seed .codescout/libraries.json so the Agent loads the library on startup.
+        std::fs::create_dir_all(proj_dir.path().join(".codescout")).unwrap();
+        let mut registry = LibraryRegistry::new();
+        registry.register(
+            "fake-lib".to_string(),
+            lib_dir.path().to_path_buf(),
+            "rust".to_string(),
+            DiscoveryMethod::Manual,
+        );
+        let registry_path = proj_dir.path().join(".codescout/libraries.json");
+        registry.save(&registry_path).unwrap();
+
+        let agent = Agent::new(Some(proj_dir.path().to_path_buf()))
+            .await
+            .unwrap();
+        let ctx = ToolContext {
+            agent,
+            lsp: crate::lsp::LspManager::new_arc(),
+            output_buffer: std::sync::Arc::new(crate::tools::output_buffer::OutputBuffer::new(20)),
+            progress: None,
+        };
+
+        // search_pattern with a path pointing into the library — the walker must
+        // start from the library root, not the project root.
+        let result = SearchPattern
+            .call(
+                json!({
+                    "pattern": "hello_world",
+                    "path": lib_dir.path().to_str().unwrap()
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        let matches = result["matches"].as_array().unwrap();
+        assert_eq!(
+            matches.len(),
+            1,
+            "expected 1 match in library, got {matches:?}"
+        );
+        assert!(
+            matches[0]["content"]
+                .as_str()
+                .unwrap()
+                .contains("hello_world"),
+            "match content should include the searched symbol"
+        );
+    }
+
     // ── EditFile ──────────────────────────────────────────────────────────────
 
     #[tokio::test]

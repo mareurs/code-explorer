@@ -9,6 +9,12 @@ use std::path::{Path, PathBuf};
 pub struct LibraryEntry {
     pub name: String,
     pub version: Option<String>,
+    #[serde(default)]
+    pub version_indexed: Option<String>,
+    #[serde(default)]
+    pub db_file: Option<String>,
+    #[serde(default)]
+    pub nudge_dismissed: bool,
     pub path: PathBuf,
     pub language: String,
     pub discovered_via: DiscoveryMethod,
@@ -79,6 +85,9 @@ impl LibraryRegistry {
             self.entries.push(LibraryEntry {
                 name,
                 version: None,
+                version_indexed: None,
+                db_file: None,
+                nudge_dismissed: false,
                 path,
                 language,
                 indexed: false,
@@ -117,6 +126,31 @@ impl LibraryRegistry {
             .iter()
             .find(|e| absolute_path.starts_with(&e.path))
     }
+
+    /// Return registered libraries where `version != version_indexed` (stale).
+    /// Only considers libraries that are indexed and have both versions set.
+    pub fn stale_libraries(&self) -> Vec<&LibraryEntry> {
+        self.entries
+            .iter()
+            .filter(|e| {
+                e.indexed
+                    && e.version.is_some()
+                    && e.version_indexed.is_some()
+                    && e.version != e.version_indexed
+            })
+            .collect()
+    }
+
+    /// Update a library's detected version. Resets nudge_dismissed if version changed.
+    pub fn update_version(&mut self, name: &str, new_version: &str) {
+        if let Some(entry) = self.entries.iter_mut().find(|e| e.name == name) {
+            let changed = entry.version.as_deref() != Some(new_version);
+            entry.version = Some(new_version.to_string());
+            if changed {
+                entry.nudge_dismissed = false;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -129,6 +163,9 @@ mod tests {
         let entry = LibraryEntry {
             name: "serde".into(),
             version: Some("1.0.200".into()),
+            version_indexed: None,
+            db_file: None,
+            nudge_dismissed: false,
             path: PathBuf::from("/home/user/.cargo/registry/serde-1.0.200"),
             language: "rust".into(),
             discovered_via: DiscoveryMethod::LspFollowThrough,
@@ -315,5 +352,72 @@ mod tests {
             DiscoveryMethod::LspFollowThrough,
         );
         assert_eq!(reg.all().len(), 2);
+    }
+
+    #[test]
+    fn library_entry_serializes_version_fields() {
+        let entry = LibraryEntry {
+            name: "tokio".to_string(),
+            version: Some("1.38.0".to_string()),
+            version_indexed: Some("1.37.0".to_string()),
+            db_file: Some("tokio.db".to_string()),
+            nudge_dismissed: false,
+            path: PathBuf::from("/tmp/tokio"),
+            language: "rust".to_string(),
+            indexed: true,
+            discovered_via: DiscoveryMethod::LspFollowThrough,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("version_indexed"));
+        assert!(json.contains("db_file"));
+        assert!(json.contains("nudge_dismissed"));
+    }
+
+    #[test]
+    fn library_entry_deserializes_without_new_fields() {
+        // Old-format JSON without version_indexed, db_file, nudge_dismissed
+        let json = r#"{"name":"serde","version":null,"path":"/tmp/serde","language":"rust","indexed":false,"discovered_via":"lsp_follow_through"}"#;
+        let entry: LibraryEntry = serde_json::from_str(json).unwrap();
+        assert_eq!(entry.version_indexed, None);
+        assert_eq!(entry.db_file, None);
+        assert!(!entry.nudge_dismissed);
+    }
+
+    #[test]
+    fn stale_libraries_detects_version_mismatch() {
+        let mut registry = LibraryRegistry::new();
+        registry.register(
+            "tokio".into(),
+            PathBuf::from("/tmp"),
+            "rust".into(),
+            DiscoveryMethod::LspFollowThrough,
+        );
+        let entry = registry.lookup_mut("tokio").unwrap();
+        entry.version = Some("1.38.0".to_string());
+        entry.version_indexed = Some("1.37.0".to_string());
+        entry.indexed = true;
+
+        let stale = registry.stale_libraries();
+        assert_eq!(stale.len(), 1);
+        assert_eq!(stale[0].name, "tokio");
+    }
+
+    #[test]
+    fn nudge_dismissed_resets_on_version_change() {
+        let mut registry = LibraryRegistry::new();
+        registry.register(
+            "tokio".into(),
+            PathBuf::from("/tmp"),
+            "rust".into(),
+            DiscoveryMethod::LspFollowThrough,
+        );
+        let entry = registry.lookup_mut("tokio").unwrap();
+        entry.version = Some("1.37.0".to_string());
+        entry.nudge_dismissed = true;
+
+        registry.update_version("tokio", "1.38.0");
+        let entry = registry.lookup("tokio").unwrap();
+        assert!(!entry.nudge_dismissed);
+        assert_eq!(entry.version.as_deref(), Some("1.38.0"));
     }
 }

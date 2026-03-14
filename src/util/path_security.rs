@@ -190,6 +190,7 @@ fn canonicalize_write_target(path: &Path) -> PathBuf {
 /// - Relative paths are resolved against `project_root` (if available).
 /// - Absolute paths are used as-is.
 /// - The resolved path is checked against the deny-list.
+/// - Paths inside registered library roots are always allowed (read-only).
 pub fn validate_read_path(
     raw: &str,
     project_root: Option<&Path>,
@@ -217,6 +218,19 @@ pub fn validate_read_path(
     let denied = denied_read_paths(config);
     if is_denied(&resolved, &denied) {
         bail!("access denied: '{}' is in a protected location", raw);
+    }
+
+    // Check if path is inside a registered library (read-only access).
+    // Note: validate_read_path has no project-root enforcement (unlike validate_write_path),
+    // so this check is currently a no-op for reads. It is included for documentation
+    // clarity and future-proofing if root enforcement is ever added to reads.
+    if !config.library_paths.is_empty()
+        && config
+            .library_paths
+            .iter()
+            .any(|lib| resolved.starts_with(lib))
+    {
+        return Ok(resolved);
     }
 
     Ok(resolved)
@@ -657,6 +671,28 @@ mod tests {
             assert!(result.is_err());
             let _ = std::fs::remove_dir(&secret_dir);
         }
+    }
+
+    #[test]
+    fn validate_read_path_accepts_library_paths() {
+        let dir = tempdir().unwrap();
+        let lib_root = dir.path().join("libs/tokio");
+        std::fs::create_dir_all(&lib_root).unwrap();
+        let lib_file = lib_root.join("src/runtime.rs");
+        std::fs::create_dir_all(lib_file.parent().unwrap()).unwrap();
+        std::fs::write(&lib_file, "// runtime").unwrap();
+
+        let config = PathSecurityConfig {
+            library_paths: vec![lib_root.clone()],
+            ..Default::default()
+        };
+        let result = validate_read_path(
+            lib_file.to_str().unwrap(),
+            Some(Path::new("/tmp/other_project")),
+            &config,
+        );
+        // Path is inside a registered library root — should succeed.
+        assert!(result.is_ok());
     }
 
     // ── Write validation ─────────────────────────────────────────────────
