@@ -8,6 +8,8 @@ Works with Claude Code, GitHub Copilot, Cursor, and any MCP-capable agent.
 
 - **Symbol navigation** — `find_symbol`, `list_symbols`, `find_references`, `goto_definition`, `replace_symbol`, backed by LSP across 9 languages
 - **Semantic search** — find code by concept using embeddings, not grep
+- **Library navigation** — explore dependency source code with scoped search, version tracking, and auto-discovery
+- **Multi-project workspaces** — register related projects in `workspace.toml` for cross-project navigation with per-project memory and indexing
 - **Token efficiency** — compact by default, details on demand, never dumps full files
 
 ## Why not just read files?
@@ -80,12 +82,14 @@ Supported languages: Rust, Python, TypeScript/JavaScript, Go, Java, Kotlin, C/C+
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how to get started. PRs from Claude Code are welcome!
 
-## Experimental Features
+## Features
 
-New features land on the `experiments` branch before reaching `master`.
-They may change or be removed without notice, and may not be in your installed release yet.
-
-→ [Browse experimental features](https://github.com/mareurs/codescout/blob/experiments/docs/manual/src/experimental/index.md)
+- Multi-project workspace support with per-project LSP, memory, and semantic indexing
+- Library navigation with per-library embedding databases and version staleness hints
+- LSP idle TTL — idle language servers are shut down automatically (Kotlin: 2h, others: 30min) and restarted transparently on next query
+- Persistent memory across sessions with semantic recall
+- Output buffers (`@cmd_*`, `@file_*`) for token-efficient large output handling
+- Progressive disclosure — compact by default, full detail on demand
 
 ## License
 
