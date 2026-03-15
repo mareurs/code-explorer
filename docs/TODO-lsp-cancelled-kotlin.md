@@ -66,35 +66,27 @@ transient cancellations.
 
 ## Remaining open items
 
-### A. Better error when `initialize` hangs (highest priority)
+### A. Better error when `initialize` hangs
 
-The 300s `init_timeout` becomes a 5-minute user-visible hang when the workspace
-is locked. Options:
+**Status: 🔎 UNDER REVIEW** — Occurred consistently early on (2026-02-28) when competing
+kotlin-lsp instances were present. Has not reproduced since cleanup. May only trigger when
+IntelliJ or a stale process holds the workspace lock. Monitor before investing in a fix.
+
+The 300s `init_timeout` becomes a 5-minute user-visible hang when the workspace is locked.
+If it recurs, options:
 1. Shorten `init_timeout` for kotlin-lsp specifically (e.g. 60s)
-2. Detect if another kotlin-lsp is running for the same project and surface a
-   clear error immediately: "Another kotlin-lsp instance is already running for
-   this workspace. Close IntelliJ/VS Code or kill the existing process."
+2. Detect if another kotlin-lsp is running and surface a clear error immediately
 3. Use `fuser`/`lsof` to detect the lock before spawning
 
-### B. `did_close()` missing `open_files` removal
+### D. Error surfacing for -32800 cancellations
 
-See above. One-liner fix.
-
-### C. Startup delay — not yet measured on first cold run
-
-On the test machine, `initialize` took 13s with a warm disk cache. First run
-(no cached index) may be longer. Worth measuring once to set user expectations.
-
-### D. Error surfacing
-
-The -32800 hint is inside the JSON body of a `RecoverableError`. If the hang is
-the more common failure mode (not -32800), the hint may never be shown. The real
-UX problem is the timeout with no feedback — address via item A above.
+The -32800 hint is inside the JSON body of a `RecoverableError`. If the hang (item A) is
+the more common failure mode, the hint may never be shown. The real UX problem is the
+300s timeout with no user feedback.
 
 ---
 
 ## Related code
 
-- `src/lsp/client.rs` — `request()` (retry scaffold), `did_open()` (duplicate guard), `did_close()` (missing removal)
+- `src/lsp/client.rs` — `request()` (retry scaffold), `did_open()` (duplicate guard), `did_close()`
 - `src/lsp/servers/mod.rs` — kotlin `init_timeout: jvm_timeout` (300s)
-- `src/prompts/server_instructions.md` — may need a note about the workspace lock issue

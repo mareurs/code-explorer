@@ -2529,6 +2529,34 @@ mod tests {
         assert!(result.is_err());
         // Error should not panic, just return Err
     }
+    // BUG-005 regression: read_file on a directory path must return RecoverableError,
+    // not a hard anyhow error. A hard error aborts sibling parallel tool calls in Claude Code.
+    #[tokio::test]
+    async fn read_file_directory_path_returns_recoverable_error() {
+        let ctx = test_ctx().await;
+        let dir = tempdir().unwrap();
+        // Pass the directory itself as the path — not a file inside it.
+        let result = ReadFile
+            .call(json!({ "path": dir.path().to_str().unwrap() }), &ctx)
+            .await;
+        let err = result.unwrap_err();
+        assert!(
+            err.downcast_ref::<RecoverableError>().is_some(),
+            "read_file on a directory must be RecoverableError (not a hard error); got: {err}"
+        );
+        let rec = err.downcast_ref::<RecoverableError>().unwrap();
+        assert!(
+            rec.message.contains("directory"),
+            "error message should mention 'directory'; got: {}",
+            rec.message
+        );
+        assert!(
+            rec.hint.as_deref().unwrap_or("").contains("list_dir"),
+            "hint should suggest list_dir; got: {:?}",
+            rec.hint
+        );
+    }
+
     #[tokio::test]
     async fn read_file_binary_content_does_not_panic() {
         let ctx = test_ctx().await;
