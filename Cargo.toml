@@ -6,7 +6,7 @@ description = "High-performance coding agent toolkit MCP server"
 repository = "https://github.com/mareurs/codescout"
 license = "MIT"
 rust-version = "1.75"
-exclude = ["docs/research/*", ".codescout/embeddings/*"]
+exclude = [".codescout/", "docs/", "scripts/", ".github/", "CLAUDE.md"]
 
 [lib]
 name = "codescout"
