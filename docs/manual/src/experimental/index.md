@@ -18,3 +18,5 @@ Then register the locally built binary in your MCP config instead of the install
 
 - [LSP Idle TTL Eviction](lsp-idle-ttl.md) — automatically shut down idle LSP servers to
   reclaim memory, with per-language configurable timeouts
+- [Multi-Project Workspace Support](multi-project-workspace.md) — register and navigate
+  multiple related projects from a single codescout instance
