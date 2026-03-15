@@ -1,24 +1,4 @@
 # Experimental Features
 
-> ⚠ **These features are on the `experiments` branch and may change or be removed without
-> notice. They may not be present in your installed release.**
-
-Features listed here are working but not yet merged to `master`. To try them:
-
-```bash
-git clone https://github.com/mareurs/codescout
-cd codescout
-git checkout experiments
-cargo build --release
-```
-
-Then register the locally built binary in your MCP config instead of the installed `codescout`.
-
-## Features in development
-
-- [LSP Idle TTL Eviction](lsp-idle-ttl.md) — automatically shut down idle LSP servers to
-  reclaim memory, with per-language configurable timeouts
-- [Multi-Project Workspace Support](multi-project-workspace.md) — register and navigate
-  multiple related projects from a single codescout instance
-- [Library Navigation Enhancements](library-navigation.md) — per-library embedding DBs,
-  version tracking, and `scope=` filtering across symbol and semantic tools
+No features are currently in experimental status. All previously experimental
+features have graduated to the stable manual.

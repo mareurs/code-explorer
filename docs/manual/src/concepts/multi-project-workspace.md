@@ -1,7 +1,5 @@
 # Multi-Project Workspace Support
 
-> ⚠ Experimental — may change without notice.
-
 codescout can manage multiple related projects from a single server instance.
 This is useful for monorepos or closely related repositories where you want
 cross-project navigation without running separate MCP servers.

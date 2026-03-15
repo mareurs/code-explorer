@@ -27,6 +27,8 @@
   - [Setup Guide](semantic-search-guide.md)
 
 - [Library Navigation](concepts/library-navigation.md)
+- [Multi-Project Workspaces](concepts/multi-project-workspace.md)
+- [LSP Idle TTL](concepts/lsp-idle-ttl.md)
 
 - [Memory](concepts/memory.md)
   - [After Onboarding](concepts/after-onboarding.md)

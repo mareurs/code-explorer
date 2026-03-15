@@ -1,7 +1,5 @@
 # LSP Idle TTL Eviction
 
-> ⚠ Experimental — may change without notice.
-
 codescout starts LSP servers on demand and keeps them running for fast symbol lookups.
 A server that has been idle beyond its timeout is shut down automatically to reclaim memory.
 

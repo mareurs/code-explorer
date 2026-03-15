@@ -47,7 +47,8 @@ code. Build one with `index_project` pointed at the library's root path:
 ```
 
 This is a one-time cost per library. The index persists in
-`.codescout/libraries/<name>/embeddings.db`.
+`.codescout/embeddings/lib/<name>.db` — see
+[Per-Library Embedding Databases](#per-library-embedding-databases) below.
 
 ## When to Use Library Navigation
 
@@ -67,3 +68,56 @@ This is a one-time cost per library. The index persists in
   the `scope` parameter
 - [Semantic Search Tools](../tools/semantic-search.md) — semantic search within
   library scope
+
+## Per-Library Embedding Databases
+
+Earlier versions stored all embeddings in a single `.codescout/embeddings.db`.
+The current layout splits storage into separate databases:
+
+```
+.codescout/
+  embeddings/
+    project.db          ← your project's code
+    lib/
+      tokio.db          ← one file per registered library
+      serde.db
+      reqwest.db
+```
+
+The filename for each library is derived from its registered name: `/` and `\`
+are replaced with `--` and the result is lowercased (e.g. `@org/pkg` →
+`org--pkg.db`).
+
+**Migration is automatic.** If an old `embeddings.db` is found, codescout moves
+its contents into the new structure the first time the project is opened. No
+manual steps required.
+
+To build or rebuild a library's index:
+
+```json
+{ "tool": "index_project", "arguments": { "scope": "lib:tokio" } }
+```
+
+## Version Tracking and Staleness Hints
+
+When `index_project(scope="lib:<name>")` runs, codescout reads the project's
+lockfile (`Cargo.lock`, `package-lock.json`, etc.) to record the library version
+that was indexed.
+
+After a dependency upgrade, `semantic_search` includes a `stale_libraries` field:
+
+```json
+{
+  "stale_libraries": [
+    {
+      "name": "tokio",
+      "indexed": "1.37.0",
+      "current": "1.38.0",
+      "hint": "tokio was updated — run index_project(scope='lib:tokio') to re-index"
+    }
+  ]
+}
+```
+
+Staleness is detected by comparing indexed vs current versions from the lockfile.
+If the lockfile ecosystem is not recognised, version tracking is skipped.
