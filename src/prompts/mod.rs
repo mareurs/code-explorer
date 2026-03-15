@@ -44,6 +44,34 @@ pub fn build_server_instructions(project_status: Option<&ProjectStatus>) -> Stri
             );
         }
 
+        // Workspace topology — inject project table when there are sibling projects.
+        if let Some(projects) = &status.workspace {
+            if !projects.is_empty() {
+                instructions.push_str("\n## Workspace Projects\n\n");
+                instructions.push_str("| Project | Root | Languages | Depends On |\n");
+                instructions.push_str("|---------|------|-----------|------------|\n");
+                for p in projects {
+                    let langs = if p.languages.is_empty() {
+                        "—".to_string()
+                    } else {
+                        p.languages.join(", ")
+                    };
+                    let deps = if p.depends_on.is_empty() {
+                        "—".to_string()
+                    } else {
+                        p.depends_on.join(", ")
+                    };
+                    instructions.push_str(&format!(
+                        "| {} | {} | {} | {} |\n",
+                        p.id, p.root, langs, deps
+                    ));
+                }
+                instructions.push_str(
+                    "\nUse `project: \"<id>\"` in `find_symbol` / `semantic_search` / `memory` to scope to a specific project.\n",
+                );
+            }
+        }
+
         if status.github_enabled {
             instructions.push_str("\n\n");
             instructions.push_str(GITHUB_INSTRUCTIONS);
@@ -59,6 +87,15 @@ pub fn build_server_instructions(project_status: Option<&ProjectStatus>) -> Stri
     instructions
 }
 
+/// One row in the workspace project table injected into server instructions.
+#[derive(Debug)]
+pub struct WorkspaceProjectSummary {
+    pub id: String,
+    pub root: String,
+    pub languages: Vec<String>,
+    pub depends_on: Vec<String>,
+}
+
 /// Dynamic project status used to build server instructions.
 #[derive(Debug)]
 pub struct ProjectStatus {
@@ -69,6 +106,9 @@ pub struct ProjectStatus {
     pub has_index: bool,
     pub system_prompt: Option<String>,
     pub github_enabled: bool,
+    /// Other projects in the workspace, if this is a multi-project repo.
+    /// None for single-project activations; Some([]) is never emitted.
+    pub workspace: Option<Vec<WorkspaceProjectSummary>>,
 }
 
 /// Onboarding prompt template — instructs Claude what to explore and what memories to create.
@@ -206,6 +246,7 @@ mod tests {
             has_index: true,
             system_prompt: None,
             github_enabled: false,
+            workspace: None,
         };
         let result = build_server_instructions(Some(&status));
         assert!(result.contains("## Project Status"));
@@ -225,6 +266,7 @@ mod tests {
             has_index: false,
             system_prompt: None,
             github_enabled: false,
+            workspace: None,
         };
         let result = build_server_instructions(Some(&status));
         assert!(result.contains("run `onboarding`"));
@@ -329,6 +371,7 @@ mod tests {
             has_index: false,
             system_prompt: Some("Always use pytest.".into()),
             github_enabled: false,
+            workspace: None,
         };
         let result = build_server_instructions(Some(&status));
         assert!(result.contains("## Custom Instructions"));
@@ -349,6 +392,7 @@ mod tests {
             has_index: false,
             system_prompt: None,
             github_enabled: false,
+            workspace: None,
         };
         let result = build_server_instructions(Some(&status));
         assert!(!result.contains("## Custom Instructions"));
@@ -364,6 +408,7 @@ mod tests {
             has_index: false,
             system_prompt: None,
             github_enabled: true,
+            workspace: None,
         };
         let result = build_server_instructions(Some(&status));
         assert!(
@@ -386,6 +431,7 @@ mod tests {
             has_index: false,
             system_prompt: None,
             github_enabled: false,
+            workspace: None,
         };
         let result = build_server_instructions(Some(&status));
         // Check for content unique to github_instructions.md (not the hint in server_instructions.md)
@@ -393,6 +439,65 @@ mod tests {
             !result.contains("github_identity(method)"),
             "should NOT include optional GitHub tool reference docs when disabled"
         );
+    }
+
+    #[test]
+    fn build_with_workspace_appends_project_table() {
+        let status = ProjectStatus {
+            name: "backend-kotlin".into(),
+            path: "/workspace/backend-kotlin".into(),
+            languages: vec!["kotlin".into()],
+            memories: vec![],
+            has_index: false,
+            system_prompt: None,
+            github_enabled: false,
+            workspace: Some(vec![
+                WorkspaceProjectSummary {
+                    id: "backend-kotlin".into(),
+                    root: ".".into(),
+                    languages: vec!["kotlin".into()],
+                    depends_on: vec![],
+                },
+                WorkspaceProjectSummary {
+                    id: "mcp-server".into(),
+                    root: "mcp-server/".into(),
+                    languages: vec!["typescript".into()],
+                    depends_on: vec![],
+                },
+                WorkspaceProjectSummary {
+                    id: "python-services".into(),
+                    root: "python-services/".into(),
+                    languages: vec!["python".into()],
+                    depends_on: vec!["mcp-server".into()],
+                },
+            ]),
+        };
+        let result = build_server_instructions(Some(&status));
+        assert!(result.contains("## Workspace Projects"));
+        assert!(result.contains("mcp-server"));
+        assert!(result.contains("python-services"));
+        assert!(result.contains("python-services/"));
+        // depends_on rendered for python-services
+        assert!(result.contains("mcp-server"));
+        // scoping hint present
+        assert!(result.contains("project: \"<id>\""));
+    }
+
+    #[test]
+    fn build_with_single_project_no_workspace_table() {
+        // workspace: None → no table emitted even if the field is absent
+        let status = ProjectStatus {
+            name: "solo".into(),
+            path: "/solo".into(),
+            languages: vec!["rust".into()],
+            memories: vec![],
+            has_index: false,
+            system_prompt: None,
+            github_enabled: false,
+            workspace: None,
+        };
+        let result = build_server_instructions(Some(&status));
+        assert!(!result.contains("## Workspace Projects"));
     }
 
     #[test]

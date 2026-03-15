@@ -355,6 +355,7 @@ impl Agent {
     }
 
     /// Get the current project status for building server instructions.
+    /// Get the current project status for building server instructions.
     pub async fn project_status(&self) -> Option<crate::prompts::ProjectStatus> {
         let inner = self.inner.read().await;
         let project = inner.active_project()?;
@@ -370,6 +371,37 @@ impl Agent {
             project.config.project.system_prompt.clone()
         };
 
+        // Build workspace summary when there are multiple projects.
+        // Load workspace.toml to get depends_on per project (best-effort — fails silently).
+        let workspace = inner.workspace.as_ref().and_then(|ws| {
+            if ws.projects.len() <= 1 {
+                return None;
+            }
+            let ws_cfg: Option<crate::config::workspace::WorkspaceConfig> =
+                std::fs::read_to_string(crate::config::workspace::workspace_config_path(&ws.root))
+                    .ok()
+                    .and_then(|s| toml::from_str(&s).ok());
+
+            let summaries = ws
+                .projects
+                .iter()
+                .map(|p| {
+                    let depends_on = ws_cfg
+                        .as_ref()
+                        .and_then(|cfg| cfg.projects.iter().find(|e| e.id == p.discovered.id))
+                        .map(|e| e.depends_on.clone())
+                        .unwrap_or_default();
+                    crate::prompts::WorkspaceProjectSummary {
+                        id: p.discovered.id.clone(),
+                        root: p.discovered.relative_root.display().to_string(),
+                        languages: p.discovered.languages.clone(),
+                        depends_on,
+                    }
+                })
+                .collect();
+            Some(summaries)
+        });
+
         Some(crate::prompts::ProjectStatus {
             name: project.config.project.name.clone(),
             path: project.root.display().to_string(),
@@ -378,6 +410,7 @@ impl Agent {
             has_index,
             system_prompt,
             github_enabled,
+            workspace,
         })
     }
 
@@ -461,6 +494,31 @@ impl Agent {
             .as_ref()
             .map(|ws| ws.projects.iter().map(|p| p.discovered.clone()).collect())
             .unwrap_or_default()
+    }
+
+    /// Returns per-project memory topic lists for all workspace projects that have memories.
+    /// Returns an empty vec for single-project activations (workspace absent or len ≤ 1).
+    pub async fn workspace_project_memories(&self) -> Vec<(String, Vec<String>)> {
+        let inner = self.inner.read().await;
+        let ws = match inner.workspace.as_ref() {
+            Some(ws) if ws.projects.len() > 1 => ws,
+            _ => return vec![],
+        };
+        ws.projects
+            .iter()
+            .filter_map(|p| {
+                let dir = ws.memory_dir_for_project(&p.discovered.id);
+                let topics = crate::memory::MemoryStore::from_dir(dir)
+                    .ok()?
+                    .list()
+                    .unwrap_or_default();
+                if topics.is_empty() {
+                    None
+                } else {
+                    Some((p.discovered.id.clone(), topics))
+                }
+            })
+            .collect()
     }
 
     /// Persist the library registry to disk.

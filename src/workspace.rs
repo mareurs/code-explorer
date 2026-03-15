@@ -399,6 +399,202 @@ impl Project {
     }
 }
 
+/// Normalize a relative path reference against a base directory without touching
+/// the filesystem (handles `../` components manually).
+fn normalize_path(base: &Path, relative: &str) -> PathBuf {
+    let mut result = base.to_path_buf();
+    for component in Path::new(relative).components() {
+        match component {
+            std::path::Component::ParentDir => {
+                result.pop();
+            }
+            std::path::Component::Normal(c) => result.push(c),
+            std::path::Component::CurDir => {}
+            _ => result.push(component),
+        }
+    }
+    result
+}
+
+/// Parse Cargo.toml `[dependencies]` / `[dev-dependencies]` for `path = "..."` entries.
+fn deps_from_cargo(project_root: &Path) -> Vec<String> {
+    let Ok(content) = std::fs::read_to_string(project_root.join("Cargo.toml")) else {
+        return vec![];
+    };
+    let Ok(table) = toml::from_str::<toml::Value>(&content) else {
+        return vec![];
+    };
+    let mut paths = vec![];
+    for section in &["dependencies", "dev-dependencies", "build-dependencies"] {
+        if let Some(deps) = table.get(section).and_then(|v| v.as_table()) {
+            for dep in deps.values() {
+                if let Some(p) = dep.get("path").and_then(|v| v.as_str()) {
+                    paths.push(p.to_string());
+                }
+            }
+        }
+    }
+    paths
+}
+
+/// Parse package.json for `"file:../..."` or `"workspace:../..."` dependency values.
+fn deps_from_npm(project_root: &Path) -> Vec<String> {
+    let Ok(content) = std::fs::read_to_string(project_root.join("package.json")) else {
+        return vec![];
+    };
+    let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return vec![];
+    };
+    let mut paths = vec![];
+    for section in &["dependencies", "devDependencies", "peerDependencies"] {
+        if let Some(deps) = pkg.get(section).and_then(|v| v.as_object()) {
+            for val in deps.values() {
+                if let Some(s) = val.as_str() {
+                    if let Some(path) = s
+                        .strip_prefix("file:")
+                        .or_else(|| s.strip_prefix("workspace:"))
+                    {
+                        if path.starts_with("../") || path.starts_with("./") {
+                            paths.push(path.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    paths
+}
+
+/// Parse pyproject.toml for `{path = "..."}` dependency entries.
+fn deps_from_pyproject(project_root: &Path) -> Vec<String> {
+    let Ok(content) = std::fs::read_to_string(project_root.join("pyproject.toml")) else {
+        return vec![];
+    };
+    let Ok(table) = toml::from_str::<toml::Value>(&content) else {
+        return vec![];
+    };
+    let mut paths = vec![];
+    // poetry: [tool.poetry.dependencies]
+    for dep in table
+        .get("tool")
+        .and_then(|t| t.get("poetry"))
+        .and_then(|p| p.get("dependencies"))
+        .and_then(|d| d.as_table())
+        .into_iter()
+        .flat_map(|t| t.values())
+    {
+        if let Some(p) = dep.get("path").and_then(|v| v.as_str()) {
+            paths.push(p.to_string());
+        }
+    }
+    // PEP 517 / uv: [dependencies] with path entries (less common but handle it)
+    for dep in table
+        .get("project")
+        .and_then(|p| p.get("dependencies"))
+        .and_then(|d| d.as_array())
+        .into_iter()
+        .flatten()
+    {
+        if let Some(s) = dep.as_str() {
+            // Editable path dep: "my-pkg @ file:../sibling" or just "../sibling"
+            if let Some(rest) = s.find("@ file:").map(|i| &s[i + 7..]) {
+                if rest.starts_with("../") || rest.starts_with("./") {
+                    paths.push(rest.to_string());
+                }
+            }
+        }
+    }
+    paths
+}
+
+/// Parse requirements.txt for `-e ../sibling` editable installs.
+fn deps_from_requirements(project_root: &Path) -> Vec<String> {
+    let Ok(content) = std::fs::read_to_string(project_root.join("requirements.txt")) else {
+        return vec![];
+    };
+    content
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            let path = line.strip_prefix("-e ")?;
+            if path.starts_with("../") || path.starts_with("./") {
+                Some(path.to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Parse settings.gradle / settings.gradle.kts for `includeBuild("../sibling")`.
+fn deps_from_gradle(project_root: &Path) -> Vec<String> {
+    let content = ["settings.gradle.kts", "settings.gradle"]
+        .iter()
+        .find_map(|f| std::fs::read_to_string(project_root.join(f)).ok())
+        .unwrap_or_default();
+
+    let mut paths = vec![];
+    for line in content.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("includeBuild(") {
+            // Extract quoted string: includeBuild("../sibling")
+            let inner = rest.trim_end_matches(')').trim();
+            let path = inner
+                .strip_prefix('"')
+                .and_then(|s| s.strip_suffix('"'))
+                .or_else(|| inner.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')));
+            if let Some(p) = path {
+                if p.starts_with("../") || p.starts_with("./") {
+                    paths.push(p.to_string());
+                }
+            }
+        }
+    }
+    paths
+}
+
+/// Infer cross-project dependencies for a single project from its manifest files.
+///
+/// Returns a sorted, deduplicated list of project IDs that `project_root` depends on,
+/// based on path references found in Cargo.toml, package.json, pyproject.toml,
+/// requirements.txt, and settings.gradle(.kts).
+///
+/// Only same-workspace references are returned — external paths are silently ignored.
+pub fn infer_depends_on(
+    project_root: &Path,
+    workspace_root: &Path,
+    all_projects: &[DiscoveredProject],
+) -> Vec<String> {
+    // Build a map: canonical absolute root → project id
+    let project_by_abs: std::collections::HashMap<PathBuf, &str> = all_projects
+        .iter()
+        .map(|p| (workspace_root.join(&p.relative_root), p.id.as_str()))
+        .collect();
+
+    let raw_paths: Vec<String> = [
+        deps_from_cargo(project_root),
+        deps_from_npm(project_root),
+        deps_from_pyproject(project_root),
+        deps_from_requirements(project_root),
+        deps_from_gradle(project_root),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    let mut deps = std::collections::BTreeSet::new();
+    for raw in raw_paths {
+        let abs = normalize_path(project_root, &raw);
+        if let Some(&id) = project_by_abs.get(&abs) {
+            // Don't add self-references
+            if abs != *project_root {
+                deps.insert(id.to_string());
+            }
+        }
+    }
+    deps.into_iter().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -558,6 +754,113 @@ mod tests {
             &dir.path().join("src/main/kotlin/App.kt"),
         );
         assert_eq!(result.unwrap().id, ROOT_PROJECT_ID);
+    }
+
+    // ── infer_depends_on tests ──────────────────────────────────────────────
+
+    fn make_project(id: &str, relative_root: &str) -> DiscoveredProject {
+        DiscoveredProject {
+            id: id.to_string(),
+            relative_root: PathBuf::from(relative_root),
+            languages: vec![],
+            manifest: None,
+        }
+    }
+
+    #[test]
+    fn infer_depends_on_cargo_path_dep() {
+        let dir = tempdir().unwrap();
+        let ws = dir.path();
+        let api = ws.join("api");
+        let shared = ws.join("shared");
+        fs::create_dir_all(&api).unwrap();
+        fs::create_dir_all(&shared).unwrap();
+        fs::write(
+            api.join("Cargo.toml"),
+            "[package]\nname = \"api\"\n\n[dependencies]\nshared = { path = \"../shared\" }\n",
+        )
+        .unwrap();
+        let projects = vec![make_project("api", "api"), make_project("shared", "shared")];
+        let deps = infer_depends_on(&api, ws, &projects);
+        assert_eq!(deps, vec!["shared"]);
+    }
+
+    #[test]
+    fn infer_depends_on_npm_workspace_protocol() {
+        let dir = tempdir().unwrap();
+        let ws = dir.path();
+        let web = ws.join("web");
+        let ui = ws.join("ui");
+        fs::create_dir_all(&web).unwrap();
+        fs::create_dir_all(&ui).unwrap();
+        fs::write(
+            web.join("package.json"),
+            r#"{"name":"web","scripts":{"build":"tsc"},"dependencies":{"@app/ui":"workspace:../ui"}}"#,
+        )
+        .unwrap();
+        let projects = vec![make_project("web", "web"), make_project("ui", "ui")];
+        let deps = infer_depends_on(&web, ws, &projects);
+        assert_eq!(deps, vec!["ui"]);
+    }
+
+    #[test]
+    fn infer_depends_on_requirements_txt_editable() {
+        let dir = tempdir().unwrap();
+        let ws = dir.path();
+        let svc = ws.join("svc");
+        let lib = ws.join("lib");
+        fs::create_dir_all(&svc).unwrap();
+        fs::create_dir_all(&lib).unwrap();
+        fs::write(svc.join("requirements.txt"), "-e ../lib\nrequests==2.31\n").unwrap();
+        let projects = vec![make_project("svc", "svc"), make_project("lib", "lib")];
+        let deps = infer_depends_on(&svc, ws, &projects);
+        assert_eq!(deps, vec!["lib"]);
+    }
+
+    #[test]
+    fn infer_depends_on_gradle_include_build() {
+        let dir = tempdir().unwrap();
+        let ws = dir.path();
+        let app = ws.join("app");
+        let core = ws.join("core");
+        fs::create_dir_all(&app).unwrap();
+        fs::create_dir_all(&core).unwrap();
+        fs::write(
+            app.join("settings.gradle.kts"),
+            "includeBuild(\"../core\")\n",
+        )
+        .unwrap();
+        let projects = vec![make_project("app", "app"), make_project("core", "core")];
+        let deps = infer_depends_on(&app, ws, &projects);
+        assert_eq!(deps, vec!["core"]);
+    }
+
+    #[test]
+    fn infer_depends_on_no_manifests_returns_empty() {
+        let dir = tempdir().unwrap();
+        let ws = dir.path();
+        let a = ws.join("a");
+        fs::create_dir_all(&a).unwrap();
+        let projects = vec![make_project("a", "a"), make_project("b", "b")];
+        let deps = infer_depends_on(&a, ws, &projects);
+        assert!(deps.is_empty());
+    }
+
+    #[test]
+    fn infer_depends_on_ignores_external_paths() {
+        let dir = tempdir().unwrap();
+        let ws = dir.path();
+        let api = ws.join("api");
+        fs::create_dir_all(&api).unwrap();
+        // References a path outside the workspace
+        fs::write(
+            api.join("Cargo.toml"),
+            "[package]\nname = \"api\"\n\n[dependencies]\nexternal = { path = \"../../outside\" }\n",
+        )
+        .unwrap();
+        let projects = vec![make_project("api", "api")];
+        let deps = infer_depends_on(&api, ws, &projects);
+        assert!(deps.is_empty());
     }
 
     #[test]
