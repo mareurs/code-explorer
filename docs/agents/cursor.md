@@ -182,6 +182,19 @@ options, and cleans up the worktree.
 
 ---
 
+## Multi-Project Workspaces
+
+codescout supports multi-project workspaces via `.codescout/workspace.toml`.
+After onboarding, pass `project` to scope tool calls to a specific project:
+
+```json
+{ "tool": "find_symbol", "arguments": { "pattern": "UserService", "project": "backend" } }
+```
+
+See [Multi-Project Workspaces](../manual/src/concepts/multi-project-workspace.md).
+
+---
+
 ## Cursor-Specific Notes
 
 ### Rules vs Skills
