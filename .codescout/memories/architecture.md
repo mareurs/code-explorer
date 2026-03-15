@@ -3,6 +3,45 @@
 See `docs/ARCHITECTURE.md` for the full component diagram. This memory captures
 wiring details NOT covered there.
 
+## Source Tree
+
+```
+src/
+├── main.rs          # CLI: start (MCP server), index, and dashboard subcommands
+├── lib.rs           # Crate root for library/integration use
+├── server.rs        # rmcp ServerHandler — bridges Tool trait to MCP, signal handling + graceful LSP shutdown
+├── agent.rs         # Orchestrator: active project, config, memory
+├── logging.rs       # --debug mode: file logging with rotation (tracing-appender)
+├── config/          # ProjectConfig (.codescout/project.toml), modes
+├── lsp/             # LSP types, server configs (9 langs), JSON-RPC client
+├── ast/             # Language detection (20+ exts), tree-sitter parser
+├── git/             # git2: blame, file_log, open_repo
+├── embed/           # Chunker, SQLite index, RemoteEmbedder, schema, drift detection
+├── library/         # LibraryRegistry, Scope enum, manifest discovery
+├── memory/          # Markdown-based MemoryStore (.codescout/memories/)
+├── usage/           # UsageRecorder: append-only SQLite call stats (usage.db)
+├── prompts/         # LLM guidance: server_instructions.md, onboarding_prompt.md
+├── tools/           # Tool implementations by category
+│   ├── output.rs          #   OutputGuard: progressive disclosure (exploring/focused)
+│   ├── output_buffer.rs   #   OutputBuffer: session-scoped LRU (@cmd_*/@file_* handles)
+│   ├── progress.rs        #   ProgressReporter: MCP progress notifications
+│   ├── format.rs          #   Shared format helpers (format_line_range, format_overflow, truncate_path)
+│   ├── file.rs            #   read_file, list_dir, search_pattern, create_file, find_file, edit_file
+│   ├── file_summary.rs    #   Smart per-type summarizers (source, markdown, JSON, TOML, YAML)
+│   ├── workflow.rs        #   onboarding, run_command
+│   ├── symbol.rs          #   9 LSP-backed tools (find_symbol, list_symbols, goto_definition, hover, remove_symbol, etc.)
+│   ├── git.rs             #   git_blame, file_log (not registered; used by dashboard)
+│   ├── semantic.rs        #   semantic_search, index_project, index_status
+│   ├── github.rs          #   github_identity, github_issue, github_pr, github_file, github_repo
+│   ├── library.rs         #   list_libraries
+│   ├── memory.rs          #   memory (action: read/write/list/delete/remember/recall/forget/refresh_anchors)
+│   ├── usage.rs           #   GetUsageStats (dashboard API; not an MCP tool)
+│   ├── ast.rs             #   list_functions, list_docs (not registered; tree-sitter offline tools)
+│   ├── command_summary.rs #   Smart output summarization, terminal filter detection
+│   └── config.rs          #   activate_project, project_status
+└── util/            # fs helpers, text processing, path security
+```
+
 ## Tool Dispatch Pipeline (concrete flow)
 
 `rmcp::ServerHandler::call_tool` → `call_tool_inner` (src/server.rs):
@@ -42,8 +81,7 @@ wiring details NOT covered there.
 `build_index(root, force)` in `src/embed/index.rs`:
 1. `find_changed_files()`: git diff → mtime → SHA-256 fallback
 2. `ast_chunker::split_file()`: AST-aware chunking per language, respects chunk size config
-3. Concurrent embedding with semaphore cap=4 (`JoinSet` over `Embedder::embed()`)
-4. Single SQLite transaction: delete old chunks, insert new, upsert file hash
+3. Concurrent embedding with semaphore cap=4 (`JoinSet` over `Embedder::embed()`)\n4. Single SQLite transaction: delete old chunks, insert new, upsert file hash
 5. Drift detection (if enabled): cosine distance old→new embeddings → `drift_report` table
 6. High-drift files → mark memory anchors stale
 

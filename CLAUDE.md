@@ -119,42 +119,7 @@ clean — git detects the cherry-pick and skips the duplicate commit automatical
 
 ## Project Structure
 
-```
-src/
-├── main.rs          # CLI: start (MCP server), index, and dashboard subcommands
-├── lib.rs           # Crate root for library/integration use
-├── server.rs        # rmcp ServerHandler — bridges Tool trait to MCP, signal handling + graceful LSP shutdown
-├── agent.rs         # Orchestrator: active project, config, memory
-├── logging.rs       # --debug mode: file logging with rotation (tracing-appender)
-├── config/          # ProjectConfig (.codescout/project.toml), modes
-├── lsp/             # LSP types, server configs (9 langs), JSON-RPC client
-├── ast/             # Language detection (20+ exts), tree-sitter parser
-├── git/             # git2: blame, file_log, open_repo
-├── embed/           # Chunker, SQLite index, RemoteEmbedder, schema, drift detection
-├── library/         # LibraryRegistry, Scope enum, manifest discovery
-├── memory/          # Markdown-based MemoryStore (.codescout/memories/)
-├── usage/           # UsageRecorder: append-only SQLite call stats (usage.db)
-├── prompts/         # LLM guidance: server_instructions.md, onboarding_prompt.md
-├── tools/           # Tool implementations by category
-│   ├── output.rs          #   OutputGuard: progressive disclosure (exploring/focused)
-│   ├── output_buffer.rs   #   OutputBuffer: session-scoped LRU (@cmd_*/@file_* handles)
-│   ├── progress.rs        #   ProgressReporter: MCP progress notifications
-│   ├── format.rs          #   Shared format helpers (format_line_range, format_overflow, truncate_path)
-│   ├── file.rs            #   read_file, list_dir, search_pattern, create_file, find_file, edit_file
-│   ├── file_summary.rs    #   Smart per-type summarizers (source, markdown, JSON, TOML, YAML)
-│   ├── workflow.rs        #   onboarding, run_command
-│   ├── symbol.rs          #   9 LSP-backed tools (find_symbol, list_symbols, goto_definition, hover, remove_symbol, etc.)
-│   ├── git.rs             #   git_blame, file_log (not registered; used by dashboard)
-│   ├── semantic.rs        #   semantic_search, index_project, index_status
-│   ├── github.rs          #   github_identity, github_issue, github_pr, github_file, github_repo
-│   ├── library.rs         #   list_libraries
-│   ├── memory.rs          #   memory (action: read/write/list/delete/remember/recall/forget/refresh_anchors)
-│   ├── usage.rs           #   GetUsageStats (dashboard API; not an MCP tool)
-│   ├── ast.rs             #   list_functions, list_docs (not registered; tree-sitter offline tools)
-│   ├── command_summary.rs #   Smart output summarization, terminal filter detection
-│   └── config.rs          #   activate_project, project_status
-└── util/            # fs helpers, text processing, path security
-```
+See codescout memory `architecture` (Source Tree section).
 
 ## Design Principles
 
@@ -252,55 +217,7 @@ The `PreToolUse` hook will **block** any attempt to use the native `Read`, `Grep
 
 ## Rust Coding Standards
 
-### Ownership first
-- Restructure data and function signatures to satisfy the borrow checker.
-  Never reach for `.clone()` as a first resort — only clone when semantically
-  appropriate (the clone represents intentional duplication, not a workaround).
-- Design ownership topology before writing implementations. Ask: who owns this
-  data, and what borrows it?
-
-### Error handling
-- All fallible functions return `Result<T, E>`. Never use `.unwrap()` in
-  library code. In application code, only use `.unwrap()` where a panic is
-  genuinely the correct behavior and document why.
-- Use `anyhow` for application-level error propagation, `thiserror` for
-  library error types.
-- Propagate errors with `?`. Avoid nested match blocks for error handling.
-
-### Iterators over loops
-- Prefer iterator adapters (`.map()`, `.filter()`, `.fold()`, `.collect()`)
-  over explicit `for` loops when the intent is a transformation pipeline.
-- Use `.iter()` / `.iter_mut()` / `.into_iter()` correctly — do not
-  implicitly rely on auto-deref behavior.
-
-### Generics vs trait objects
-- Default to generics (`fn foo<T: Trait>(x: T)`) for zero-cost dispatch.
-- Only use `Box<dyn Trait>` / `Arc<dyn Trait>` when you need runtime
-  polymorphism (heterogeneous collections, plugin systems, dynamic dispatch).
-  Always comment why dynamic dispatch is needed.
-
-### Concurrency
-- Before reaching for `Arc<Mutex<T>>`, ask whether ownership can be
-  structured to avoid shared state entirely.
-- Prefer message passing (channels) over shared state for complex coordination.
-- Use `tokio` for async I/O. Never block inside async functions.
-
-### Clippy
-- All code must pass `cargo clippy -- -D warnings`.
-- When clippy suggests an alternative, prefer it unless there's a documented
-  reason not to.
-
-### Lifetimes
-- Annotate lifetimes explicitly when the compiler cannot infer them and
-  explain the relationship in a comment.
-- Prefer owned types in struct fields over references where the struct
-  needs to be self-contained or sent across threads.
-
-### unsafe
-- Never write `unsafe` without a `// SAFETY:` comment explaining the
-  invariants being upheld.
-- Prefer safe abstractions. Reach for `unsafe` only when there is no
-  safe alternative and the performance gain is measured and documented.
+See codescout memory `language-patterns` (Rust section) for anti-patterns and idiomatic patterns.
 
 ## Docs
 
